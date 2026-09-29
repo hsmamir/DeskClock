@@ -9,10 +9,21 @@
 
 static TFT_eSPI tft = TFT_eSPI();
 
+// ---- Palette (RGB565) ----
+static constexpr uint16_t rgb(uint8_t r, uint8_t g, uint8_t b)
+{
+    return ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3);
+}
+static constexpr uint16_t COL_AMBER = rgb(255, 200, 60);
+static constexpr uint16_t COL_DIM = rgb(70, 70, 70);
+static constexpr uint16_t COL_SOFT = rgb(150, 150, 150);
+static constexpr uint16_t COL_CHEEK = rgb(255, 105, 150);
+
 // ---- Layout — computed from tft.width()/height() so this works on both
 // the real 128x160 ST7735 and the 240x320 ILI9341 used for Wokwi ----
 static int16_t screenW, screenH;
 static int16_t eyeY, eyeRadius, leftEyeX, rightEyeX;
+static int16_t dividerY, textY, captionY, dotsY;
 
 // ---- Idle blink state machine ----
 enum class BlinkPhase
@@ -37,7 +48,7 @@ static const uint16_t ALARM_FLASH_MS = 200;
 static Mood lastDrawnMood = Mood::IDLE_BLINK;
 static float lastEyeOpenness = -1.0f;
 static DisplayMode lastDrawnMode = static_cast<DisplayMode>(-1);
-static char lastInfoText[32] = "";
+static char lastInfoText[48] = "";
 
 static Mood readMood()
 {
@@ -82,26 +93,41 @@ static void readWeather(bool &valid, float &tempC, int &code)
     xSemaphoreGive(g_stateMutex);
 }
 
-static void clearEyeArea()
+// Clears only the two eye boxes (incl. cheeks) instead of the whole top
+// area — much less SPI traffic, so blinking looks smoother.
+static void clearEyes()
 {
-    tft.fillRect(0, 0, screenW, eyeY + eyeRadius + 12, TFT_BLACK);
+    for (int16_t cx : {leftEyeX, rightEyeX})
+    {
+        tft.fillRect(cx - eyeRadius - 2, eyeY - eyeRadius - 3,
+                     eyeRadius * 2 + 4, eyeRadius * 2 + 8, TFT_BLACK);
+    }
 }
 
-static void drawNormalEyes(float openness, uint16_t color)
+static void drawNormalEyes(float openness, uint16_t color, bool shine)
 {
-    clearEyeArea();
+    clearEyes();
     int16_t h = (int16_t)(eyeRadius * 2 * openness);
     if (h < 3)
         h = 3;
+    int16_t corner = (int16_t)(eyeRadius * 0.7f);
+    if (corner > h / 2)
+        corner = h / 2;
+    int16_t shineR = eyeRadius / 5;
+    if (shineR < 2)
+        shineR = 2;
     for (int16_t cx : {leftEyeX, rightEyeX})
     {
-        tft.fillRoundRect(cx - eyeRadius, eyeY - h / 2, eyeRadius * 2, h, 3, color);
+        tft.fillRoundRect(cx - eyeRadius, eyeY - h / 2, eyeRadius * 2, h, corner, color);
+        // little highlight makes the eyes look glossy — only when open enough
+        if (shine && h > eyeRadius)
+            tft.fillCircle(cx - eyeRadius / 3, eyeY - h / 4, shineR, TFT_WHITE);
     }
 }
 
 static void drawHappyEyes(uint16_t color)
 {
-    clearEyeArea();
+    clearEyes();
     for (int16_t cx : {leftEyeX, rightEyeX})
     {
         // upward "^" shape, drawn as a few offset lines to fake thickness
@@ -110,12 +136,33 @@ static void drawHappyEyes(uint16_t color)
             tft.drawLine(cx - eyeRadius, eyeY + off, cx, eyeY - eyeRadius + off, color);
             tft.drawLine(cx, eyeY - eyeRadius + off, cx + eyeRadius, eyeY + off, color);
         }
+        // blush cheeks
+        int16_t ry = eyeRadius / 5;
+        if (ry < 2)
+            ry = 2;
+        tft.fillEllipse(cx, eyeY + eyeRadius / 2 + 5, eyeRadius / 2, ry, COL_CHEEK);
     }
+}
+
+static uint16_t tempColor(float tempC)
+{
+    if (tempC < 5)
+        return rgb(100, 170, 255); // cold
+    if (tempC < 18)
+        return rgb(110, 225, 220); // cool
+    if (tempC < 28)
+        return COL_AMBER;     // mild
+    return rgb(255, 120, 60); // hot
 }
 
 static void drawInfoText(DisplayMode mode, bool timeSynced)
 {
-    char buf[32];
+    char big[16];
+    char cap[24] = "";
+    uint16_t accent = TFT_CYAN;
+    uint16_t bigColor = TFT_WHITE;
+    bool degreeStyle = false;
+
     struct tm timeinfo;
     bool haveTime = timeSynced && getLocalTime(&timeinfo, 0);
 
@@ -123,15 +170,26 @@ static void drawInfoText(DisplayMode mode, bool timeSynced)
     {
     case DisplayMode::CLOCK:
         if (haveTime)
-            strftime(buf, sizeof(buf), "%H:%M", &timeinfo);
+        {
+            strftime(big, sizeof(big), "%H:%M", &timeinfo);
+            strftime(cap, sizeof(cap), "%a %d %b", &timeinfo);
+        }
         else
-            strcpy(buf, "--:--");
+        {
+            strcpy(big, "--:--");
+            strcpy(cap, "Syncing...");
+        }
         break;
     case DisplayMode::DATE:
+        accent = COL_AMBER;
+        bigColor = COL_AMBER;
         if (haveTime)
-            strftime(buf, sizeof(buf), "%d %b", &timeinfo);
+        {
+            strftime(big, sizeof(big), "%d %b", &timeinfo);
+            strftime(cap, sizeof(cap), "%A", &timeinfo);
+        }
         else
-            strcpy(buf, "----");
+            strcpy(big, "----");
         break;
     case DisplayMode::WEATHER:
     {
@@ -140,27 +198,88 @@ static void drawInfoText(DisplayMode mode, bool timeSynced)
         int code;
         readWeather(valid, tempC, code);
         if (valid)
-            snprintf(buf, sizeof(buf), "%.0fC %s", tempC, weather_code_to_label(code));
+        {
+            snprintf(big, sizeof(big), "%d", (int)lroundf(tempC));
+            strncpy(cap, weather_code_to_label(code), sizeof(cap) - 1);
+            cap[sizeof(cap) - 1] = '\0';
+            accent = bigColor = tempColor(tempC);
+            degreeStyle = true;
+        }
         else
-            strcpy(buf, "N/A");
+        {
+            strcpy(big, "N/A");
+            accent = bigColor = COL_SOFT;
+        }
         break;
     }
     default:
-        strcpy(buf, "N/A");
+        strcpy(big, "N/A");
         break;
     }
 
-    if (mode == lastDrawnMode && strcmp(buf, lastInfoText) == 0)
+    char key[48];
+    snprintf(key, sizeof(key), "%s|%s", big, cap);
+    if (mode == lastDrawnMode && strcmp(key, lastInfoText) == 0)
         return;
 
-    int16_t textY = eyeY + eyeRadius + 34;
-    tft.fillRect(0, textY - 18, screenW, 36, TFT_BLACK);
-    tft.setTextDatum(MC_DATUM);
-    tft.setTextColor(TFT_WHITE, TFT_BLACK);
-    tft.drawString(buf, screenW / 2, textY, 4);
+    // wipe everything below the eyes (divider, text, caption, page dots)
+    tft.fillRect(0, dividerY - 2, screenW, screenH - dividerY + 2, TFT_BLACK);
+
+    // divider: dim line with a short accent segment in the middle
+    int16_t lineW = screenW * 3 / 5;
+    tft.drawFastHLine((screenW - lineW) / 2, dividerY, lineW, COL_DIM);
+    int16_t accW = screenW / 5;
+    tft.fillRect((screenW - accW) / 2, dividerY - 1, accW, 2, accent);
+
+    // main text
+    tft.setTextColor(bigColor, TFT_BLACK);
+    if (degreeStyle)
+    {
+        // font 4 has no degree sign, so draw a small ring after the number
+        int16_t dr = screenW / 40;
+        if (dr < 2)
+            dr = 2;
+        const int16_t gap = 2;
+        int16_t wNum = tft.textWidth(big, 4);
+        int16_t wC = tft.textWidth("C", 4);
+        int16_t total = wNum + gap + dr * 2 + gap + wC;
+        int16_t x = (screenW - total) / 2;
+        tft.setTextDatum(ML_DATUM);
+        tft.drawString(big, x, textY, 4);
+        int16_t ringX = x + wNum + gap + dr;
+        int16_t ringY = textY - tft.fontHeight(4) / 2 + dr + 2;
+        tft.drawCircle(ringX, ringY, dr, bigColor);
+        if (dr > 2)
+            tft.drawCircle(ringX, ringY, dr - 1, bigColor);
+        tft.drawString("C", x + wNum + gap * 2 + dr * 2, textY, 4);
+    }
+    else
+    {
+        tft.setTextDatum(MC_DATUM);
+        tft.drawString(big, screenW / 2, textY, 4);
+    }
+
+    // caption (weekday / weather label)
+    if (cap[0])
+    {
+        tft.setTextDatum(MC_DATUM);
+        tft.setTextColor(COL_SOFT, TFT_BLACK);
+        tft.drawString(cap, screenW / 2, captionY, 2);
+    }
+
+    // page dots: which of the 3 display modes is active
+    for (int i = 0; i < 3; i++)
+    {
+        int16_t dx = screenW / 2 + (i - 1) * 12;
+        if (i == (int)mode)
+            tft.fillCircle(dx, dotsY, 3, accent);
+        else
+            tft.fillCircle(dx, dotsY, 2, COL_DIM);
+    }
 
     lastDrawnMode = mode;
-    strncpy(lastInfoText, buf, sizeof(lastInfoText));
+    strncpy(lastInfoText, key, sizeof(lastInfoText) - 1);
+    lastInfoText[sizeof(lastInfoText) - 1] = '\0';
 }
 
 void display_init()
@@ -182,6 +301,10 @@ void display_init()
     eyeRadius = screenW / 8;
     leftEyeX = screenW / 2 - eyeRadius * 2;
     rightEyeX = screenW / 2 + eyeRadius * 2;
+    dividerY = eyeY + eyeRadius + 16;
+    textY = dividerY + 22;
+    captionY = textY + 22;
+    dotsY = screenH - 12;
 }
 
 void display_tick()
@@ -228,7 +351,7 @@ void display_tick()
         float openness = alarmFlashOn ? 1.0f : 0.15f;
         if (mood != lastDrawnMood || fabsf(openness - lastEyeOpenness) > 0.02f)
         {
-            drawNormalEyes(openness, TFT_RED);
+            drawNormalEyes(openness, TFT_RED, false);
             lastDrawnMood = mood;
             lastEyeOpenness = openness;
         }
@@ -290,7 +413,7 @@ void display_tick()
         }
         if (mood != lastDrawnMood || fabsf(openness - lastEyeOpenness) > 0.02f)
         {
-            drawNormalEyes(openness, TFT_CYAN);
+            drawNormalEyes(openness, TFT_CYAN, true);
             lastDrawnMood = mood;
             lastEyeOpenness = openness;
         }
