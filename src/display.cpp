@@ -4,6 +4,7 @@
 #include "display.h"
 #include "state.h"
 #include "pins.h"
+#include "config.h"
 #include "weather.h"
 
 static TFT_eSPI tft = TFT_eSPI();
@@ -61,6 +62,16 @@ static bool readTimeSynced()
     xSemaphoreGive(g_stateMutex);
     return t;
 }
+
+static bool readPortalActive()
+{
+    xSemaphoreTake(g_stateMutex, portMAX_DELAY);
+    bool p = g_state.wifiPortalActive;
+    xSemaphoreGive(g_stateMutex);
+    return p;
+}
+
+static bool portalScreenShown = false;
 
 static void readWeather(bool &valid, float &tempC, int &code)
 {
@@ -179,6 +190,33 @@ void display_tick()
     Mood mood = readMood();
     DisplayMode mode = readDisplayMode();
     bool timeSynced = readTimeSynced();
+
+    // While the WiFi setup portal is open, show how to join it instead of the face.
+    if (readPortalActive())
+    {
+        if (!portalScreenShown)
+        {
+            tft.fillScreen(TFT_BLACK);
+            tft.setTextDatum(MC_DATUM);
+            tft.setTextColor(TFT_WHITE, TFT_BLACK);
+            tft.drawString("WiFi setup", screenW / 2, screenH / 4, 2);
+            tft.drawString("Join WiFi:", screenW / 2, screenH / 2 - 10, 2);
+            tft.setTextColor(TFT_CYAN, TFT_BLACK);
+            tft.drawString(WIFI_PORTAL_AP_NAME, screenW / 2, screenH / 2 + 14, 4);
+            portalScreenShown = true;
+        }
+        return;
+    }
+    if (portalScreenShown)
+    {
+        // Portal closed: wipe the screen and force everything to redraw.
+        tft.fillScreen(TFT_BLACK);
+        portalScreenShown = false;
+        lastDrawnMood = static_cast<Mood>(-1);
+        lastEyeOpenness = -1.0f;
+        lastDrawnMode = static_cast<DisplayMode>(-1);
+        lastInfoText[0] = '\0';
+    }
 
     if (mood == Mood::ALARM_ALERT)
     {

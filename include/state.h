@@ -26,6 +26,7 @@ struct AppState
     DisplayMode displayMode = DisplayMode::CLOCK;
     bool alarmActive = false;
     bool timeSynced = false;
+    bool wifiPortalActive = false; // WiFiManager setup portal is open (real hardware)
 
     // Weather cache, refreshed periodically by weather_tick()
     bool weatherValid = false;
