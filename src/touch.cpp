@@ -3,6 +3,7 @@
 #include "pins.h"
 #include "config.h"
 #include "state.h"
+#include "audio.h"
 
 // Each button wires one leg to its GPIO and the other leg to GND.
 // INPUT_PULLUP holds the pin HIGH when idle, so a press reads LOW.
@@ -45,12 +46,18 @@ static bool pollPressEdge(DebouncedButton &btn)
 // with the alarm button instead, so it can't be "pet" into silence.
 static void triggerPetHappy()
 {
+    bool petted = false;
     xSemaphoreTake(g_stateMutex, portMAX_DELAY);
     if (g_state.mood != Mood::ALARM_ALERT)
     {
         g_state.mood = Mood::PET_HAPPY;
+        petted = true;
     }
     xSemaphoreGive(g_stateMutex);
+
+    // Sound is sent outside the mutex; skipped while an alarm is ringing.
+    if (petted)
+        audio_play(SOUND_INDEX_PET);
 }
 
 static void cycleDisplayMode()

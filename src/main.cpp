@@ -7,6 +7,7 @@
 #include "servo_ctrl.h"
 #include "time_sync.h"
 #include "weather.h"
+#include "audio.h"
 
 AppState g_state;
 SemaphoreHandle_t g_stateMutex;
@@ -77,6 +78,7 @@ void setup()
     Serial.begin(115200);
 
     g_stateMutex = xSemaphoreCreateMutex();
+    audio_init();
 
     // Pinned to core 1 (app core) to leave core 0 free for WiFi/BT stack.
     xTaskCreatePinnedToCore(displayTask, "display", 6144, nullptr, 2, nullptr, 1);
