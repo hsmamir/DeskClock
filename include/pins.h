@@ -10,7 +10,7 @@
 // ---- Buttons (mechanical microswitches, wired GPIO -> switch -> GND, INPUT_PULLUP) ----
 #define TOUCH_PET_PIN 32   // btn 1: pet/react
 #define TOUCH_MODE_PIN 33  // btn 2: switch display mode
-#define TOUCH_ALARM_PIN 27 // btn 3: snooze / confirm / manual trigger
+#define TOUCH_ALARM_PIN 27 // btn 3: snooze the ringing alarm
 
 // ---- Servo ----
 #define SERVO_PIN 13 // PWM-capable, avoid strapping pins (0,2,5,12,15)

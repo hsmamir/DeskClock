@@ -40,8 +40,16 @@
 
 // File index = upload order into the module's onboard flash, starting at 1.
 // The module's K1..K5 pins play files 1..5, so the sound wired to K3 is file 3.
-// If a clip plays one off from what you expect, change SOUND_INDEX_PET.
-#define SOUND_INDEX_PET 3 // pet/touch reaction = the K3 sound
-                          // Not used yet - assign file numbers here when you add these sounds:
-                          // #define SOUND_INDEX_CLICK 1  // mode-switch click
-                          // #define SOUND_INDEX_ALARM 2  // alarm loop
+// If a clip plays one off from what you expect, change the index below.
+#define SOUND_INDEX_PET 3   // pet/touch reaction = the K3 sound
+#define SOUND_INDEX_ALARM 2 // alarm tone — played on repeat while the alarm rings
+                            // Not used yet - assign a file number here when you add it:
+                            // #define SOUND_INDEX_CLICK 1  // mode-switch click
+
+// ---- Alarm ----
+#define ALARM_ENABLED 1      // 0 = never ring
+#define ALARM_HOUR 7         // 0-23, local time (see GMT_OFFSET_SEC)
+#define ALARM_MINUTE 30      // 0-59
+#define ALARM_SNOOZE_MIN 5   // alarm button while ringing = silence for this long, then ring again
+#define ALARM_AUTO_OFF_MIN 3 // nobody pressed anything: stop by itself after this long
+                             // (no more rings until the next day's alarm time)

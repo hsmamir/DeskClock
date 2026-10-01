@@ -4,6 +4,7 @@
 #include "config.h"
 #include "state.h"
 #include "audio.h"
+#include "alarm_ctrl.h"
 
 // Each button wires one leg to its GPIO and the other leg to GND.
 // INPUT_PULLUP holds the pin HIGH when idle, so a press reads LOW.
@@ -78,21 +79,16 @@ static void cycleDisplayMode()
     xSemaphoreGive(g_stateMutex);
 }
 
-// If an alarm is ringing, this snoozes/confirms it. Otherwise it's a manual
-// test trigger, useful on the bench before a real alarm scheduler exists.
+// Snoozes the alarm if it is ringing; otherwise does nothing. The alarm task
+// owns the actual snooze timing — this only passes the request along.
 static void handleAlarmButton()
 {
     xSemaphoreTake(g_stateMutex, portMAX_DELAY);
-    if (g_state.alarmActive)
-    {
-        g_state.alarmActive = false;
-    }
-    else
-    {
-        g_state.alarmActive = true;
-        g_state.mood = Mood::ALARM_ALERT;
-    }
+    bool ringing = g_state.alarmActive;
     xSemaphoreGive(g_stateMutex);
+
+    if (ringing)
+        alarm_request_snooze();
 }
 
 void touch_init()

@@ -8,5 +8,5 @@ void touch_init();
 // Detects debounced press edges on each button and updates g_state:
 //   TOUCH_PET_PIN   -> Mood::PET_HAPPY (+ triggers servo pet pattern)
 //   TOUCH_MODE_PIN  -> cycles g_state.displayMode
-//   TOUCH_ALARM_PIN -> clears g_state.alarmActive
+//   TOUCH_ALARM_PIN -> snoozes a ringing alarm (no effect when it isn't ringing)
 void touch_tick();

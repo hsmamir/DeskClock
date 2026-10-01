@@ -31,6 +31,22 @@ void audio_play(uint16_t fileIndex)
     sendCommand(0x03, args, 2);
 }
 
+void audio_play_loop(uint16_t fileIndex)
+{
+    uint8_t mode = 2; // loop mode 2 = repeat the current file forever
+    sendCommand(0x11, &mode, 1);
+    delay(50); // give the module time to apply the mode before the play command
+    audio_play(fileIndex);
+}
+
+void audio_stop()
+{
+    sendCommand(0x0E, nullptr, 0); // pause
+    delay(50);
+    uint8_t mode = 4; // back to "play once, then stop" for pet sounds etc.
+    sendCommand(0x11, &mode, 1);
+}
+
 void audio_init()
 {
     Serial2.begin(AUDIO_BAUD, SERIAL_8N1, JQ6500_RX_PIN, JQ6500_TX_PIN);

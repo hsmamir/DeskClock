@@ -8,6 +8,7 @@
 #include "time_sync.h"
 #include "weather.h"
 #include "audio.h"
+#include "alarm_ctrl.h"
 
 AppState g_state;
 SemaphoreHandle_t g_stateMutex;
@@ -73,6 +74,16 @@ static void weatherTask(void *pvParameters)
     }
 }
 
+static void alarmTask(void *pvParameters)
+{
+    const TickType_t tickDelay = pdMS_TO_TICKS(200);
+    for (;;)
+    {
+        alarm_tick();
+        vTaskDelay(tickDelay);
+    }
+}
+
 void setup()
 {
     Serial.begin(115200);
@@ -84,6 +95,7 @@ void setup()
     xTaskCreatePinnedToCore(displayTask, "display", 8192, nullptr, 2, nullptr, 1);
     xTaskCreatePinnedToCore(touchTask, "touch", 2048, nullptr, 3, nullptr, 1);
     xTaskCreatePinnedToCore(servoTask, "servo", 2048, nullptr, 2, nullptr, 1);
+    xTaskCreatePinnedToCore(alarmTask, "alarm", 4096, nullptr, 2, nullptr, 1);
     xTaskCreatePinnedToCore(timeTask, "time", 8192, nullptr, 1, nullptr, 0);
     xTaskCreatePinnedToCore(weatherTask, "weather", 10240, nullptr, 1, nullptr, 0);
 }
