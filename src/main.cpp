@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <esp_system.h>
 #include "pins.h"
 #include "config.h"
 #include "state.h"
@@ -14,6 +15,51 @@
 
 AppState g_state;
 SemaphoreHandle_t g_stateMutex;
+
+// ---- Reset reason (printed once per boot, to find out why it restarted) ----
+
+static void logResetReason()
+{
+    esp_reset_reason_t r = esp_reset_reason();
+    const char *name;
+    switch (r)
+    {
+    case ESP_RST_POWERON:
+        name = "POWERON (power applied)";
+        break;
+    case ESP_RST_EXT:
+        name = "EXT (reset pin)";
+        break;
+    case ESP_RST_SW:
+        name = "SW (esp_restart)";
+        break;
+    case ESP_RST_PANIC:
+        name = "PANIC (crash / exception)";
+        break;
+    case ESP_RST_INT_WDT:
+        name = "INT_WDT (interrupt watchdog)";
+        break;
+    case ESP_RST_TASK_WDT:
+        name = "TASK_WDT (task watchdog)";
+        break;
+    case ESP_RST_WDT:
+        name = "WDT (other watchdog)";
+        break;
+    case ESP_RST_DEEPSLEEP:
+        name = "DEEPSLEEP (wake from deep sleep)";
+        break;
+    case ESP_RST_BROWNOUT:
+        name = "BROWNOUT (supply voltage dipped - check power / servo / audio load)";
+        break;
+    case ESP_RST_SDIO:
+        name = "SDIO";
+        break;
+    default:
+        name = "UNKNOWN";
+        break;
+    }
+    Serial.printf("Reset reason: %s [%d]\n", name, (int)r);
+}
 
 // ---- Task functions ----
 
@@ -100,9 +146,11 @@ static void webTask(void *pvParameters)
 void setup()
 {
     Serial.begin(115200);
+    logResetReason();
 
     g_stateMutex = xSemaphoreCreateMutex();
-    settings_init(); // load NVS settings + apply timezone before any task reads them
+    settings_init();           // load NVS settings + apply timezone before any task reads them
+    time_restore_from_flash(); // approximate clock from flash so the alarm works before/without WiFi
     audio_init();
 
     // Pinned to core 1 (app core) to leave core 0 free for WiFi/BT stack.

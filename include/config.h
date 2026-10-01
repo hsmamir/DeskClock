@@ -97,3 +97,16 @@ static inline bool isNightHour(int hour)
         return hour >= NIGHT_START_HOUR && hour < NIGHT_END_HOUR;
     return hour >= NIGHT_START_HOUR || hour < NIGHT_END_HOUR; // crosses midnight
 }
+
+// ---- Time persistence (power loss / reset without WiFi) ----
+// The last valid time is saved to flash this often. After a reset the clock
+// restarts from that saved time (so the alarm still works offline) and is
+// corrected by NTP as soon as WiFi is back. While running on the saved time
+// the clock is BEHIND by (power-off duration + up to one save interval).
+#define TIME_SAVE_INTERVAL_MS (10UL * 60 * 1000) // 10 min
+#define TIME_MIN_VALID_EPOCH 1577836800UL        // 2020-01-01: anything older is "no time"
+
+// ---- Servo ----
+// After each movement the servo gets this long to reach its position, then it
+// is detached (no holding current, no buzzing) until the next movement.
+#define SERVO_SETTLE_MS 400

@@ -25,7 +25,8 @@ struct AppState
     Mood mood = Mood::IDLE_BLINK;
     DisplayMode displayMode = DisplayMode::CLOCK;
     bool alarmActive = false;
-    bool timeSynced = false;
+    bool timeSynced = false;       // clock holds a usable time (NTP, or restored from flash)
+    bool timeApprox = false;       // ...but it came from flash, not NTP yet (may be behind)
     bool wifiPortalActive = false; // WiFiManager setup portal is open (real hardware)
 
     // Weather cache, refreshed periodically by weather_tick()
