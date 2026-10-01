@@ -81,7 +81,7 @@ void setup()
     audio_init();
 
     // Pinned to core 1 (app core) to leave core 0 free for WiFi/BT stack.
-    xTaskCreatePinnedToCore(displayTask, "display", 6144, nullptr, 2, nullptr, 1);
+    xTaskCreatePinnedToCore(displayTask, "display", 8192, nullptr, 2, nullptr, 1);
     xTaskCreatePinnedToCore(touchTask, "touch", 2048, nullptr, 3, nullptr, 1);
     xTaskCreatePinnedToCore(servoTask, "servo", 2048, nullptr, 2, nullptr, 1);
     xTaskCreatePinnedToCore(timeTask, "time", 8192, nullptr, 1, nullptr, 0);
