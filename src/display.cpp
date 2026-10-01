@@ -835,17 +835,56 @@ static void drawPortalScreen()
 }
 
 // =====================================================================
+//  Backlight (PWM) — dimmed at night, full during the day / alarm / setup
+// =====================================================================
+static uint8_t blDuty = BACKLIGHT_DAY;
+
+static void backlightWrite(uint8_t duty)
+{
+    blDuty = duty;
+#if defined(ESP_ARDUINO_VERSION_MAJOR) && ESP_ARDUINO_VERSION_MAJOR >= 3
+    ledcWrite(TFT_BL_PIN, duty); // core 3.x: addressed by pin
+#else
+    ledcWrite(BACKLIGHT_PWM_CHANNEL, duty); // core 2.x: addressed by channel
+#endif
+}
+
+static void backlightInit()
+{
+#if defined(ESP_ARDUINO_VERSION_MAJOR) && ESP_ARDUINO_VERSION_MAJOR >= 3
+    ledcAttach(TFT_BL_PIN, BACKLIGHT_PWM_FREQ, BACKLIGHT_PWM_BITS);
+#else
+    ledcSetup(BACKLIGHT_PWM_CHANNEL, BACKLIGHT_PWM_FREQ, BACKLIGHT_PWM_BITS);
+    ledcAttachPin(TFT_BL_PIN, BACKLIGHT_PWM_CHANNEL);
+#endif
+    backlightWrite(BACKLIGHT_DAY); // clock unknown at boot -> start fully lit
+}
+
+// Moves the duty toward `target` a little each frame (smooth fade).
+// jump = true goes there at once (alarm: must be bright immediately).
+static void backlightUpdate(uint8_t target, bool jump)
+{
+    if (blDuty == target)
+        return;
+    if (jump)
+    {
+        backlightWrite(target);
+        return;
+    }
+    int next = (int)blDuty + (target > blDuty ? BACKLIGHT_FADE_STEP : -BACKLIGHT_FADE_STEP);
+    if ((target > blDuty && next > target) || (target < blDuty && next < target))
+        next = target;
+    backlightWrite((uint8_t)next);
+}
+
+// =====================================================================
 //  Public API
 // =====================================================================
 
 void display_init()
 {
-    // NOTE: PWM dimming via LEDC removed for now — the ledc API differs
-    // between arduino-esp32 core versions (ledcAttach vs ledcSetup+
-    // ledcAttachPin) and isn't worth pinning down until the core version
-    // is fixed. Backlight is just full-on here.
-    pinMode(TFT_BL_PIN, OUTPUT);
-    digitalWrite(TFT_BL_PIN, HIGH);
+    // Backlight on LEDC PWM (see backlightInit): dims at night, see display_tick.
+    backlightInit();
 
     tft.init();
     tft.setRotation(0);
@@ -875,6 +914,7 @@ void display_tick()
     // While the WiFi setup portal is open, show how to join it instead of the face.
     if (readPortalActive())
     {
+        backlightUpdate(BACKLIGHT_DAY, true); // setup screen must always be readable
         if (!portalScreenShown)
         {
             drawPortalScreen();
@@ -893,7 +933,11 @@ void display_tick()
     bool haveTime = timeSynced && getLocalTime(&ti, 0);
 
     bool alarm = (mood == Mood::ALARM_ALERT);
-    bool sleepy = haveTime && ti.tm_hour < 6 && !alarm;
+    bool night = haveTime && isNightHour(ti.tm_hour);
+    bool sleepy = night && !alarm;
+
+    // Dim at night; an alarm always gets full brightness, immediately.
+    backlightUpdate((night && !alarm) ? BACKLIGHT_NIGHT : BACKLIGHT_DAY, alarm);
 
     // petted: hold the happy face for a while even after the servo finishes
     if (mood == Mood::PET_HAPPY && prevMood != Mood::PET_HAPPY)

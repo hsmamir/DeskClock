@@ -69,3 +69,31 @@
 #define ALARM_SNOOZE_MIN 5   // alarm button while ringing = silence for this long, then ring again
 #define ALARM_AUTO_OFF_MIN 3 // nobody pressed anything: stop by itself after this long
                              // (no more rings until the next day's alarm time)
+
+// ---- Night mode ----
+// Between NIGHT_START_HOUR (inclusive) and NIGHT_END_HOUR (exclusive), local
+// time, the backlight is dimmed with PWM and the pet sound is muted. The alarm
+// is NOT affected: it always rings at the saved volume and full brightness.
+// A window that crosses midnight works too (e.g. start 23, end 6).
+#define NIGHT_START_HOUR 0 // 00:00
+#define NIGHT_END_HOUR 6   // up to 05:59
+
+#define BACKLIGHT_DAY 255     // 0-255 duty
+#define BACKLIGHT_NIGHT 20    // 0-255 duty; raise it if the screen is too dark at night
+#define BACKLIGHT_FADE_STEP 4 // duty change per display frame (~30 fps) -> smooth fade
+
+#define BACKLIGHT_PWM_FREQ 5000 // Hz, well above visible flicker
+#define BACKLIGHT_PWM_BITS 8
+#define BACKLIGHT_PWM_CHANNEL 8 // only used on arduino-esp32 2.x (ledcSetup); 3.x picks its own.
+                                // 8 = low-speed group, so it never shares a timer with the servo (50 Hz)
+
+// Pet sound volume at night, 0-30. 0 = completely silent (no command is sent).
+// Any other value is capped to the saved volume.
+#define AUDIO_NIGHT_PET_VOLUME 0
+
+static inline bool isNightHour(int hour)
+{
+    if (NIGHT_START_HOUR <= NIGHT_END_HOUR)
+        return hour >= NIGHT_START_HOUR && hour < NIGHT_END_HOUR;
+    return hour >= NIGHT_START_HOUR || hour < NIGHT_END_HOUR; // crosses midnight
+}

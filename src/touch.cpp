@@ -57,8 +57,9 @@ static void triggerPetHappy()
     xSemaphoreGive(g_stateMutex);
 
     // Sound is sent outside the mutex; skipped while an alarm is ringing.
+    // audio_play_gentle() stays quiet (or muted) during the night window.
     if (petted)
-        audio_play(SOUND_INDEX_PET);
+        audio_play_gentle(SOUND_INDEX_PET);
 }
 
 static void cycleDisplayMode()

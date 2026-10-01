@@ -1,8 +1,33 @@
 #include <Arduino.h>
+#include <time.h>
 #include "audio.h"
 #include "pins.h"
 #include "config.h"
 #include "settings.h"
+#include "state.h"
+
+// Several tasks talk to the module (touch, alarm, web). Each public call is a
+// multi-step sequence (volume -> delay -> play), so it is guarded by a mutex
+// to keep two sequences from interleaving on the UART.
+static SemaphoreHandle_t s_audioMutex = nullptr;
+
+struct AudioLock
+{
+    AudioLock()
+    {
+        if (s_audioMutex)
+            xSemaphoreTake(s_audioMutex, portMAX_DELAY);
+    }
+    ~AudioLock()
+    {
+        if (s_audioMutex)
+            xSemaphoreGive(s_audioMutex);
+    }
+};
+
+// Volume the module currently has (-1 = unknown). Lets us skip redundant
+// volume commands and the settle delay that goes with them.
+static int s_curVolume = -1;
 
 // JQ6500 serial frame: 0x7E, LEN, CMD, [args...], 0xEF
 // LEN counts itself + CMD + args (so a command with n args has LEN = n + 2).
@@ -19,29 +44,95 @@ static void sendCommand(uint8_t cmd, const uint8_t *args, uint8_t argCount)
     Serial2.write(buf, n); // one write = one whole frame
 }
 
-void audio_set_volume(uint8_t volume)
+// ---- Internal helpers (caller already holds the lock) ----
+
+static void sendVolume(uint8_t volume)
 {
     if (volume > 30)
         volume = 30;
     sendCommand(0x06, &volume, 1);
+    s_curVolume = volume;
 }
 
-void audio_play(uint16_t fileIndex)
+// Only touches the module when the level really changes; waits a moment so
+// the following play command isn't swallowed.
+static void ensureVolume(uint8_t volume)
+{
+    if (volume > 30)
+        volume = 30;
+    if (s_curVolume == (int)volume)
+        return;
+    sendVolume(volume);
+    delay(30);
+}
+
+static void sendPlay(uint16_t fileIndex)
 {
     uint8_t args[2] = {(uint8_t)(fileIndex >> 8), (uint8_t)(fileIndex & 0xFF)};
     sendCommand(0x03, args, 2);
 }
 
+static bool isNightNow()
+{
+    xSemaphoreTake(g_stateMutex, portMAX_DELAY);
+    bool synced = g_state.timeSynced;
+    xSemaphoreGive(g_stateMutex);
+
+    struct tm ti;
+    if (!synced || !getLocalTime(&ti, 0))
+        return false; // clock unknown -> behave like daytime
+    return isNightHour(ti.tm_hour);
+}
+
+// ---- Public API ----
+
+void audio_set_volume(uint8_t volume)
+{
+    AudioLock lock;
+    sendVolume(volume);
+}
+
+void audio_play(uint16_t fileIndex)
+{
+    AudioLock lock;
+    sendPlay(fileIndex);
+}
+
+void audio_play_gentle(uint16_t fileIndex)
+{
+    uint8_t volume = (uint8_t)settings_get().volume;
+
+    if (isNightNow())
+    {
+        if (AUDIO_NIGHT_PET_VOLUME <= 0)
+            return; // night + muted: don't make a sound at all
+        if (volume > AUDIO_NIGHT_PET_VOLUME)
+            volume = AUDIO_NIGHT_PET_VOLUME;
+    }
+
+    AudioLock lock;
+    ensureVolume(volume);
+    sendPlay(fileIndex);
+}
+
+// The alarm always plays at the saved volume, whatever the time of day and
+// whatever level the module was left at by a night-time pet sound or a web
+// page volume preview.
 void audio_play_loop(uint16_t fileIndex)
 {
+    uint8_t full = (uint8_t)settings_get().volume;
+
+    AudioLock lock;
+    ensureVolume(full);
     uint8_t mode = 2; // loop mode 2 = repeat the current file forever
     sendCommand(0x11, &mode, 1);
     delay(50); // give the module time to apply the mode before the play command
-    audio_play(fileIndex);
+    sendPlay(fileIndex);
 }
 
 void audio_stop()
 {
+    AudioLock lock;
     sendCommand(0x0E, nullptr, 0); // pause
     delay(50);
     uint8_t mode = 4; // back to "play once, then stop" for pet sounds etc.
@@ -50,6 +141,8 @@ void audio_stop()
 
 void audio_init()
 {
+    s_audioMutex = xSemaphoreCreateMutex();
+
     Serial2.begin(AUDIO_BAUD, SERIAL_8N1, JQ6500_RX_PIN, JQ6500_TX_PIN);
     delay(300); // let the module finish booting before the first command
 
@@ -57,6 +150,7 @@ void audio_init()
 
     // Loop mode 4 = play the selected file once and stop. Without this the
     // module carries on playing file 4, 5, ... after the chosen one ends.
+    AudioLock lock;
     uint8_t mode = 4;
     sendCommand(0x11, &mode, 1);
 }
