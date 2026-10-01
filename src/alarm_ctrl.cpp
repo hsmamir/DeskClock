@@ -3,6 +3,7 @@
 #include "alarm_ctrl.h"
 #include "audio.h"
 #include "config.h"
+#include "settings.h"
 #include "state.h"
 
 enum class AlarmPhase
@@ -66,12 +67,15 @@ void alarm_tick()
     {
     case AlarmPhase::WAITING:
     {
-#if ALARM_ENABLED
+        Settings cfg = settings_get();
+        if (!cfg.alarmEnabled)
+            break;
+
         struct tm ti;
         if (!readTimeSynced() || !getLocalTime(&ti, 0))
             break; // no valid clock yet — can't schedule
 
-        if (ti.tm_hour == ALARM_HOUR && ti.tm_min == ALARM_MINUTE)
+        if (ti.tm_hour == cfg.alarmHour && ti.tm_min == cfg.alarmMinute)
         {
             // Unique per calendar day + minute. Once fired, this exact minute
             // can't fire again — even after a snooze/auto-off inside it.
@@ -83,7 +87,6 @@ void alarm_tick()
                 startRinging(now);
             }
         }
-#endif
         break;
     }
 

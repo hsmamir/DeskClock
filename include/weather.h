@@ -10,5 +10,10 @@ void weather_init();
 // success; leaves the previous cached reading in place on failure.
 void weather_tick();
 
+// Call after the location changed: drops the old city's reading (so the TFT
+// never shows another city's temperature) and fetches the new one on the
+// next weather_tick().
+void weather_refresh_now();
+
 // Maps an Open-Meteo WMO weather code to a short label for the TFT.
 const char *weather_code_to_label(int code);

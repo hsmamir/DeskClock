@@ -2,6 +2,7 @@
 #include "audio.h"
 #include "pins.h"
 #include "config.h"
+#include "settings.h"
 
 // JQ6500 serial frame: 0x7E, LEN, CMD, [args...], 0xEF
 // LEN counts itself + CMD + args (so a command with n args has LEN = n + 2).
@@ -52,7 +53,7 @@ void audio_init()
     Serial2.begin(AUDIO_BAUD, SERIAL_8N1, JQ6500_RX_PIN, JQ6500_TX_PIN);
     delay(300); // let the module finish booting before the first command
 
-    audio_set_volume(AUDIO_VOLUME);
+    audio_set_volume((uint8_t)settings_get().volume);
 
     // Loop mode 4 = play the selected file once and stop. Without this the
     // module carries on playing file 4, 5, ... after the chosen one ends.

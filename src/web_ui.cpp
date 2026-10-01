@@ -1,0 +1,210 @@
+#include <Arduino.h>
+#include <WiFi.h>
+#include <WebServer.h>
+#include <ESPmDNS.h>
+#include <ArduinoJson.h>
+#include <string.h>
+#include <time.h>
+#include "web_ui.h"
+#include "web_page.h"
+#include "settings.h"
+#include "audio.h"
+#include "weather.h"
+#include "config.h"
+
+static WebServer server(80);
+static bool s_serverStarted = false;
+static bool s_mdnsStarted = false;
+static bool s_wasConnected = false;
+
+// A volume preview from the test button is temporary: a few seconds later
+// the saved volume is put back, so "tried it, didn't save" can't leave the
+// module at a different level than the one in flash.
+static bool s_restoreVolume = false;
+static uint32_t s_restoreAtMs = 0;
+static const uint32_t PREVIEW_MS = 4000;
+
+// Optional HTTP Basic auth (user "admin"); off while WEB_UI_PASSWORD is "".
+static bool authorized()
+{
+    if (sizeof(WEB_UI_PASSWORD) <= 1)
+        return true;
+    if (server.authenticate("admin", WEB_UI_PASSWORD))
+        return true;
+    server.requestAuthentication();
+    return false;
+}
+
+static void sendJson(int code, const JsonDocument &doc)
+{
+    String out;
+    serializeJson(doc, out);
+    server.send(code, "application/json", out);
+}
+
+static void sendError(int code, const char *msg)
+{
+    JsonDocument d;
+    d["error"] = msg;
+    sendJson(code, d);
+}
+
+static void sendSettings(int code)
+{
+    Settings s = settings_get();
+    JsonDocument d;
+    d["alarmEnabled"] = s.alarmEnabled;
+    d["alarmHour"] = s.alarmHour;
+    d["alarmMinute"] = s.alarmMinute;
+    d["volume"] = s.volume;
+    d["latitude"] = s.latitude;
+    d["longitude"] = s.longitude;
+    d["city"] = s.city;
+    d["tzName"] = s.tzName;
+    d["tzPosix"] = s.tzPosix;
+
+    struct tm ti;
+    if (getLocalTime(&ti, 0))
+    {
+        char buf[24];
+        strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M", &ti);
+        d["time"] = buf;
+    }
+    sendJson(code, d);
+}
+
+static void copyString(char *dst, size_t cap, JsonVariantConst v)
+{
+    if (v.is<const char *>())
+        strlcpy(dst, v.as<const char *>(), cap);
+}
+
+static void handleGetSettings()
+{
+    if (!authorized())
+        return;
+    sendSettings(200);
+}
+
+static void handlePostSettings()
+{
+    if (!authorized())
+        return;
+
+    // Browsers send a cross-site POST without a preflight only for "simple"
+    // content types. Insisting on JSON means a random web page can't change
+    // the settings behind your back.
+    if (!server.header("Content-Type").startsWith("application/json"))
+    {
+        sendError(415, "send application/json");
+        return;
+    }
+
+    JsonDocument doc;
+    if (deserializeJson(doc, server.arg("plain")) != DeserializationError::Ok)
+    {
+        sendError(400, "bad JSON");
+        return;
+    }
+
+    // Start from the current values so a partial update keeps the rest.
+    Settings old = settings_get();
+    Settings s = old;
+    s.alarmEnabled = doc["alarmEnabled"] | old.alarmEnabled;
+    s.alarmHour = doc["alarmHour"] | old.alarmHour;
+    s.alarmMinute = doc["alarmMinute"] | old.alarmMinute;
+    s.volume = doc["volume"] | old.volume;
+    s.latitude = doc["latitude"] | old.latitude;
+    s.longitude = doc["longitude"] | old.longitude;
+    copyString(s.city, sizeof(s.city), doc["city"]);
+    copyString(s.tzName, sizeof(s.tzName), doc["tzName"]);
+    copyString(s.tzPosix, sizeof(s.tzPosix), doc["tzPosix"]);
+
+    const char *err = "invalid settings";
+    if (!settings_update(s, &err))
+    {
+        sendError(400, err);
+        return;
+    }
+
+    s_restoreVolume = false; // the saved value is now the real one
+    if (s.volume != old.volume)
+        audio_set_volume((uint8_t)s.volume);
+    if (s.latitude != old.latitude || s.longitude != old.longitude)
+        weather_refresh_now();
+
+    sendSettings(200);
+}
+
+static void handleTestSound()
+{
+    if (!authorized())
+        return;
+    int v = server.hasArg("volume") ? server.arg("volume").toInt() : settings_get().volume;
+    if (v < 0)
+        v = 0;
+    if (v > 30)
+        v = 30;
+    audio_set_volume((uint8_t)v);
+    audio_play(SOUND_INDEX_PET);
+    s_restoreVolume = true;
+    s_restoreAtMs = millis() + PREVIEW_MS;
+    server.send(200, "application/json", "{\"ok\":true}");
+}
+
+static void handleRoot()
+{
+    if (!authorized())
+        return;
+    server.send_P(200, "text/html; charset=utf-8", PAGE_HTML);
+}
+
+static void startServer()
+{
+    // needed so handlePostSettings() can read the Content-Type header
+    static const char *keys[] = {"Content-Type"};
+    server.collectHeaders(keys, 1);
+
+    server.on("/", HTTP_GET, handleRoot);
+    server.on("/api/settings", HTTP_GET, handleGetSettings);
+    server.on("/api/settings", HTTP_POST, handlePostSettings);
+    server.on("/api/test-sound", HTTP_POST, handleTestSound);
+    server.onNotFound([]()
+                      { server.send(404, "text/plain", "not found"); });
+    server.begin();
+    s_serverStarted = true;
+}
+
+static void startMdns()
+{
+    if (s_mdnsStarted)
+        MDNS.end();
+    s_mdnsStarted = MDNS.begin(WEB_HOSTNAME);
+    if (s_mdnsStarted)
+        MDNS.addService("http", "tcp", 80);
+}
+
+void web_ui_tick()
+{
+    bool connected = WiFi.status() == WL_CONNECTED;
+
+    if (connected && !s_wasConnected)
+    {
+        // First connection, or WiFi came back: (re)announce the .local name.
+        startMdns();
+        if (!s_serverStarted)
+            startServer();
+        Serial.printf("Settings page: http://%s.local/  (http://%s/)\n",
+                      WEB_HOSTNAME, WiFi.localIP().toString().c_str());
+    }
+    s_wasConnected = connected;
+
+    if (s_serverStarted)
+        server.handleClient();
+
+    if (s_restoreVolume && (int32_t)(millis() - s_restoreAtMs) >= 0)
+    {
+        s_restoreVolume = false;
+        audio_set_volume((uint8_t)settings_get().volume);
+    }
+}

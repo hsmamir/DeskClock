@@ -4,6 +4,7 @@
 #include "config.h"
 #include "pins.h"
 #include "state.h"
+#include "settings.h"
 
 #ifndef USE_WOKWI_WIFI
 #include <WiFiManager.h>
@@ -28,7 +29,9 @@ static bool readTimeSynced()
 
 static void syncTime()
 {
-    configTime(GMT_OFFSET_SEC, DST_OFFSET_SEC, NTP_SERVER);
+    // POSIX TZ rule (incl. DST) from settings; configTzTime sets TZ and starts SNTP.
+    Settings cfg = settings_get();
+    configTzTime(cfg.tzPosix, NTP_SERVER);
     struct tm timeinfo;
     if (getLocalTime(&timeinfo, 10000))
     {

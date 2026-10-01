@@ -16,9 +16,22 @@
 
 // ---- NTP ----
 #define NTP_SERVER "pool.ntp.org"
-#define GMT_OFFSET_SEC (3 * 3600 + 1800) // Iran Standard Time, UTC+3:30
-#define DST_OFFSET_SEC 0
 #define NTP_RESYNC_INTERVAL_MS (6UL * 60 * 60 * 1000) // resync every 6h
+
+// ---- Settings page (web_ui.cpp) ----
+// Open http://deskclock.local/ from a phone on the same WiFi to change the
+// alarm time, volume, city and timezone. The values below (alarm, volume,
+// city/coordinates, timezone) are only the FACTORY DEFAULTS: once you save
+// something from the page, the saved value in flash wins.
+#define WEB_HOSTNAME "deskclock" // -> deskclock.local
+#define WEB_UI_PASSWORD ""       // "" = open to anyone on your WiFi; otherwise HTTP
+                                 // Basic auth with user "admin" and this password
+
+// Default timezone: POSIX rule, so DST is handled automatically. Iran has had
+// no DST since 2022, hence a fixed +3:30. Other examples:
+//   Germany  "CET-1CEST,M3.5.0,M10.5.0/3"     US Eastern "EST5EDT,M3.2.0,M11.1.0"
+#define DEFAULT_TZ_NAME "Asia-Tehran" // id used by the web page's dropdown
+#define DEFAULT_TZ_POSIX "<+0330>-3:30"
 
 // ---- Button debounce (mechanical microswitch contact bounce) ----
 #define TOUCH_DEBOUNCE_MS 50
@@ -29,14 +42,15 @@
 #define SERVO_ALERT_ANGLE 60
 
 // ---- Weather (Open-Meteo — free, no API key) ----
-// Set to your city's coordinates: https://open-meteo.com/en/docs
-#define WEATHER_LATITUDE "35.6892" // default: Tehran — change to your city
+// Default location (changeable from the settings page): Tehran
+#define WEATHER_CITY_NAME "Tehran"
+#define WEATHER_LATITUDE "35.6892"
 #define WEATHER_LONGITUDE "51.3890"
 #define WEATHER_REFRESH_INTERVAL_MS (15UL * 60 * 1000) // refresh every 15 min
 
 // ---- Audio (JQ6500-16P onboard flash, UART2 @ 9600) ----
 #define AUDIO_BAUD 9600
-#define AUDIO_VOLUME 30 // 0-30 — start low; raise once power draw is confirmed OK
+#define AUDIO_VOLUME 30 // default volume 0-30 (changeable from the settings page)
 
 // File index = upload order into the module's onboard flash, starting at 1.
 // The module's K1..K5 pins play files 1..5, so the sound wired to K3 is file 3.
@@ -47,8 +61,10 @@
                             // #define SOUND_INDEX_CLICK 1  // mode-switch click
 
 // ---- Alarm ----
+// Default alarm time (changeable from the settings page), local time of the
+// configured timezone.
 #define ALARM_ENABLED 1      // 0 = never ring
-#define ALARM_HOUR 7         // 0-23, local time (see GMT_OFFSET_SEC)
+#define ALARM_HOUR 7         // 0-23
 #define ALARM_MINUTE 30      // 0-59
 #define ALARM_SNOOZE_MIN 5   // alarm button while ringing = silence for this long, then ring again
 #define ALARM_AUTO_OFF_MIN 3 // nobody pressed anything: stop by itself after this long
