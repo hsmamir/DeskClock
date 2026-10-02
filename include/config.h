@@ -188,3 +188,29 @@ static inline bool isNightHour(int hour)
 // Must equal the --auth=... value of env:esp32dev-ota in platformio.ini.
 // CHANGE IT: "" would let anyone on your WiFi flash the clock.
 #define OTA_PASSWORD "change-me-ota"
+
+// ---- Time-of-day colour theme ----
+// Background + accent colour (clock digits, accent lines, progress bars, eyes)
+// follow the time of day and blend smoothly between four looks:
+//   night  deep blue + cyan          (the original look)
+//   dawn   warm rose + peach
+//   day    bright sky blue + sunny yellow
+//   dusk   ember + orange sunset
+// (a short lilac twilight is blended in between night and dawn / dusk and night)
+// Hours are local time, 0-24 (fractions allowed), in increasing order. Before the
+// clock knows the time the night look is used.
+#define THEME_ENABLED 1
+#define THEME_EYES 1             // 0 = keep the eyes cyan, theme only the rest
+#define THEME_NIGHT_END_H 4.5f   // deep blue until here, then it starts warming up ...
+#define THEME_DAWN_H 6.5f        // ... full dawn glow ...
+#define THEME_DAY_FROM_H 9.0f    // ... bright day from here ...
+#define THEME_DAY_TO_H 16.0f     // ... until here, then it turns ...
+#define THEME_DUSK_H 18.5f       // ... orange at sunset ...
+#define THEME_NIGHT_FROM_H 21.0f // ... and fully deep blue again from here
+
+// Preview: 1 = ignore the real time and replay a whole day in THEME_PREVIEW_DAY_MS
+// (a colour time-lapse). Use the esp32dev-themetest env in platformio.ini.
+#ifndef THEME_PREVIEW
+#define THEME_PREVIEW 0
+#endif
+#define THEME_PREVIEW_DAY_MS 48000UL

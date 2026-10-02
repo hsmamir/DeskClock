@@ -16,17 +16,20 @@ static constexpr uint16_t rgb(uint8_t r, uint8_t g, uint8_t b)
 {
     return (uint16_t)(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3));
 }
-static constexpr uint16_t C_BG = rgb(6, 9, 26); // deep night blue
+// The five colours below follow the time of day (see "Time-of-day theme" below):
+// they are variables updated by themeUpdate(). The values here are the night look,
+// which is also used until the clock knows the time.
+static uint16_t C_BG = rgb(6, 9, 26);           // background
+static uint16_t C_ACCENT = rgb(0, 225, 255);    // clock digits, accent lines, bars (was fixed cyan)
+static uint16_t C_EYE_TOP = rgb(140, 245, 255); // eye gradient, top
+static uint16_t C_EYE_BOT = rgb(0, 140, 235);   // eye gradient, bottom
+static uint16_t C_GHOST = rgb(16, 26, 52);      // unlit 7-seg segments, empty bars
 static constexpr uint16_t C_WHITE = 0xFFFF;
-static constexpr uint16_t C_CYAN = rgb(0, 225, 255);
-static constexpr uint16_t C_EYE_TOP = rgb(140, 245, 255);
-static constexpr uint16_t C_EYE_BOT = rgb(0, 140, 235);
 static constexpr uint16_t C_ALARM_TOP = rgb(255, 130, 100);
 static constexpr uint16_t C_ALARM_BOT = rgb(210, 15, 25);
 static constexpr uint16_t C_RED = rgb(255, 40, 40);
 static constexpr uint16_t C_AMBER = rgb(255, 200, 60);
 static constexpr uint16_t C_SOFT = rgb(150, 160, 190);
-static constexpr uint16_t C_GHOST = rgb(16, 26, 52); // unlit 7-seg segments
 static constexpr uint16_t C_CHEEK = rgb(255, 105, 150);
 static constexpr uint16_t C_HEART = rgb(255, 70, 115);
 static constexpr uint16_t C_ICE = rgb(170, 200, 255);
@@ -57,6 +60,107 @@ static uint16_t mixColor(uint16_t a, uint16_t b, float t)
     int g = ag + (int)((bg - ag) * t);
     int bl = ab + (int)((bb - ab) * t);
     return (uint16_t)((r << 11) | (g << 5) | bl);
+}
+
+// A colour faded toward the (themed) background: k = 0 -> background, 1 -> c.
+// Glows and fades use this instead of dimColor() (which fades toward black), so
+// they stay a soft glow on a bright day background instead of turning into dark halos.
+static inline uint16_t tint(uint16_t c, float k) { return mixColor(C_BG, c, k); }
+
+// =====================================================================
+//  Time-of-day theme
+// =====================================================================
+struct ThemeColors
+{
+    uint8_t bg[3], ghost[3], accent[3], eyeTop[3], eyeBot[3];
+};
+//                                   background      unlit segments    accent           eye top          eye bottom
+static const ThemeColors TH_NIGHT = {{6, 9, 26}, {16, 26, 52}, {0, 225, 255}, {140, 245, 255}, {0, 140, 235}};
+static const ThemeColors TH_DAWN = {{34, 14, 26}, {64, 28, 44}, {255, 170, 105}, {255, 222, 178}, {240, 105, 85}};
+static const ThemeColors TH_DAY = {{22, 62, 112}, {36, 84, 138}, {255, 238, 140}, {255, 250, 208}, {255, 185, 55}};
+static const ThemeColors TH_DUSK = {{40, 16, 14}, {74, 32, 22}, {255, 125, 40}, {255, 196, 122}, {235, 80, 30}};
+// Twilight sits between night <-> dawn and dusk <-> night. Blending cyan straight into
+// orange passes through a muddy grey; going through lilac/pink follows the real sky.
+static const ThemeColors TH_TWILIGHT = {{24, 12, 40}, {46, 26, 74}, {205, 145, 255}, {228, 195, 255}, {150, 100, 230}};
+
+struct ThemeKey
+{
+    float hour;
+    const ThemeColors *look;
+};
+// Ascending hours; before the first and after the last key it is simply night.
+// The two twilight keys sit halfway between their neighbours.
+static const ThemeKey THEME_KEYS[] = {
+    {THEME_NIGHT_END_H, &TH_NIGHT},
+    {(THEME_NIGHT_END_H + THEME_DAWN_H) / 2.0f, &TH_TWILIGHT},
+    {THEME_DAWN_H, &TH_DAWN},
+    {THEME_DAY_FROM_H, &TH_DAY},
+    {THEME_DAY_TO_H, &TH_DAY},
+    {THEME_DUSK_H, &TH_DUSK},
+    {(THEME_DUSK_H + THEME_NIGHT_FROM_H) / 2.0f, &TH_TWILIGHT},
+    {THEME_NIGHT_FROM_H, &TH_NIGHT},
+};
+static const int THEME_KEY_COUNT = sizeof(THEME_KEYS) / sizeof(THEME_KEYS[0]);
+
+// Changes whenever a themed colour changes: pages that are normally redrawn only
+// when their content changes (the date page) include it in their redraw signature.
+static uint32_t themeStamp = 0;
+
+static void lerp3(uint8_t *out, const uint8_t *a, const uint8_t *b, float t)
+{
+    for (int i = 0; i < 3; i++)
+        out[i] = (uint8_t)(a[i] + ((float)b[i] - (float)a[i]) * t + 0.5f);
+}
+
+// Recomputes the themed colours. Once a second is plenty (they drift over hours);
+// the preview time-lapse runs every frame.
+static void themeUpdate(bool haveTime, const struct tm &ti, uint32_t now)
+{
+    if (!THEME_ENABLED)
+        return;
+    static uint32_t lastSec = 0xFFFFFFFFu;
+    uint32_t sec = now / 1000;
+    if (!THEME_PREVIEW && sec == lastSec)
+        return;
+    lastSec = sec;
+
+    float hour = 0; // no time yet -> night look (the boot look)
+    if (THEME_PREVIEW)
+        hour = (float)(now % THEME_PREVIEW_DAY_MS) * 24.0f / (float)THEME_PREVIEW_DAY_MS;
+    else if (haveTime)
+        hour = ti.tm_hour + ti.tm_min / 60.0f + ti.tm_sec / 3600.0f;
+
+    ThemeColors c = TH_NIGHT;
+    if (hour > THEME_KEYS[0].hour && hour < THEME_KEYS[THEME_KEY_COUNT - 1].hour)
+    {
+        int i = 0;
+        while (i < THEME_KEY_COUNT - 2 && hour >= THEME_KEYS[i + 1].hour)
+            i++;
+        const ThemeKey &k0 = THEME_KEYS[i], &k1 = THEME_KEYS[i + 1];
+        float span = k1.hour - k0.hour;
+        float t = span > 0.01f ? (hour - k0.hour) / span : 1.0f;
+        t = t < 0 ? 0 : (t > 1 ? 1 : t);
+        t = t * t * (3.0f - 2.0f * t); // smoothstep: lingers at each look, moves in between
+        lerp3(c.bg, k0.look->bg, k1.look->bg, t);
+        lerp3(c.ghost, k0.look->ghost, k1.look->ghost, t);
+        lerp3(c.accent, k0.look->accent, k1.look->accent, t);
+        lerp3(c.eyeTop, k0.look->eyeTop, k1.look->eyeTop, t);
+        lerp3(c.eyeBot, k0.look->eyeBot, k1.look->eyeBot, t);
+    }
+
+    uint16_t bg = rgb(c.bg[0], c.bg[1], c.bg[2]);
+    uint16_t ghost = rgb(c.ghost[0], c.ghost[1], c.ghost[2]);
+    uint16_t accent = rgb(c.accent[0], c.accent[1], c.accent[2]);
+    if (bg != C_BG || ghost != C_GHOST || accent != C_ACCENT)
+        themeStamp++;
+    C_BG = bg;
+    C_GHOST = ghost;
+    C_ACCENT = accent;
+    if (THEME_EYES)
+    {
+        C_EYE_TOP = rgb(c.eyeTop[0], c.eyeTop[1], c.eyeTop[2]);
+        C_EYE_BOT = rgb(c.eyeBot[0], c.eyeBot[1], c.eyeBot[2]);
+    }
 }
 
 // ---- Off-screen canvases ----
@@ -285,8 +389,8 @@ static void drawEye(TFT_eSPI &g, int16_t cx, int16_t cy, int16_t w, int16_t full
     // soft glow halo (two dim rounded rects behind the eye)
     if (h > w / 2)
     {
-        g.fillRoundRect(cx - w / 2 - u(4), top - u(4), w + u(8), h + u(8), corner + u(4), dimColor(cTop, 26));
-        g.fillRoundRect(cx - w / 2 - u(2), top - u(2), w + u(4), h + u(4), corner + u(2), dimColor(cTop, 55));
+        g.fillRoundRect(cx - w / 2 - u(4), top - u(4), w + u(8), h + u(8), corner + u(4), tint(cTop, 0.10f));
+        g.fillRoundRect(cx - w / 2 - u(2), top - u(2), w + u(4), h + u(4), corner + u(2), tint(cTop, 0.22f));
     }
 
     drawGradientEye(g, cx, cy, w, h, corner, cTop, cBot);
@@ -321,7 +425,7 @@ static void drawEye(TFT_eSPI &g, int16_t cx, int16_t cy, int16_t w, int16_t full
     {
         int16_t sr = imax(2, w / 6);
         g.fillCircle(cx - w / 4, top + lidPx + visH / 4 + sr / 2, sr, C_WHITE);
-        g.fillCircle(cx + w / 5, top + h - h / 5, imax(1, sr / 2), rgb(200, 245, 255));
+        g.fillCircle(cx + w / 5, top + h - h / 5, imax(1, sr / 2), mixColor(C_EYE_TOP, C_WHITE, 0.6f));
     }
 }
 
@@ -617,7 +721,7 @@ static void drawFace(TFT_eSPI &g, uint32_t now, bool alarm, bool happy, bool sle
             float p = a / 1100.0f;
             int16_t hx = (int16_t)(W * (0.30f + 0.20f * i)) + (int16_t)(sinf(p * 6.0f + i) * u(4));
             int16_t hy = (int16_t)(cy - R - u(2) - p * (cy - R - u(8)));
-            drawHeart(g, hx, hy, u(4), dimColor(C_HEART, (uint8_t)(255 - p * 140)));
+            drawHeart(g, hx, hy, u(4), tint(C_HEART, (255 - p * 140) / 255.0f));
         }
         return;
     }
@@ -690,7 +794,7 @@ static void drawFace(TFT_eSPI &g, uint32_t now, bool alarm, bool happy, bool sle
         float pd = (now % 2600) / 2600.0f;
         int16_t sx = lcx - eyeW / 2 - u(9);
         int16_t sy = (int16_t)(cy - R + pd * R * 2.2f);
-        drawDrop(g, sx, sy, imax(2, u(3)), dimColor(dropCol, (uint8_t)(255 - pd * 140)));
+        drawDrop(g, sx, sy, imax(2, u(3)), tint(dropCol, (255 - pd * 140) / 255.0f));
     }
     if (reaction == Reaction::SAD)
     {
@@ -701,7 +805,7 @@ static void drawFace(TFT_eSPI &g, uint32_t now, bool alarm, bool happy, bool sle
             float q = pt / 0.6f;
             int16_t tx = lcx - eyeW / 4;
             int16_t ty = (int16_t)(cy + eyeH / 2 + u(2) + q * R * 1.3f);
-            drawDrop(g, tx, ty, imax(2, u(2.5f)), dimColor(dropCol, (uint8_t)(255 - q * 150)));
+            drawDrop(g, tx, ty, imax(2, u(2.5f)), tint(dropCol, (255 - q * 150) / 255.0f));
         }
     }
     if (ex == Expr::SURPRISE)
@@ -728,7 +832,7 @@ static void drawFace(TFT_eSPI &g, uint32_t now, bool alarm, bool happy, bool sle
             float t = (float)((now / 35 + k * 40) % 120) / 120.0f;
             int16_t zx = (int16_t)(W * 0.70f) + (int16_t)(t * u(16)) + k * u(3);
             int16_t zy = (int16_t)(cy - R - t * (cy - R - u(6)));
-            g.setTextColor(dimColor(C_ICE, (uint8_t)(230 - t * 200)));
+            g.setTextColor(tint(C_ICE, (230 - t * 200) / 255.0f));
             g.drawString(k == 0 ? "z" : "Z", zx, zy, 2);
         }
     }
@@ -776,7 +880,7 @@ static void drawSegDigitEx(TFT_eSPI &g, int16_t x, int16_t y, int16_t w, int16_t
     {
         for (uint8_t layer = 2; layer >= 1; layer--)
         {
-            uint16_t hc = dimColor(on, layer == 2 ? 20 : 46);
+            uint16_t hc = tint(on, layer == 2 ? 0.08f : 0.18f);
             for (uint8_t i = 0; i < 7; i++)
                 if ((m >> i) & 1)
                     g.fillRoundRect(s[i].x - layer, s[i].y - layer, s[i].w + 2 * layer, s[i].h + 2 * layer,
@@ -803,7 +907,7 @@ static void drawSegDigit(TFT_eSPI &g, int16_t x, int16_t y, int16_t w, int16_t h
 static void drawColonGlow(TFT_eSPI &g, int16_t cx, int16_t y, int16_t h, int16_t t, uint16_t on, uint8_t level)
 {
     float k = level / 15.0f;
-    uint16_t c = mixColor(dimColor(on, 38), on, k);
+    uint16_t c = mixColor(tint(on, 0.15f), on, k);
     for (int i = 1; i <= 2; i++)
     {
         int16_t py = y + i * h / 3;
@@ -811,7 +915,7 @@ static void drawColonGlow(TFT_eSPI &g, int16_t cx, int16_t y, int16_t h, int16_t
         {
             for (uint8_t layer = 2; layer >= 1; layer--)
                 g.fillRoundRect(cx - t / 2 - layer, py - t / 2 - layer, t + 2 * layer, t + 2 * layer, t / 2 + layer,
-                                mixColor(C_BG, dimColor(on, layer == 2 ? 20 : 46), k)); // fades into the background, never darker than it
+                                mixColor(C_BG, tint(on, layer == 2 ? 0.08f : 0.18f), k)); // fades into the background, never darker than it
         }
         g.fillRoundRect(cx - t / 2, py - t / 2, t, t, t / 2, c);
     }
@@ -868,7 +972,7 @@ static void drawSpinner(TFT_eSPI &g, int16_t cx, int16_t cy, int16_t r, uint16_t
         float a = i * ((float)M_PI / 4.0f);
         uint8_t age = (uint8_t)((head - i) & 7);
         g.fillCircle(cx + (int16_t)(r * cosf(a)), cy + (int16_t)(r * sinf(a)),
-                     imax(1, u(2)), dimColor(c, (uint8_t)(255 - age * 30)));
+                     imax(1, u(2)), tint(c, (255 - age * 30) / 255.0f));
     }
 }
 
@@ -907,7 +1011,7 @@ static void drawSun(TFT_eSPI &g, int16_t cx, int16_t cy, int16_t r, uint32_t now
 static void drawDimSun(TFT_eSPI &g, int16_t cx, int16_t cy, int16_t r, uint32_t now)
 {
     uint16_t sun = rgb(255, 200, 40);
-    g.fillCircle(cx, cy, r + u(3), dimColor(sun, 35));
+    g.fillCircle(cx, cy, r + u(3), tint(sun, 0.14f));
     g.fillCircle(cx, cy, r, dimColor(sun, 200));
     float rot = now / 1400.0f;
     for (uint8_t i = 0; i < 8; i++)
@@ -978,7 +1082,7 @@ static void drawSnowBg(TFT_eSPI &g, uint32_t now, uint8_t n)
 
 static void drawFogBg(TFT_eSPI &g, uint32_t now)
 {
-    uint16_t c = dimColor(rgb(165, 180, 215), 85);
+    uint16_t c = tint(rgb(165, 180, 215), 0.33f);
     int16_t bw = u(70);
     for (uint8_t i = 0; i < 4; i++)
     {
@@ -995,7 +1099,7 @@ static void drawLightningBg(TFT_eSPI &g, uint32_t now)
     uint32_t ph = now % 6500;
     if (!(ph < 60 || (ph > 150 && ph < 200)))
         return;
-    g.fillRect(0, 0, W, faceH, dimColor(rgb(110, 130, 255), 45));
+    g.fillRect(0, 0, W, faceH, tint(rgb(110, 130, 255), 0.18f));
     uint16_t bolt = dimColor(rgb(255, 230, 120), 200);
     int16_t x = (int16_t)(W * 0.88f);
     int16_t y1 = (int16_t)(faceH * 0.22f), y2 = (int16_t)(faceH * 0.50f);
@@ -1015,8 +1119,8 @@ static void drawSceneBackground(TFT_eSPI &g, uint32_t now, const SceneInfo &scn)
     bool storm = code >= 95;
     bool overcast = scn.weatherKnown && !clearish && !fog && !rain && !snow && !storm; // code 3 etc.
 
-    uint16_t cloudCol = dimColor(rgb(165, 180, 215), scn.day ? 140 : 105);
-    uint16_t darkCloud = dimColor(rgb(120, 130, 170), 150);
+    uint16_t cloudCol = tint(rgb(165, 180, 215), scn.day ? 0.55f : 0.41f);
+    uint16_t darkCloud = tint(rgb(120, 130, 170), 0.59f);
 
     if (storm)
         drawLightningBg(g, now);
@@ -1140,7 +1244,7 @@ static void drawModeDots(TFT_eSPI &g, DisplayMode shown, uint16_t accent, int16_
         if (i == idx)
             g.fillCircle(x, y, imax(2, u(2.5f)), accent);
         else
-            g.fillCircle(x, y, imax(1, u(1.5f)), dimColor(accent, 70));
+            g.fillCircle(x, y, imax(1, u(1.5f)), tint(accent, 0.27f));
     }
 }
 
@@ -1214,7 +1318,8 @@ static void drawInfoPanel(DisplayMode mode, bool alarm, bool haveTime, const str
             sig = (2u << 28) | (now / 90);
         break;
     case DisplayMode::DATE:
-        sig = (3u << 28) | (haveTime ? (uint32_t)(ti.tm_mday | (ti.tm_mon << 5) | ((ti.tm_year & 0x7F) << 9)) : 0u);
+        sig = (3u << 28) | (haveTime ? (uint32_t)(ti.tm_mday | (ti.tm_mon << 5) | ((ti.tm_year & 0x7F) << 9)) : 0u) |
+              ((themeStamp & 0xFFFu) << 16); // theme moved -> redraw
         break;
     default:
         sig = (4u << 28) | ((now / 120) & 0xFF) | (((uint32_t)((int)lroundf(tempC) + 128) & 0xFF) << 8) |
@@ -1234,18 +1339,18 @@ static void drawInfoPanel(DisplayMode mode, bool alarm, bool haveTime, const str
     lastMode = shown;
     lastInfoSig = sig;
 
-    uint16_t accent = shown == DisplayMode::CLOCK ? C_CYAN : (shown == DisplayMode::DATE ? C_AMBER : C_SOFT);
+    uint16_t accent = shown == DisplayMode::CLOCK ? C_ACCENT : (shown == DisplayMode::DATE ? C_AMBER : C_SOFT);
     if (shown == DisplayMode::WEATHER && wValid)
-        accent = wStale ? dimColor(tempColor(tempC), 110) : tempColor(tempC); // stale = dimmed
+        accent = wStale ? tint(tempColor(tempC), 0.43f) : tempColor(tempC); // stale = dimmed
     if (alarm)
-        accent = alarmFlashOn ? C_RED : dimColor(C_RED, 90);
+        accent = alarmFlashOn ? C_RED : tint(C_RED, 0.35f);
 
     TFT_eSPI &g = infoCv.begin();
     g.fillRect(0, 0, W, infoH, C_BG);
 
     // accent line with a soft glow underneath
     g.fillRect(0, 0, W, imax(2, u(2)), accent);
-    g.fillRect(0, imax(2, u(2)), W, imax(1, u(1)), dimColor(accent, 60));
+    g.fillRect(0, imax(2, u(2)), W, imax(1, u(1)), tint(accent, 0.235f));
 
     int16_t dh = (int16_t)(infoH * 0.42f);
     int16_t dw = (int16_t)(dh * 0.56f);
@@ -1261,7 +1366,7 @@ static void drawInfoPanel(DisplayMode mode, bool alarm, bool haveTime, const str
             int16_t cw = imax(4, u(8));
             int16_t total = 4 * dw + 2 * gap + 2 * gap + cw;
             int16_t x0 = (W - total) / 2;
-            uint16_t on = alarm ? (alarmFlashOn ? C_RED : dimColor(C_RED, 90)) : C_CYAN;
+            uint16_t on = alarm ? (alarmFlashOn ? C_RED : tint(C_RED, 0.35f)) : C_ACCENT;
             int16_t xs[4] = {x0, (int16_t)(x0 + dw + gap),
                              (int16_t)(x0 + 2 * dw + gap + 2 * gap + cw),
                              (int16_t)(x0 + 2 * dw + gap + 2 * gap + cw + dw + gap)};
@@ -1302,7 +1407,7 @@ static void drawInfoPanel(DisplayMode mode, bool alarm, bool haveTime, const str
             drawSegNumber(g, x0, dy, dw, dh, gap, d, 2, C_AMBER);
             // thin divider
             int16_t divX = x0 + dayW + u(9);
-            g.drawFastVLine(divX, dy + 2, dh - 4, dimColor(C_AMBER, 70));
+            g.drawFastVLine(divX, dy + 2, dh - 4, tint(C_AMBER, 0.27f));
             char mon[8];
             strftime(mon, sizeof(mon), "%b", &ti);
             for (char *p = mon; *p; p++)
@@ -1378,7 +1483,7 @@ static void drawInfoPanel(DisplayMode mode, bool alarm, bool haveTime, const str
         }
         else
         {
-            drawCloud(g, W / 2, dy + dh / 2, u(14), dimColor(C_SOFT, 120));
+            drawCloud(g, W / 2, dy + dh / 2, u(14), tint(C_SOFT, 0.47f));
             strcpy(cap, "No weather yet");
         }
     }
@@ -1426,7 +1531,7 @@ static void drawWifiIcon(TFT_eSPI &g, int16_t cx, int16_t cy, int16_t r, uint16_
 static void drawPortalScreen()
 {
     tft.fillScreen(C_BG);
-    drawWifiIcon(tft, W / 2, (int16_t)(H * 0.34f), u(26), C_CYAN);
+    drawWifiIcon(tft, W / 2, (int16_t)(H * 0.34f), u(26), C_ACCENT);
     tft.setTextDatum(MC_DATUM);
     tft.setTextColor(C_WHITE);
     tft.drawString("WiFi setup", W / 2, (int16_t)(H * 0.50f), 2);
@@ -1460,14 +1565,14 @@ static void drawOtaScreen(int pct)
     tft.fillRoundRect(bx, by, bw, bh, bh / 2, C_GHOST);
     int16_t fw = (int16_t)((int32_t)bw * pct / 100);
     if (fw > 0)
-        tft.fillRoundRect(bx, by, fw, bh, imin(bh / 2, fw / 2), C_CYAN);
+        tft.fillRoundRect(bx, by, fw, bh, imin(bh / 2, fw / 2), C_ACCENT);
 
     char txt[8];
     snprintf(txt, sizeof(txt), "%d%%", pct);
     int16_t py = (int16_t)(H * 0.62f);
     tft.fillRect(0, py - u(10), W, u(20), C_BG);
     tft.setTextDatum(MC_DATUM);
-    tft.setTextColor(C_CYAN);
+    tft.setTextColor(C_ACCENT);
     tft.drawString(txt, W / 2, py, 2);
 }
 
@@ -1613,16 +1718,16 @@ static void drawDiagContent(TFT_eSPI &g, int16_t yOff, const DiagData &d)
 
     uint16_t accent = d.wifi ? C_ICE : C_RED;
     g.fillRect(0, -yOff, W, imax(2, u(2)), accent);
-    g.fillRect(0, imax(2, u(2)) - yOff, W, imax(1, u(1)), dimColor(accent, 60));
+    g.fillRect(0, imax(2, u(2)) - yOff, W, imax(1, u(1)), tint(accent, 0.235f));
 
     g.setTextDatum(MC_DATUM);
     g.setTextColor(C_WHITE);
     g.drawString("Diagnostics", W / 2, Y(13), 2);
-    g.drawFastHLine(u(6), Y(23), W - 2 * u(6), dimColor(C_SOFT, 80));
+    g.drawFastHLine(u(6), Y(23), W - 2 * u(6), tint(C_SOFT, 0.31f));
 
     // IP, centred on its own line (a full 192.168.xxx.xxx would not fit next to a label)
     g.setTextDatum(MC_DATUM);
-    g.setTextColor(d.wifi ? C_CYAN : C_RED);
+    g.setTextColor(d.wifi ? C_ACCENT : C_RED);
     g.drawString(d.wifi ? d.ip : "Offline", W / 2, Y(35), 2);
 
     char buf[24];
@@ -1843,6 +1948,7 @@ void display_tick()
 
     struct tm ti;
     bool haveTime = timeSynced && getLocalTime(&ti, 0);
+    themeUpdate(haveTime, ti, now); // background / accent follow the time of day
 
     bool alarm = (mood == Mood::ALARM_ALERT);
     bool night = haveTime && isNightHour(ti.tm_hour);
