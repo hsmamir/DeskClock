@@ -72,14 +72,42 @@
 
 // ---- Night mode ----
 // Between NIGHT_START_HOUR (inclusive) and NIGHT_END_HOUR (exclusive), local
-// time, the backlight is dimmed with PWM and the pet sound is muted. The alarm
+// time, the backlight is dimmed and the pet sound is muted. The alarm
 // is NOT affected: it always rings at the saved volume and full brightness.
 // A window that crosses midnight works too (e.g. start 23, end 6).
+// (The #ifndef guards let a build flag override these, e.g. the
+// esp32dev-nighttest env in platformio.ini forces "always night" for testing.)
+#ifndef NIGHT_START_HOUR
 #define NIGHT_START_HOUR 0 // 00:00
-#define NIGHT_END_HOUR 6   // up to 05:59
+#endif
+#ifndef NIGHT_END_HOUR
+#define NIGHT_END_HOUR 6 // up to 05:59
+#endif
 
-#define BACKLIGHT_DAY 255     // 0-255 duty
-#define BACKLIGHT_NIGHT 20    // 0-255 duty; raise it if the screen is too dark at night
+// How the backlight is dimmed at night:
+//   0 = NO PWM. The pin stays steady HIGH and only its drive strength is
+//       lowered (BACKLIGHT_NIGHT_DRIVE_CAP). No switching edges, so no PWM noise
+//       on the display. It only dims a module whose LED pin is fed straight from
+//       the GPIO; on a module with its own backlight transistor the brightness
+//       will NOT change -> use 1 there.
+//   1 = PWM with a smooth fade. Dims any module, but the current pulses can
+//       show up as random pixels on a direct-wired backlight.
+#ifndef BACKLIGHT_NIGHT_PWM
+#define BACKLIGHT_NIGHT_PWM 0
+#endif
+
+// Pin drive strength: 0 = ~5 mA, 1 = ~10 mA, 2 = ~20 mA (ESP32 default), 3 = ~40 mA.
+// Night too dark? raise NIGHT_DRIVE_CAP (mode 0) or BACKLIGHT_NIGHT (mode 1).
+#define BACKLIGHT_DAY_DRIVE_CAP 2
+#ifndef BACKLIGHT_NIGHT_DRIVE_CAP
+#define BACKLIGHT_NIGHT_DRIVE_CAP 0
+#endif
+
+// ---- PWM-mode only (BACKLIGHT_NIGHT_PWM 1) ----
+#define BACKLIGHT_DAY 255 // 0-255 duty
+#ifndef BACKLIGHT_NIGHT
+#define BACKLIGHT_NIGHT 20 // 0-255 duty; raise it if the screen is too dark at night
+#endif
 #define BACKLIGHT_FADE_STEP 4 // duty change per display frame (~30 fps) -> smooth fade
 
 #define BACKLIGHT_PWM_FREQ 5000 // Hz, well above visible flicker

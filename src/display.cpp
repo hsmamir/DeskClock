@@ -1,6 +1,7 @@
 #include <TFT_eSPI.h>
 #include <time.h>
 #include <math.h>
+#include <driver/gpio.h>
 #include "display.h"
 #include "state.h"
 #include "pins.h"
@@ -878,8 +879,27 @@ static void drawOtaScreen(int pct)
 }
 
 // =====================================================================
-//  Backlight (PWM) — dimmed at night, full during the day / alarm / setup
+//  Backlight — dimmed at night, full during the day / alarm / setup
 // =====================================================================
+// Two ways to dim (BACKLIGHT_NIGHT_PWM in config.h):
+//   1 = PWM on the LEDC peripheral, smooth fade. Works on any module, but the
+//       fast current pulses can couple into the SPI lines as random pixels.
+//   0 = NO PWM at all: the pin stays steady HIGH and only its drive strength
+//       is lowered at night. No switching edges -> no switching noise. This
+//       only dims a module whose LED pin is fed straight from the GPIO.
+// In both modes the pin drive strength is BACKLIGHT_DAY_DRIVE_CAP by day and
+// BACKLIGHT_NIGHT_DRIVE_CAP at night (weaker = slower edges, less current).
+static bool blNight = false; // true once the night drive strength is applied
+
+static void backlightSetDrive(bool night)
+{
+    gpio_set_drive_capability((gpio_num_t)TFT_BL_PIN,
+                              (gpio_drive_cap_t)(night ? BACKLIGHT_NIGHT_DRIVE_CAP
+                                                       : BACKLIGHT_DAY_DRIVE_CAP));
+    blNight = night;
+}
+
+#if BACKLIGHT_NIGHT_PWM
 static uint8_t blDuty = BACKLIGHT_DAY;
 
 static void backlightWrite(uint8_t duty)
@@ -891,9 +911,11 @@ static void backlightWrite(uint8_t duty)
     ledcWrite(BACKLIGHT_PWM_CHANNEL, duty); // core 2.x: addressed by channel
 #endif
 }
+#endif
 
 static void backlightInit()
 {
+#if BACKLIGHT_NIGHT_PWM
 #if defined(ESP_ARDUINO_VERSION_MAJOR) && ESP_ARDUINO_VERSION_MAJOR >= 3
     ledcAttach(TFT_BL_PIN, BACKLIGHT_PWM_FREQ, BACKLIGHT_PWM_BITS);
 #else
@@ -901,23 +923,46 @@ static void backlightInit()
     ledcAttachPin(TFT_BL_PIN, BACKLIGHT_PWM_CHANNEL);
 #endif
     backlightWrite(BACKLIGHT_DAY); // clock unknown at boot -> start fully lit
+#else
+    pinMode(TFT_BL_PIN, OUTPUT);
+    digitalWrite(TFT_BL_PIN, HIGH); // plain DC: no PWM, no edges
+#endif
+    backlightSetDrive(false);
 }
 
-// Moves the duty toward `target` a little each frame (smooth fade).
-// jump = true goes there at once (alarm: must be bright immediately).
-static void backlightUpdate(uint8_t target, bool jump)
+// night = true dims, false is full brightness.
+// jump = true goes there at once (alarm: must be bright immediately); only
+// matters in PWM mode, where the change is otherwise a smooth fade.
+static void backlightUpdate(bool night, bool jump)
 {
-    if (blDuty == target)
-        return;
-    if (jump)
+#if BACKLIGHT_NIGHT_PWM
+    uint8_t target = night ? BACKLIGHT_NIGHT : BACKLIGHT_DAY;
+
+    if (!night && blNight)
+        backlightSetDrive(false); // leaving night: full drive before brightening
+
+    if (blDuty != target)
     {
-        backlightWrite(target);
-        return;
+        if (jump)
+        {
+            backlightWrite(target);
+        }
+        else
+        {
+            int next = (int)blDuty + (target > blDuty ? BACKLIGHT_FADE_STEP : -BACKLIGHT_FADE_STEP);
+            if ((target > blDuty && next > target) || (target < blDuty && next < target))
+                next = target;
+            backlightWrite((uint8_t)next);
+        }
     }
-    int next = (int)blDuty + (target > blDuty ? BACKLIGHT_FADE_STEP : -BACKLIGHT_FADE_STEP);
-    if ((target > blDuty && next > target) || (target < blDuty && next < target))
-        next = target;
-    backlightWrite((uint8_t)next);
+
+    if (night && !blNight && blDuty == target)
+        backlightSetDrive(true); // fade finished: now weaken the drive
+#else
+    (void)jump;
+    if (night != blNight)
+        backlightSetDrive(night);
+#endif
 }
 
 // =====================================================================
@@ -926,7 +971,7 @@ static void backlightUpdate(uint8_t target, bool jump)
 
 void display_init()
 {
-    // Backlight on LEDC PWM (see backlightInit): dims at night, see display_tick.
+    // Backlight (see the Backlight section): dims at night, see display_tick.
     backlightInit();
 
     tft.init();
@@ -958,7 +1003,7 @@ void display_tick()
     int otaPct = readOtaPercent();
     if (otaPct >= 0)
     {
-        backlightUpdate(BACKLIGHT_DAY, true);
+        backlightUpdate(false, true);
         drawOtaScreen(otaPct);
         otaScreenShown = true;
         return;
@@ -975,7 +1020,7 @@ void display_tick()
     // While the WiFi setup portal is open, show how to join it instead of the face.
     if (readPortalActive())
     {
-        backlightUpdate(BACKLIGHT_DAY, true); // setup screen must always be readable
+        backlightUpdate(false, true); // setup screen must always be readable
         if (!portalScreenShown)
         {
             drawPortalScreen();
@@ -998,7 +1043,7 @@ void display_tick()
     bool sleepy = night && !alarm;
 
     // Dim at night; an alarm always gets full brightness, immediately.
-    backlightUpdate((night && !alarm) ? BACKLIGHT_NIGHT : BACKLIGHT_DAY, alarm);
+    backlightUpdate(night && !alarm, alarm);
 
     // petted: hold the happy face for a while even after the servo finishes
     if (mood == Mood::PET_HAPPY && prevMood != Mood::PET_HAPPY)
