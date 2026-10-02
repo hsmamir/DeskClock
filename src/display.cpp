@@ -85,10 +85,14 @@ struct Canvas
         tft.setViewport(0, y0, w, h, true);
         return tft;
     }
-    void end()
+    void end() { endAt(0); }
+    // Push with a horizontal offset (page slide-in). The sprite is clipped at
+    // the right screen edge; the part left of x keeps the old picture. The
+    // viewport fallback cannot offset, so it just draws in place.
+    void endAt(int16_t x)
     {
         if (ok)
-            spr.pushSprite(0, y0);
+            spr.pushSprite(x, y0);
         else
             tft.resetViewport();
     }
@@ -129,6 +133,8 @@ static const uint16_t HAPPY_HOLD_MS = 2000;
 // ---- Info panel de-dup ----
 static DisplayMode lastMode = static_cast<DisplayMode>(-1);
 static uint32_t lastInfoSig = 0xFFFFFFFFu;
+static bool transActive = false; // info panel is sliding in
+static uint32_t transStartMs = 0;
 static bool portalScreenShown = false;
 static bool otaScreenShown = false;
 static int otaDrawnPct = -1;
@@ -1091,8 +1097,16 @@ static void drawInfoPanel(DisplayMode mode, bool alarm, bool haveTime, const str
               (((uint32_t)wCode & 0x7F) << 16) | (wValid ? (1u << 23) : 0u);
         break;
     }
-    if (shown == lastMode && sig == lastInfoSig)
-        return;
+    bool modeChanged = (shown != lastMode);
+    // start a slide-in between two normal pages (not from boot / the diagnostics page / an alarm)
+    if (TRANSITION_ENABLED && modeChanged && !alarm && infoCv.ok &&
+        (int)lastMode >= 0 && lastMode != DisplayMode::DIAG)
+    {
+        transActive = true;
+        transStartMs = now;
+    }
+    if (!transActive && !modeChanged && sig == lastInfoSig)
+        return; // nothing visible changed (while sliding, every frame is redrawn)
     lastMode = shown;
     lastInfoSig = sig;
 
@@ -1244,7 +1258,20 @@ static void drawInfoPanel(DisplayMode mode, bool alarm, bool haveTime, const str
         g.drawString(cap, W / 2, capY, 2);
     }
     drawModeDots(g, shown, accent, infoH - u(5));
-    infoCv.end();
+
+    int16_t slideX = 0;
+    if (transActive)
+    {
+        uint32_t el = now - transStartMs;
+        if (el >= (uint32_t)TRANSITION_MS)
+            transActive = false; // last frame lands exactly at x = 0
+        else
+        {
+            float inv = 1.0f - el / (float)TRANSITION_MS; // ease-out: fast start, soft landing
+            slideX = (int16_t)(W * inv * inv * inv);
+        }
+    }
+    infoCv.endAt(slideX);
 }
 
 // =====================================================================

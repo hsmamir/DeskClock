@@ -84,6 +84,13 @@
 // background then follows only the time of day).
 #define SCENE_WEATHER_MAX_AGE_MS (3UL * 60 * 60 * 1000)
 
+// ---- Page transition ----
+// Pressing the Mode button slides the new page in from the right over the old one
+// instead of swapping instantly. Only between clock / date / weather (the
+// diagnostics page switches instantly). 0 = instant swap.
+#define TRANSITION_ENABLED 1
+#define TRANSITION_MS 220
+
 // ---- Eye expressions & reactions ----
 // Idle eyes sometimes wink, yawn (mostly at night) or get startled, and they react
 // to the situation: worried when WiFi has been gone for a while, sad in rain,
