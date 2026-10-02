@@ -325,6 +325,38 @@ static void drawHappyEye(TFT_eSPI &g, int16_t cx, int16_t cy, int16_t R)
 //  Face
 // =====================================================================
 
+// What the face background should show (filled in by display_tick).
+struct SceneInfo
+{
+    bool timeKnown;    // clock has a usable time (else: plain night sky, as at boot)
+    bool day;          // between SCENE_DAY_START_HOUR and SCENE_DAY_END_HOUR
+    bool weatherKnown; // a recent-enough weather reading exists
+    int code;          // Open-Meteo WMO weather code (valid if weatherKnown)
+};
+static void drawSceneBackground(TFT_eSPI &g, uint32_t now, const SceneInfo &scn);
+
+// twinkling stars
+static void drawStars(TFT_eSPI &g, uint32_t now)
+{
+    for (uint8_t i = 0; i < 12; i++)
+    {
+        int16_t sx = (i * 47 + 13) % W;
+        int16_t sy = (i * 31 + 5) % faceH;
+        int v = 70 + (int)(60.0f * sinf(now / 520.0f + i * 1.7f));
+        if (v < 15)
+            v = 15;
+        uint16_t c = rgb(v, v, imin(255, v + 45));
+        g.drawPixel(sx, sy, c);
+        if (i % 4 == 0)
+        {
+            g.drawPixel(sx - 1, sy, dimColor(c, 150));
+            g.drawPixel(sx + 1, sy, dimColor(c, 150));
+            g.drawPixel(sx, sy - 1, dimColor(c, 150));
+            g.drawPixel(sx, sy + 1, dimColor(c, 150));
+        }
+    }
+}
+
 static float updateBlink(uint32_t now)
 {
     float openness = 1.0f;
@@ -417,28 +449,17 @@ static void updateLook(uint32_t now, bool alarm, bool sleepy)
     lookY += (lookTY - lookY) * 0.30f;
 }
 
-static void drawFace(TFT_eSPI &g, uint32_t now, bool alarm, bool happy, bool sleepy, float blinkOpen)
+static void drawFace(TFT_eSPI &g, uint32_t now, bool alarm, bool happy, bool sleepy, float blinkOpen,
+                     const SceneInfo &scn)
 {
     g.fillRect(0, 0, W, faceH, C_BG);
 
-    // twinkling stars
-    for (uint8_t i = 0; i < 12; i++)
-    {
-        int16_t sx = (i * 47 + 13) % W;
-        int16_t sy = (i * 31 + 5) % faceH;
-        int v = 70 + (int)(60.0f * sinf(now / 520.0f + i * 1.7f));
-        if (v < 15)
-            v = 15;
-        uint16_t c = rgb(v, v, imin(255, v + 45));
-        g.drawPixel(sx, sy, c);
-        if (i % 4 == 0)
-        {
-            g.drawPixel(sx - 1, sy, dimColor(c, 150));
-            g.drawPixel(sx + 1, sy, dimColor(c, 150));
-            g.drawPixel(sx, sy - 1, dimColor(c, 150));
-            g.drawPixel(sx, sy + 1, dimColor(c, 150));
-        }
-    }
+    // Background: weather/time-of-day scene. The alarm keeps the plain starry
+    // look so nothing distracts from the alert.
+    if (SCENE_ENABLED && !alarm)
+        drawSceneBackground(g, now, scn);
+    else
+        drawStars(g, now);
 
     int16_t R = W / 8; // same base size as before
     int16_t eyeW = R * 2;
@@ -583,6 +604,175 @@ static void drawSun(TFT_eSPI &g, int16_t cx, int16_t cy, int16_t r, uint32_t now
         int16_t x1 = cx + (int16_t)(r * 1.0f * cosf(a)), y1 = cy + (int16_t)(r * 1.0f * sinf(a));
         g.drawLine(x0, y0, x1, y1, sun);
         g.drawLine(x0 + 1, y0, x1 + 1, y1, sun);
+    }
+}
+
+// =====================================================================
+//  Face background scene (weather + time of day)
+// =====================================================================
+// All pieces are dim, procedural (derived from `now`, no per-drop state) and
+// drawn BEFORE the eyes, so the eyes always stay on top and in front.
+
+static void drawDimSun(TFT_eSPI &g, int16_t cx, int16_t cy, int16_t r, uint32_t now)
+{
+    uint16_t sun = rgb(255, 200, 40);
+    g.fillCircle(cx, cy, r + u(3), dimColor(sun, 35));
+    g.fillCircle(cx, cy, r, dimColor(sun, 200));
+    float rot = now / 1400.0f;
+    for (uint8_t i = 0; i < 8; i++)
+    {
+        float a = rot + i * ((float)M_PI / 4.0f);
+        g.drawLine(cx + (int16_t)(r * 1.35f * cosf(a)), cy + (int16_t)(r * 1.35f * sinf(a)),
+                   cx + (int16_t)(r * 1.8f * cosf(a)), cy + (int16_t)(r * 1.8f * sinf(a)),
+                   dimColor(sun, 150));
+    }
+}
+
+// Crescent: a disc with a background-coloured disc carved out of it.
+static void drawMoon(TFT_eSPI &g, int16_t cx, int16_t cy, int16_t r)
+{
+    g.fillCircle(cx, cy, r, dimColor(rgb(225, 230, 255), 235));
+    g.fillCircle(cx + (int16_t)(r * 0.55f), cy - (int16_t)(r * 0.25f), (int16_t)(r * 0.85f), C_BG);
+}
+
+static void drawShootingStar(TFT_eSPI &g, uint32_t now)
+{
+    uint32_t ph = now % 11000;
+    if (ph >= 700)
+        return;
+    float p = ph / 700.0f;
+    int16_t hx = (int16_t)(W * 0.88f - p * W * 0.45f);
+    int16_t hy = (int16_t)(faceH * 0.06f + p * faceH * 0.30f);
+    uint8_t v = (uint8_t)(255.0f * (1.0f - p));
+    g.drawLine(hx, hy, hx + u(14), hy - u(6), dimColor(rgb(200, 215, 255), v / 3));
+    g.drawLine(hx, hy, hx + u(7), hy - u(3), dimColor(rgb(235, 240, 255), v / 2));
+    g.drawPixel(hx, hy, dimColor(C_WHITE, v));
+}
+
+static void drawDriftClouds(TFT_eSPI &g, uint32_t now, uint8_t count, uint16_t color)
+{
+    for (uint8_t i = 0; i < count; i++)
+    {
+        int16_t r = u(9 + (i % 2) * 3);
+        int16_t span = W + 4 * r;
+        int16_t cx = (int16_t)(((now / (70u + i * 25u)) + (uint32_t)i * (span / count)) % span) - 2 * r;
+        drawCloud(g, cx, u(10 + i * 11), r, color);
+    }
+}
+
+static void drawRainBg(TFT_eSPI &g, uint32_t now, uint8_t n)
+{
+    uint16_t c = rgb(70, 140, 225);
+    for (uint8_t i = 0; i < n; i++)
+    {
+        int16_t x = (i * 37 + 11) % W;
+        int16_t y = (int16_t)(((now / (4u + i % 3)) + i * 53u) % (uint32_t)(faceH + 12)) - 6;
+        g.drawLine(x, y, x - 1, y + imax(2, u(5)), c);
+    }
+}
+
+static void drawSnowBg(TFT_eSPI &g, uint32_t now, uint8_t n)
+{
+    uint16_t c = dimColor(C_WHITE, 230);
+    for (uint8_t i = 0; i < n; i++)
+    {
+        int16_t x = (i * 41 + 7) % W + (int16_t)(sinf(now / 700.0f + i) * u(3));
+        int16_t y = (int16_t)(((now / (24u + (i % 3) * 8u)) + i * 29u) % (uint32_t)faceH);
+        if (i % 3 == 0)
+            g.fillCircle(x, y, imax(1, u(1.2f)), c);
+        else
+            g.drawPixel(x, y, c);
+    }
+}
+
+static void drawFogBg(TFT_eSPI &g, uint32_t now)
+{
+    uint16_t c = dimColor(rgb(165, 180, 215), 85);
+    int16_t bw = u(70);
+    for (uint8_t i = 0; i < 4; i++)
+    {
+        int16_t x = (int16_t)(((now / 45u) + i * 47u) % (uint32_t)(W + bw)) - bw;
+        int16_t y = (int16_t)(faceH * (0.18f + 0.20f * i));
+        g.fillRoundRect(x, y, bw, imax(3, u(7)), imax(2, u(3)), c);
+    }
+}
+
+// Dim flash of the whole sky plus a bolt in the right margin: two quick
+// flashes every ~6.5 s (never a rapid strobe).
+static void drawLightningBg(TFT_eSPI &g, uint32_t now)
+{
+    uint32_t ph = now % 6500;
+    if (!(ph < 60 || (ph > 150 && ph < 200)))
+        return;
+    g.fillRect(0, 0, W, faceH, dimColor(rgb(110, 130, 255), 45));
+    uint16_t bolt = dimColor(rgb(255, 230, 120), 200);
+    int16_t x = (int16_t)(W * 0.88f);
+    int16_t y1 = (int16_t)(faceH * 0.22f), y2 = (int16_t)(faceH * 0.50f);
+    g.drawLine(x, 0, x - u(4), y1, bolt);
+    g.drawLine(x - u(4), y1, x + u(1), y1, bolt);
+    g.drawLine(x + u(1), y1, x - u(5), y2, bolt);
+}
+
+static void drawSceneBackground(TFT_eSPI &g, uint32_t now, const SceneInfo &scn)
+{
+    int code = scn.weatherKnown ? scn.code : -1;
+    bool partly = (code == 1 || code == 2);
+    bool clearish = !scn.weatherKnown || code == 0 || partly; // sky is (mostly) visible
+    bool fog = (code == 45 || code == 48);
+    bool rain = (code >= 51 && code <= 67) || (code >= 80 && code <= 82);
+    bool snow = (code >= 71 && code <= 77) || code == 85 || code == 86;
+    bool storm = code >= 95;
+    bool overcast = scn.weatherKnown && !clearish && !fog && !rain && !snow && !storm; // code 3 etc.
+
+    uint16_t cloudCol = dimColor(rgb(165, 180, 215), scn.day ? 140 : 105);
+    uint16_t darkCloud = dimColor(rgb(120, 130, 170), 150);
+
+    if (storm)
+        drawLightningBg(g, now);
+
+    // sky: stars at night when it's clear enough to see them (also: no time yet = boot look)
+    if (!scn.day && clearish)
+        drawStars(g, now);
+
+    // sun / moon, only once the time is known
+    if (scn.timeKnown && clearish)
+    {
+        if (scn.day)
+            drawDimSun(g, u(16), u(16), u(7), now);
+        else
+        {
+            drawMoon(g, u(16), u(16), u(8));
+            if (!partly)
+                drawShootingStar(g, now);
+        }
+    }
+
+    // weather layers
+    if (clearish)
+    {
+        if (partly)
+            drawDriftClouds(g, now, 2, cloudCol);
+        else if (scn.day && scn.timeKnown)
+            drawDriftClouds(g, now, 1, cloudCol); // a lone, faint cloud so a clear day isn't empty
+    }
+    else if (overcast)
+        drawDriftClouds(g, now, 3, cloudCol);
+    else if (fog)
+        drawFogBg(g, now);
+    else if (rain)
+    {
+        drawDriftClouds(g, now, 2, darkCloud);
+        drawRainBg(g, now, 16);
+    }
+    else if (snow)
+    {
+        drawDriftClouds(g, now, 2, cloudCol);
+        drawSnowBg(g, now, 18);
+    }
+    else if (storm)
+    {
+        drawDriftClouds(g, now, 3, darkCloud);
+        drawRainBg(g, now, 20);
     }
 }
 
@@ -1322,8 +1512,21 @@ void display_tick()
     }
     diagShown = false;
 
+    SceneInfo scn;
+    scn.timeKnown = haveTime;
+    scn.day = haveTime && !night && ti.tm_hour >= SCENE_DAY_START_HOUR && ti.tm_hour < SCENE_DAY_END_HOUR;
+    {
+        bool wv = false;
+        float wt = 0;
+        int wc = 0;
+        uint32_t wMs = 0;
+        readWeather(wv, wt, wc, wMs);
+        scn.weatherKnown = wv && ageSince(now, wMs) <= SCENE_WEATHER_MAX_AGE_MS;
+        scn.code = wc;
+    }
+
     TFT_eSPI &g = faceCv.begin();
-    drawFace(g, now, alarm, happy, sleepy, blinkOpen);
+    drawFace(g, now, alarm, happy, sleepy, blinkOpen, scn);
     drawStatusIcons(g, now);
     faceCv.end();
 

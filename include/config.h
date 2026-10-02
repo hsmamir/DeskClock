@@ -73,6 +73,17 @@
 #define ALARM_AUTO_OFF_MIN 3 // nobody pressed anything: stop by itself after this long
                              // (no more rings until the next day's alarm time)
 
+// ---- Face background scene ----
+// The area behind the eyes follows the weather and the time of day: sun / moon,
+// drifting clouds, rain, snow, fog, lightning, stars. Everything is drawn dim so
+// the eyes stay the focus. 0 = back to the plain twinkling stars.
+#define SCENE_ENABLED 1
+#define SCENE_DAY_START_HOUR 6  // sun from this hour (inclusive) ...
+#define SCENE_DAY_END_HOUR 19   // ... until this hour (exclusive), then moon/stars
+// A weather reading older than this is no longer trusted for the scene (the
+// background then follows only the time of day).
+#define SCENE_WEATHER_MAX_AGE_MS (3UL * 60 * 60 * 1000)
+
 // ---- Night mode ----
 // Between NIGHT_START_HOUR (inclusive) and NIGHT_END_HOUR (exclusive), local
 // time, the backlight is dimmed and the pet sound is muted. The alarm
