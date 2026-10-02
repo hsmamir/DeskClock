@@ -128,6 +128,8 @@ static const uint16_t HAPPY_HOLD_MS = 2000;
 static DisplayMode lastMode = static_cast<DisplayMode>(-1);
 static uint32_t lastInfoSig = 0xFFFFFFFFu;
 static bool portalScreenShown = false;
+static bool otaScreenShown = false;
+static int otaDrawnPct = -1;
 
 // ---- State readers ----
 static Mood readMood()
@@ -158,6 +160,14 @@ static bool readPortalActive()
 {
     xSemaphoreTake(g_stateMutex, portMAX_DELAY);
     bool p = g_state.wifiPortalActive;
+    xSemaphoreGive(g_stateMutex);
+    return p;
+}
+
+static int readOtaPercent()
+{
+    xSemaphoreTake(g_stateMutex, portMAX_DELAY);
+    int p = g_state.otaPercent;
     xSemaphoreGive(g_stateMutex);
     return p;
 }
@@ -834,6 +844,39 @@ static void drawPortalScreen()
     tft.drawString("192.168.4.1", W / 2, (int16_t)(H * 0.86f), 2);
 }
 
+// OTA progress screen: static part once per update, then only the bar and the
+// percentage when the value changes (nothing else may draw during a flash write).
+static void drawOtaScreen(int pct)
+{
+    if (otaDrawnPct < 0)
+    {
+        tft.fillScreen(C_BG);
+        tft.setTextDatum(MC_DATUM);
+        tft.setTextColor(C_WHITE);
+        tft.drawString("Updating", W / 2, (int16_t)(H * 0.30f), 4);
+        tft.setTextColor(C_SOFT);
+        tft.drawString("Do not unplug", W / 2, (int16_t)(H * 0.82f), 2);
+    }
+    if (pct == otaDrawnPct)
+        return;
+    otaDrawnPct = pct;
+
+    int16_t bx = u(14), bw = W - 2 * bx, bh = imax(6, u(8));
+    int16_t by = (int16_t)(H * 0.46f);
+    tft.fillRoundRect(bx, by, bw, bh, bh / 2, C_GHOST);
+    int16_t fw = (int16_t)((int32_t)bw * pct / 100);
+    if (fw > 0)
+        tft.fillRoundRect(bx, by, fw, bh, imin(bh / 2, fw / 2), C_CYAN);
+
+    char txt[8];
+    snprintf(txt, sizeof(txt), "%d%%", pct);
+    int16_t py = (int16_t)(H * 0.62f);
+    tft.fillRect(0, py - u(10), W, u(20), C_BG);
+    tft.setTextDatum(MC_DATUM);
+    tft.setTextColor(C_CYAN);
+    tft.drawString(txt, W / 2, py, 2);
+}
+
 // =====================================================================
 //  Backlight (PWM) — dimmed at night, full during the day / alarm / setup
 // =====================================================================
@@ -910,6 +953,24 @@ void display_tick()
     Mood mood = readMood();
     DisplayMode mode = readDisplayMode();
     bool timeSynced = readTimeSynced();
+
+    // A firmware update owns the screen: full brightness, progress only.
+    int otaPct = readOtaPercent();
+    if (otaPct >= 0)
+    {
+        backlightUpdate(BACKLIGHT_DAY, true);
+        drawOtaScreen(otaPct);
+        otaScreenShown = true;
+        return;
+    }
+    if (otaScreenShown)
+    {
+        // update failed (on success the clock reboots): back to normal
+        tft.fillScreen(C_BG);
+        otaScreenShown = false;
+        otaDrawnPct = -1;
+        lastInfoSig = 0xFFFFFFFFu;
+    }
 
     // While the WiFi setup portal is open, show how to join it instead of the face.
     if (readPortalActive())

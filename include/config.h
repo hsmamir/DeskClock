@@ -110,3 +110,8 @@ static inline bool isNightHour(int hour)
 // After each movement the servo gets this long to reach its position, then it
 // is detached (no holding current, no buzzing) until the next movement.
 #define SERVO_SETTLE_MS 400
+
+// ---- OTA (wireless firmware update, see ota.h / platformio.ini) ----
+// Must equal the --auth=... value of env:esp32dev-ota in platformio.ini.
+// CHANGE IT: "" would let anyone on your WiFi flash the clock.
+#define OTA_PASSWORD "change-me-ota"

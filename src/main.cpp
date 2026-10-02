@@ -12,6 +12,7 @@
 #include "alarm_ctrl.h"
 #include "settings.h"
 #include "web_ui.h"
+#include "ota.h"
 
 AppState g_state;
 SemaphoreHandle_t g_stateMutex;
@@ -132,6 +133,18 @@ static void alarmTask(void *pvParameters)
     }
 }
 
+static void otaTask(void *pvParameters)
+{
+    // Own task: ota_tick() blocks for the whole transfer while an update runs.
+    ota_init();
+    const TickType_t tickDelay = pdMS_TO_TICKS(20);
+    for (;;)
+    {
+        ota_tick();
+        vTaskDelay(tickDelay);
+    }
+}
+
 static void webTask(void *pvParameters)
 {
     // web_ui_tick() waits for WiFi by itself, then starts mDNS + the server.
@@ -161,6 +174,7 @@ void setup()
     xTaskCreatePinnedToCore(timeTask, "time", 8192, nullptr, 1, nullptr, 0);
     xTaskCreatePinnedToCore(weatherTask, "weather", 10240, nullptr, 1, nullptr, 0);
     xTaskCreatePinnedToCore(webTask, "web", 8192, nullptr, 1, nullptr, 0);
+    xTaskCreatePinnedToCore(otaTask, "ota", 6144, nullptr, 1, nullptr, 0);
 }
 
 void loop()

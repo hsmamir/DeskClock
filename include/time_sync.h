@@ -6,6 +6,10 @@
 // works without WiFi. Call once from setup(), after settings_init().
 void time_restore_from_flash();
 
+// Writes the current time to flash right now (if it is valid). Normally done
+// periodically by time_sync_tick(); call it before a planned restart (OTA).
+void time_save_now();
+
 // Connects to WiFi (blocking, up to WIFI_CONNECT_TIMEOUT_MS) and performs
 // the first NTP sync. Sets g_state.timeSynced and clears timeApprox on success.
 void time_sync_init();

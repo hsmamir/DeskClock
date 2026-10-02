@@ -52,7 +52,7 @@ static bool readTimeApprox()
 
 // ---- Time persistence ----
 
-static void saveTimeNow()
+void time_save_now()
 {
     time_t t = time(nullptr);
     if (t < (time_t)TIME_MIN_VALID_EPOCH)
@@ -72,7 +72,7 @@ static void saveTimeIfDue()
         return;
     if (s_lastSaveMs != 0 && (millis() - s_lastSaveMs) < TIME_SAVE_INTERVAL_MS)
         return;
-    saveTimeNow();
+    time_save_now();
 }
 
 void time_restore_from_flash()
@@ -136,7 +136,7 @@ static void syncTime()
         g_state.timeApprox = false;
         xSemaphoreGive(g_stateMutex);
         s_lastSyncMs = millis();
-        saveTimeNow(); // fresh baseline right after a real sync
+        time_save_now(); // fresh baseline right after a real sync
     }
 }
 
