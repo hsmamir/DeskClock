@@ -78,11 +78,23 @@
 // drifting clouds, rain, snow, fog, lightning, stars. Everything is drawn dim so
 // the eyes stay the focus. 0 = back to the plain twinkling stars.
 #define SCENE_ENABLED 1
-#define SCENE_DAY_START_HOUR 6  // sun from this hour (inclusive) ...
-#define SCENE_DAY_END_HOUR 19   // ... until this hour (exclusive), then moon/stars
+#define SCENE_DAY_START_HOUR 6 // sun from this hour (inclusive) ...
+#define SCENE_DAY_END_HOUR 19  // ... until this hour (exclusive), then moon/stars
 // A weather reading older than this is no longer trusted for the scene (the
 // background then follows only the time of day).
 #define SCENE_WEATHER_MAX_AGE_MS (3UL * 60 * 60 * 1000)
+
+// ---- Eye expressions & reactions ----
+// Idle eyes sometimes wink, yawn (mostly at night) or get startled, and they react
+// to the situation: worried when WiFi has been gone for a while, sad in rain,
+// startled by lightning, sweating when hot, shivering when cold.
+// 0 = only the plain blinking/looking-around eyes.
+#define EXPR_ENABLED 1
+#define EXPR_MIN_GAP_MS 12000 // a random idle expression every MIN..MAX ms
+#define EXPR_MAX_GAP_MS 30000
+#define REACT_HOT_C 35               // at or above (deg C): sweating, heavy lids
+#define REACT_COLD_C 0               // at or below (deg C): shivering
+#define REACT_OFFLINE_DELAY_MS 20000 // WiFi down this long -> worried eyes
 
 // ---- Night mode ----
 // Between NIGHT_START_HOUR (inclusive) and NIGHT_END_HOUR (exclusive), local

@@ -258,9 +258,16 @@ static void drawGradientEye(TFT_eSPI &g, int16_t cx, int16_t cy, int16_t w, int1
 
 // One glowing LED-style eye.
 //  openness: 0..1 (blink)   lid: 0..1 flat top lid (sleepy)
-//  slant: angry brow cut-out, side = -1 left eye / +1 right eye
+//  brow: BROW_ANGRY (inner side lowered) / BROW_SAD (outer side lowered, i.e.
+//        worried/sad), side = -1 left eye / +1 right eye
+enum : uint8_t
+{
+    BROW_NONE = 0,
+    BROW_ANGRY = 1,
+    BROW_SAD = 2
+};
 static void drawEye(TFT_eSPI &g, int16_t cx, int16_t cy, int16_t w, int16_t fullH,
-                    float openness, float lid, bool angry, int8_t side,
+                    float openness, float lid, uint8_t brow, int8_t side,
                     uint16_t cTop, uint16_t cBot, bool shine)
 {
     int16_t h = (int16_t)(fullH * openness);
@@ -286,12 +293,19 @@ static void drawEye(TFT_eSPI &g, int16_t cx, int16_t cy, int16_t w, int16_t full
     }
 
     // angry brow: a slanted cut, lower on the inner side
-    if (angry)
+    if (brow == BROW_ANGRY)
     {
         int16_t outerX = cx + side * (w / 2 + u(5));
         int16_t innerX = cx - side * (w / 2 + u(5));
         int16_t y0 = top - u(6);
         g.fillTriangle(outerX, y0, innerX, y0, innerX, top + (int16_t)(h * 0.55f), C_BG);
+    }
+    else if (brow == BROW_SAD) // mirror image: lower on the OUTER side
+    {
+        int16_t outerX = cx + side * (w / 2 + u(5));
+        int16_t innerX = cx - side * (w / 2 + u(5));
+        int16_t y0 = top - u(6);
+        g.fillTriangle(innerX, y0, outerX, y0, outerX, top + (int16_t)(h * 0.50f), C_BG);
     }
 
     // glossy highlights (kept below a heavy lid)
@@ -332,7 +346,89 @@ struct SceneInfo
     bool day;          // between SCENE_DAY_START_HOUR and SCENE_DAY_END_HOUR
     bool weatherKnown; // a recent-enough weather reading exists
     int code;          // Open-Meteo WMO weather code (valid if weatherKnown)
+    float tempC;       // current temperature (valid if weatherKnown)
 };
+
+// How the eyes react to the situation (steady while it lasts).
+enum class Reaction : uint8_t
+{
+    NONE,
+    WORRIED, // WiFi has been gone for a while: worried brows, darting glances, sweat drop
+    STORM,   // thunderstorm: worried brows, startled by every flash
+    SAD,     // rain / drizzle: sad brows, looking down, a tear now and then
+    HOT,     // heavy lids + sweat drop
+    COLD     // shivering
+};
+
+static Reaction pickReaction(const SceneInfo &scn, bool offline, bool sleepy)
+{
+    if (!EXPR_ENABLED || sleepy) // sleepy eyes at night stay sleepy
+        return Reaction::NONE;
+    if (offline)
+        return Reaction::WORRIED;
+    if (!scn.weatherKnown)
+        return Reaction::NONE;
+    if (scn.code >= 95)
+        return Reaction::STORM;
+    if ((scn.code >= 51 && scn.code <= 67) || (scn.code >= 80 && scn.code <= 82))
+        return Reaction::SAD;
+    if (scn.tempC >= REACT_HOT_C)
+        return Reaction::HOT;
+    if (scn.tempC <= REACT_COLD_C)
+        return Reaction::COLD;
+    return Reaction::NONE;
+}
+
+// Short one-off idle expressions, picked at random.
+enum class Expr : uint8_t
+{
+    NONE,
+    WINK,
+    YAWN,
+    SURPRISE
+};
+static Expr exprCur = Expr::NONE;
+static uint32_t exprStartMs = 0, exprDurMs = 0, nextExprAtMs = 0;
+
+// Returns the progress 0..1 of the running expression (0 when none).
+static float updateExpression(uint32_t now, bool can, bool sleepy)
+{
+    if (!EXPR_ENABLED || !can)
+    {
+        exprCur = Expr::NONE;
+        if (nextExprAtMs <= now)
+            nextExprAtMs = now + random(4000, 10000); // cool-down after an alarm / pet / worry
+        return 0;
+    }
+    if (exprCur != Expr::NONE)
+    {
+        uint32_t el = now - exprStartMs;
+        if (el >= exprDurMs)
+        {
+            exprCur = Expr::NONE;
+            nextExprAtMs = now + random(EXPR_MIN_GAP_MS, EXPR_MAX_GAP_MS);
+            return 0;
+        }
+        return el / (float)exprDurMs;
+    }
+    if (nextExprAtMs == 0)
+        nextExprAtMs = now + random(8000, 16000);
+    if (now >= nextExprAtMs)
+    {
+        long r = random(0, 100);
+        if (sleepy)
+            exprCur = r < 80 ? Expr::YAWN : Expr::WINK;
+        else
+            exprCur = r < 50 ? Expr::WINK : (r < 70 ? Expr::SURPRISE : Expr::YAWN);
+        exprStartMs = now;
+        exprDurMs = exprCur == Expr::WINK ? 450 : (exprCur == Expr::YAWN ? 2200 : 900);
+    }
+    return 0;
+}
+
+// True around the two lightning flashes of drawLightningBg (same 6.5 s cycle).
+static bool lightningActive(uint32_t now) { return (now % 6500) < 260; }
+
 static void drawSceneBackground(TFT_eSPI &g, uint32_t now, const SceneInfo &scn);
 
 // twinkling stars
@@ -405,7 +501,7 @@ static float updateBlink(uint32_t now)
     return openness;
 }
 
-static void updateLook(uint32_t now, bool alarm, bool sleepy)
+static void updateLook(uint32_t now, bool alarm, bool sleepy, Reaction reaction)
 {
     if (sleepy)
     {
@@ -421,6 +517,16 @@ static void updateLook(uint32_t now, bool alarm, bool sleepy)
     {
         lookTX = 0;
         lookTY = 1.0f; // glance down at the panel after a page change
+    }
+    else if (reaction == Reaction::WORRIED)
+    {
+        lookTX = ((now / 800) & 1) ? 1.0f : -1.0f; // nervously looks left and right
+        lookTY = 0;
+    }
+    else if (reaction == Reaction::SAD || reaction == Reaction::STORM)
+    {
+        lookTX = 0;
+        lookTY = 0.8f;
     }
     else if (now >= nextLookAtMs)
     {
@@ -449,8 +555,14 @@ static void updateLook(uint32_t now, bool alarm, bool sleepy)
     lookY += (lookTY - lookY) * 0.30f;
 }
 
+static void drawDrop(TFT_eSPI &g, int16_t x, int16_t y, int16_t r, uint16_t c)
+{
+    g.fillCircle(x, y, r, c);
+    g.fillTriangle(x, y - 2 * r - r / 2, x - r, y - r / 2, x + r, y - r / 2, c);
+}
+
 static void drawFace(TFT_eSPI &g, uint32_t now, bool alarm, bool happy, bool sleepy, float blinkOpen,
-                     const SceneInfo &scn)
+                     const SceneInfo &scn, Reaction reaction, float exprP)
 {
     g.fillRect(0, 0, W, faceH, C_BG);
 
@@ -472,8 +584,8 @@ static void drawFace(TFT_eSPI &g, uint32_t now, bool alarm, bool happy, bool sle
     {
         int16_t shake = alarmFlashOn ? u(2) : -u(2);
         float open = alarmFlashOn ? 1.0f : 0.3f;
-        drawEye(g, lcx + shake, cy, eyeW, eyeH, open, 0, true, -1, C_ALARM_TOP, C_ALARM_BOT, false);
-        drawEye(g, rcx + shake, cy, eyeW, eyeH, open, 0, true, 1, C_ALARM_TOP, C_ALARM_BOT, false);
+        drawEye(g, lcx + shake, cy, eyeW, eyeH, open, 0, BROW_ANGRY, -1, C_ALARM_TOP, C_ALARM_BOT, false);
+        drawEye(g, rcx + shake, cy, eyeW, eyeH, open, 0, BROW_ANGRY, 1, C_ALARM_TOP, C_ALARM_BOT, false);
         if (alarmFlashOn)
         {
             g.drawRect(0, 0, W, faceH, C_RED);
@@ -509,13 +621,98 @@ static void drawFace(TFT_eSPI &g, uint32_t now, bool alarm, bool happy, bool sle
     int16_t oy = (int16_t)(lookY * u(4));
     float open = blinkOpen;
     float lid = 0;
+    float eScale = 1.0f; // >1: eyes widen (startled / surprised)
+    uint8_t brow = BROW_NONE;
     if (sleepy)
     {
         lid = 0.5f;
         open = blinkOpen; // still blinks, slowly
     }
-    drawEye(g, lcx + ox, cy + oy, eyeW, eyeH, open, lid, false, -1, C_EYE_TOP, C_EYE_BOT, true);
-    drawEye(g, rcx + ox, cy + oy, eyeW, eyeH, open, lid, false, 1, C_EYE_TOP, C_EYE_BOT, true);
+
+    // situation reactions (steady while the situation lasts)
+    switch (reaction)
+    {
+    case Reaction::WORRIED:
+        brow = BROW_SAD;
+        break;
+    case Reaction::STORM:
+        brow = BROW_SAD;
+        if (lightningActive(now))
+            eScale = 1.25f; // flinch at every flash
+        break;
+    case Reaction::SAD:
+        brow = BROW_SAD;
+        break;
+    case Reaction::HOT:
+        lid = 0.28f;
+        break;
+    case Reaction::COLD:
+        ox += (((now / 40) & 1) ? 1 : -1) * u(1); // shiver
+        lid = 0.15f;
+        break;
+    default:
+        break;
+    }
+
+    // one-off idle expressions
+    Expr ex = exprCur;
+    if (ex == Expr::YAWN)
+    {
+        float edge = (exprP < 1.0f - exprP ? exprP : 1.0f - exprP) / 0.15f; // ease in/out
+        if (edge > 1.0f)
+            edge = 1.0f;
+        open *= 1.0f - 0.92f * edge; // eyes squeeze shut mid-yawn
+    }
+    else if (ex == Expr::SURPRISE)
+    {
+        float env = exprP < 0.15f ? exprP / 0.15f : (exprP > 0.8f ? (1.0f - exprP) / 0.2f : 1.0f);
+        eScale = 1.0f + 0.28f * env;
+    }
+
+    int16_t ew = (int16_t)(eyeW * eScale), eh = (int16_t)(eyeH * eScale);
+    drawEye(g, lcx + ox, cy + oy, ew, eh, open, lid, brow, -1, C_EYE_TOP, C_EYE_BOT, true);
+    if (ex == Expr::WINK)
+        drawHappyEye(g, rcx + ox, cy + oy, R); // winking eye = a happy arch
+    else
+        drawEye(g, rcx + ox, cy + oy, ew, eh, open, lid, brow, 1, C_EYE_TOP, C_EYE_BOT, true);
+
+    // extras
+    uint16_t dropCol = rgb(120, 200, 255);
+    if (reaction == Reaction::WORRIED || reaction == Reaction::HOT)
+    {
+        // sweat drop sliding down the left side of the face
+        float pd = (now % 2600) / 2600.0f;
+        int16_t sx = lcx - eyeW / 2 - u(9);
+        int16_t sy = (int16_t)(cy - R + pd * R * 2.2f);
+        drawDrop(g, sx, sy, imax(2, u(3)), dimColor(dropCol, (uint8_t)(255 - pd * 140)));
+    }
+    if (reaction == Reaction::SAD)
+    {
+        // a tear rolls from the lower edge of the left eye now and then
+        float pt = (now % 3600) / 3600.0f;
+        if (pt < 0.6f)
+        {
+            float q = pt / 0.6f;
+            int16_t tx = lcx - eyeW / 4;
+            int16_t ty = (int16_t)(cy + eyeH / 2 + u(2) + q * R * 1.3f);
+            drawDrop(g, tx, ty, imax(2, u(2.5f)), dimColor(dropCol, (uint8_t)(255 - q * 150)));
+        }
+    }
+    if (ex == Expr::SURPRISE)
+    {
+        g.setTextDatum(MC_DATUM);
+        g.setTextColor(C_AMBER);
+        g.drawString("!", W / 2, cy - u(2), 4);
+    }
+    if (ex == Expr::YAWN)
+    {
+        float s = sinf(exprP * (float)M_PI); // mouth opens, then closes
+        int16_t my = cy + R + u(10);
+        int16_t rx = u(2) + (int16_t)(u(7) * s), ry = u(2) + (int16_t)(u(6) * s);
+        g.fillEllipse(W / 2, my, rx, ry, dimColor(C_HEART, 200));
+        if (rx > 3 && ry > 3)
+            g.fillEllipse(W / 2, my, rx - 2, ry - 2, rgb(40, 6, 22));
+    }
 
     if (sleepy)
     {
@@ -1121,16 +1318,26 @@ static void drawOtaScreen(int pct)
 // Only visible while the clock is offline: a dimmed WiFi symbol with a red
 // slash. Polled twice a second (WiFi.status() is cheap, but there is no need
 // to ask 30 times a second).
+static bool wifiOkNow = false;       // cached WiFi.status() == WL_CONNECTED
+static uint32_t wifiDownSinceMs = 0; // 0 = connected; else millis() when it was first seen down
+
+static void pollWifi(uint32_t now)
+{
+    static uint32_t lastPollMs = 0;
+    if (lastPollMs != 0 && now - lastPollMs < 500)
+        return;
+    lastPollMs = now ? now : 1;
+    wifiOkNow = (WiFi.status() == WL_CONNECTED);
+    if (wifiOkNow)
+        wifiDownSinceMs = 0;
+    else if (wifiDownSinceMs == 0)
+        wifiDownSinceMs = now ? now : 1;
+}
+
 static void drawStatusIcons(TFT_eSPI &g, uint32_t now)
 {
-    static bool wifiOk = false;
-    static uint32_t lastPollMs = 0;
-    if (lastPollMs == 0 || now - lastPollMs >= 500)
-    {
-        wifiOk = (WiFi.status() == WL_CONNECTED);
-        lastPollMs = now ? now : 1;
-    }
-    if (wifiOk)
+    (void)now;
+    if (wifiOkNow)
         return;
 
     int16_t r = u(7);
@@ -1494,8 +1701,28 @@ void display_tick()
     if (mode != lastMode && !alarm)
         glanceUntilMs = now + 900;
 
-    updateLook(now, alarm, sleepy);
+    pollWifi(now);
+
+    // what the face background / reactions need to know
+    SceneInfo scn;
+    scn.timeKnown = haveTime;
+    scn.day = haveTime && !night && ti.tm_hour >= SCENE_DAY_START_HOUR && ti.tm_hour < SCENE_DAY_END_HOUR;
+    {
+        bool wv = false;
+        float wt = 0;
+        int wc = 0;
+        uint32_t wMs = 0;
+        readWeather(wv, wt, wc, wMs);
+        scn.weatherKnown = wv && ageSince(now, wMs) <= SCENE_WEATHER_MAX_AGE_MS;
+        scn.code = wc;
+        scn.tempC = wt;
+    }
+    bool offline = wifiDownSinceMs != 0 && (now - wifiDownSinceMs) >= REACT_OFFLINE_DELAY_MS;
+    Reaction reaction = alarm ? Reaction::NONE : pickReaction(scn, offline, sleepy);
+
+    updateLook(now, alarm, sleepy, reaction);
     float blinkOpen = updateBlink(now);
+    float exprP = updateExpression(now, !alarm && !happy && reaction != Reaction::WORRIED, sleepy);
 
     // Diagnostics page: full screen, replaces face + info panel. An alarm
     // always wins (it falls through to the normal clock/face drawing below).
@@ -1512,21 +1739,8 @@ void display_tick()
     }
     diagShown = false;
 
-    SceneInfo scn;
-    scn.timeKnown = haveTime;
-    scn.day = haveTime && !night && ti.tm_hour >= SCENE_DAY_START_HOUR && ti.tm_hour < SCENE_DAY_END_HOUR;
-    {
-        bool wv = false;
-        float wt = 0;
-        int wc = 0;
-        uint32_t wMs = 0;
-        readWeather(wv, wt, wc, wMs);
-        scn.weatherKnown = wv && ageSince(now, wMs) <= SCENE_WEATHER_MAX_AGE_MS;
-        scn.code = wc;
-    }
-
     TFT_eSPI &g = faceCv.begin();
-    drawFace(g, now, alarm, happy, sleepy, blinkOpen, scn);
+    drawFace(g, now, alarm, happy, sleepy, blinkOpen, scn, reaction, exprP);
     drawStatusIcons(g, now);
     faceCv.end();
 
