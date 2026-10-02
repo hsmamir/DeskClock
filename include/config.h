@@ -47,6 +47,9 @@
 #define WEATHER_LATITUDE "35.6892"
 #define WEATHER_LONGITUDE "51.3890"
 #define WEATHER_REFRESH_INTERVAL_MS (15UL * 60 * 1000) // refresh every 15 min
+// A reading older than this is shown as "stale" (dimmed + age, e.g. "Clear 3h ago").
+// Two missed refreshes: a normal schedule never gets there, an offline clock does.
+#define WEATHER_STALE_MS (2UL * WEATHER_REFRESH_INTERVAL_MS)
 
 // ---- Audio (JQ6500-16P onboard flash, UART2 @ 9600) ----
 #define AUDIO_BAUD 9600

@@ -2,6 +2,7 @@
 #include <time.h>
 #include <math.h>
 #include <driver/gpio.h>
+#include <WiFi.h>
 #include "display.h"
 #include "state.h"
 #include "pins.h"
@@ -173,13 +174,36 @@ static int readOtaPercent()
     return p;
 }
 
-static void readWeather(bool &valid, float &tempC, int &code)
+static void readWeather(bool &valid, float &tempC, int &code, uint32_t &updatedMs)
 {
     xSemaphoreTake(g_stateMutex, portMAX_DELAY);
     valid = g_state.weatherValid;
     tempC = g_state.weatherTempC;
     code = g_state.weatherCode;
+    updatedMs = g_state.weatherUpdatedMs;
     xSemaphoreGive(g_stateMutex);
+}
+
+// "45s", "12m", "3h", "2d" — compact age for the small screen.
+static void fmtAge(char *out, size_t n, uint32_t ageMs)
+{
+    uint32_t s = ageMs / 1000;
+    if (s < 60)
+        snprintf(out, n, "%us", (unsigned)s);
+    else if (s < 3600)
+        snprintf(out, n, "%um", (unsigned)(s / 60));
+    else if (s < 48UL * 3600)
+        snprintf(out, n, "%uh", (unsigned)(s / 3600));
+    else
+        snprintf(out, n, "%ud", (unsigned)(s / 86400));
+}
+
+// Age of a millis() timestamp. Signed so a timestamp written by another task
+// a moment after `now` was sampled reads as 0 instead of wrapping to ~49 days.
+static uint32_t ageSince(uint32_t now, uint32_t stamp)
+{
+    int32_t d = (int32_t)(now - stamp);
+    return d < 0 ? 0 : (uint32_t)d;
 }
 
 static uint16_t tempColor(float tempC)
@@ -624,13 +648,14 @@ static void drawWeatherIcon(TFT_eSPI &g, int code, int16_t cx, int16_t cy, int16
     }
 }
 
-static void drawModeDots(TFT_eSPI &g, DisplayMode shown, uint16_t accent)
+static const int MODE_COUNT = 4; // CLOCK, DATE, WEATHER, DIAG
+
+static void drawModeDots(TFT_eSPI &g, DisplayMode shown, uint16_t accent, int16_t y)
 {
     int idx = (int)shown;
-    int16_t y = infoH - u(5);
-    for (int i = 0; i < 3; i++)
+    for (int i = 0; i < MODE_COUNT; i++)
     {
-        int16_t x = W / 2 + (i - 1) * u(10);
+        int16_t x = W / 2 + (int16_t)((i - (MODE_COUNT - 1) / 2.0f) * u(10));
         if (i == idx)
             g.fillCircle(x, y, imax(2, u(2.5f)), accent);
         else
@@ -654,8 +679,11 @@ static void drawInfoPanel(DisplayMode mode, bool alarm, bool haveTime, const str
     bool wValid = false;
     float tempC = 0;
     int wCode = 0;
+    uint32_t wUpdatedMs = 0;
     if (shown == DisplayMode::WEATHER)
-        readWeather(wValid, tempC, wCode);
+        readWeather(wValid, tempC, wCode, wUpdatedMs);
+    uint32_t wAgeMs = wValid ? ageSince(millis(), wUpdatedMs) : 0;
+    bool wStale = wValid && wAgeMs > WEATHER_STALE_MS; // offline / fetches failing: reading is old
 
     // ---- signature: only redraw when something visible changed ----
     uint32_t sig = 0;
@@ -683,7 +711,7 @@ static void drawInfoPanel(DisplayMode mode, bool alarm, bool haveTime, const str
 
     uint16_t accent = shown == DisplayMode::CLOCK ? C_CYAN : (shown == DisplayMode::DATE ? C_AMBER : C_SOFT);
     if (shown == DisplayMode::WEATHER && wValid)
-        accent = tempColor(tempC);
+        accent = wStale ? dimColor(tempColor(tempC), 110) : tempColor(tempC); // stale = dimmed
     if (alarm)
         accent = alarmFlashOn ? C_RED : dimColor(C_RED, 90);
 
@@ -795,6 +823,25 @@ static void drawInfoPanel(DisplayMode mode, bool alarm, bool haveTime, const str
 
             strncpy(cap, weather_code_to_label(wCode), sizeof(cap) - 1);
             cap[sizeof(cap) - 1] = '\0';
+
+            if (wStale)
+            {
+                // "Clear 3h ago" (drops "ago" if it would not fit), plus a small clock badge
+                char age[8];
+                fmtAge(age, sizeof(age), wAgeMs);
+                char full[24];
+                snprintf(full, sizeof(full), "%s %s ago", cap, age);
+                g.setTextDatum(MC_DATUM);
+                if (g.textWidth(full, 2) <= W - u(4))
+                    strcpy(cap, full);
+                else
+                    snprintf(cap, sizeof(cap), "%s %s", weather_code_to_label(wCode), age);
+
+                int16_t bx = W - u(10), by = infoH - u(7), br = imax(3, u(4));
+                g.drawCircle(bx, by, br, C_AMBER);
+                g.drawLine(bx, by, bx, by - br + 1, C_AMBER);
+                g.drawLine(bx, by, bx + br - 1, by, C_AMBER);
+            }
         }
         else
         {
@@ -809,7 +856,7 @@ static void drawInfoPanel(DisplayMode mode, bool alarm, bool haveTime, const str
         g.setTextColor(C_SOFT);
         g.drawString(cap, W / 2, capY, 2);
     }
-    drawModeDots(g, shown, accent);
+    drawModeDots(g, shown, accent, infoH - u(5));
     infoCv.end();
 }
 
@@ -876,6 +923,199 @@ static void drawOtaScreen(int pct)
     tft.setTextDatum(MC_DATUM);
     tft.setTextColor(C_CYAN);
     tft.drawString(txt, W / 2, py, 2);
+}
+
+// =====================================================================
+//  Status icon (WiFi lost) — drawn over the face, top-right corner
+// =====================================================================
+// Only visible while the clock is offline: a dimmed WiFi symbol with a red
+// slash. Polled twice a second (WiFi.status() is cheap, but there is no need
+// to ask 30 times a second).
+static void drawStatusIcons(TFT_eSPI &g, uint32_t now)
+{
+    static bool wifiOk = false;
+    static uint32_t lastPollMs = 0;
+    if (lastPollMs == 0 || now - lastPollMs >= 500)
+    {
+        wifiOk = (WiFi.status() == WL_CONNECTED);
+        lastPollMs = now ? now : 1;
+    }
+    if (wifiOk)
+        return;
+
+    int16_t r = u(7);
+    int16_t cx = W - u(13), cy = u(15);
+    drawWifiIcon(g, cx, cy, r, dimColor(C_SOFT, 170));
+    // slash: bg-coloured shadow first so it stays readable over the arcs
+    g.drawLine(cx - r, cy - r - 1, cx + r, cy + 3, C_BG);
+    g.drawLine(cx - r, cy - r, cx + r, cy + 4, C_RED);
+    g.drawLine(cx - r + 1, cy - r, cx + r + 1, cy + 4, C_RED);
+}
+
+// =====================================================================
+//  Diagnostics page (full screen) — IP, signal, free heap, last sync
+// =====================================================================
+// Drawn into the two existing canvases (face area on top, info area below), so
+// it needs no extra RAM and does not flicker. The same content function runs
+// once per canvas with a y offset; anything outside a canvas is clipped.
+struct DiagData
+{
+    bool wifi;
+    char ip[20];
+    int rssi;
+    uint32_t heapKb;
+    char sync[24]; // last NTP sync: "14:05 (12m)" or "none yet"
+    bool syncOk;
+    char weather[16]; // age of the last weather reading
+    bool weatherOk;
+    bool weatherStale;
+    char uptime[16];
+};
+static uint32_t lastDiagDrawMs = 0;
+static bool diagShown = false;
+
+static void collectDiag(DiagData &d, uint32_t now)
+{
+    d.wifi = (WiFi.status() == WL_CONNECTED);
+    d.rssi = 0;
+    if (d.wifi)
+    {
+        IPAddress ip = WiFi.localIP();
+        snprintf(d.ip, sizeof(d.ip), "%u.%u.%u.%u", ip[0], ip[1], ip[2], ip[3]);
+        d.rssi = WiFi.RSSI();
+    }
+    else
+    {
+        d.ip[0] = '\0';
+    }
+    d.heapKb = ESP.getFreeHeap() / 1024;
+
+    xSemaphoreTake(g_stateMutex, portMAX_DELAY);
+    uint32_t ntpEpoch = g_state.ntpSyncEpoch;
+    uint32_t ntpMs = g_state.ntpSyncMs;
+    bool wxValid = g_state.weatherValid;
+    uint32_t wxMs = g_state.weatherUpdatedMs;
+    xSemaphoreGive(g_stateMutex);
+
+    char age[8];
+    d.syncOk = ntpEpoch != 0;
+    if (d.syncOk)
+    {
+        time_t t = (time_t)ntpEpoch;
+        struct tm lt;
+        localtime_r(&t, &lt);
+        char hm[8];
+        strftime(hm, sizeof(hm), "%H:%M", &lt);
+        fmtAge(age, sizeof(age), ageSince(now, ntpMs));
+        snprintf(d.sync, sizeof(d.sync), "%s (%s)", hm, age);
+    }
+    else
+    {
+        strcpy(d.sync, "none yet");
+    }
+
+    d.weatherOk = wxValid;
+    d.weatherStale = false;
+    if (wxValid)
+    {
+        uint32_t a = ageSince(now, wxMs);
+        d.weatherStale = a > WEATHER_STALE_MS;
+        fmtAge(age, sizeof(age), a);
+        snprintf(d.weather, sizeof(d.weather), "%s ago", age);
+    }
+    else
+    {
+        strcpy(d.weather, "none yet");
+    }
+
+    uint32_t s = now / 1000;
+    uint32_t days = s / 86400, hours = (s / 3600) % 24, mins = (s / 60) % 60;
+    if (days > 0)
+        snprintf(d.uptime, sizeof(d.uptime), "%ud %02uh", (unsigned)days, (unsigned)hours);
+    else if (hours > 0)
+        snprintf(d.uptime, sizeof(d.uptime), "%uh %02um", (unsigned)hours, (unsigned)mins);
+    else
+        snprintf(d.uptime, sizeof(d.uptime), "%um", (unsigned)mins);
+}
+
+static void drawDiagRow(TFT_eSPI &g, int16_t y, const char *label, const char *value, uint16_t valueColor)
+{
+    g.setTextDatum(ML_DATUM);
+    g.setTextColor(C_SOFT);
+    g.drawString(label, u(6), y, 2);
+    g.setTextDatum(MR_DATUM);
+    g.setTextColor(valueColor);
+    g.drawString(value, W - u(6), y, 2);
+}
+
+// yOff = screen y of this canvas' top edge; all coordinates below are screen
+// coordinates, shifted into the canvas.
+static void drawDiagContent(TFT_eSPI &g, int16_t yOff, const DiagData &d)
+{
+    auto Y = [&](float v) -> int16_t
+    { return (int16_t)(u(v) - yOff); };
+
+    uint16_t accent = d.wifi ? C_ICE : C_RED;
+    g.fillRect(0, -yOff, W, imax(2, u(2)), accent);
+    g.fillRect(0, imax(2, u(2)) - yOff, W, imax(1, u(1)), dimColor(accent, 60));
+
+    g.setTextDatum(MC_DATUM);
+    g.setTextColor(C_WHITE);
+    g.drawString("Diagnostics", W / 2, Y(13), 2);
+    g.drawFastHLine(u(6), Y(23), W - 2 * u(6), dimColor(C_SOFT, 80));
+
+    // IP, centred on its own line (a full 192.168.xxx.xxx would not fit next to a label)
+    g.setTextDatum(MC_DATUM);
+    g.setTextColor(d.wifi ? C_CYAN : C_RED);
+    g.drawString(d.wifi ? d.ip : "Offline", W / 2, Y(35), 2);
+
+    char buf[24];
+    uint16_t c;
+
+    // signal strength
+    if (d.wifi)
+    {
+        snprintf(buf, sizeof(buf), "%d dBm", d.rssi);
+        c = d.rssi >= -60 ? rgb(90, 230, 130) : (d.rssi >= -75 ? C_AMBER : C_RED);
+    }
+    else
+    {
+        strcpy(buf, "--");
+        c = C_RED;
+    }
+    drawDiagRow(g, Y(56), "Signal", buf, c);
+
+    // free heap
+    snprintf(buf, sizeof(buf), "%u KB", (unsigned)d.heapKb);
+    c = d.heapKb < 30 ? C_RED : (d.heapKb < 60 ? C_AMBER : C_WHITE);
+    drawDiagRow(g, Y(75), "Heap", buf, c);
+
+    // last NTP sync (clock time + age)
+    drawDiagRow(g, Y(94), "Sync", d.sync, d.syncOk ? C_WHITE : C_AMBER);
+
+    // weather reading age
+    drawDiagRow(g, Y(113), "Weather", d.weather, d.weatherOk ? (d.weatherStale ? C_AMBER : C_WHITE) : C_AMBER);
+
+    // uptime
+    drawDiagRow(g, Y(132), "Uptime", d.uptime, C_WHITE);
+
+    drawModeDots(g, DisplayMode::DIAG, accent, H - u(5) - yOff);
+}
+
+static void drawDiagScreen(uint32_t now)
+{
+    DiagData d;
+    collectDiag(d, now);
+
+    TFT_eSPI &gt = faceCv.begin();
+    gt.fillRect(0, 0, W, faceH, C_BG);
+    drawDiagContent(gt, 0, d);
+    faceCv.end();
+
+    TFT_eSPI &gb = infoCv.begin();
+    gb.fillRect(0, 0, W, infoH, C_BG);
+    drawDiagContent(gb, faceH, d);
+    infoCv.end();
 }
 
 // =====================================================================
@@ -1067,8 +1307,24 @@ void display_tick()
     updateLook(now, alarm, sleepy);
     float blinkOpen = updateBlink(now);
 
+    // Diagnostics page: full screen, replaces face + info panel. An alarm
+    // always wins (it falls through to the normal clock/face drawing below).
+    if (mode == DisplayMode::DIAG && !alarm)
+    {
+        lastMode = DisplayMode::DIAG; // so the page change is noticed on the way out
+        if (!diagShown || now - lastDiagDrawMs >= 500)
+        {
+            lastDiagDrawMs = now;
+            diagShown = true;
+            drawDiagScreen(now);
+        }
+        return;
+    }
+    diagShown = false;
+
     TFT_eSPI &g = faceCv.begin();
     drawFace(g, now, alarm, happy, sleepy, blinkOpen);
+    drawStatusIcons(g, now);
     faceCv.end();
 
     drawInfoPanel(mode, alarm, haveTime, ti, now);

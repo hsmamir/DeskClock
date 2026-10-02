@@ -74,6 +74,9 @@ static void cycleDisplayMode()
         g_state.displayMode = DisplayMode::WEATHER;
         break;
     case DisplayMode::WEATHER:
+        g_state.displayMode = DisplayMode::DIAG;
+        break;
+    case DisplayMode::DIAG:
         g_state.displayMode = DisplayMode::CLOCK;
         break;
     }

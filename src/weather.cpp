@@ -68,6 +68,7 @@ static void fetchWeather()
                 g_state.weatherTempC = temp;
                 g_state.weatherCode = code;
                 g_state.weatherValid = true;
+                g_state.weatherUpdatedMs = millis();
                 xSemaphoreGive(g_stateMutex);
             }
         }

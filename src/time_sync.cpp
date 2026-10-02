@@ -134,6 +134,8 @@ static void syncTime()
         xSemaphoreTake(g_stateMutex, portMAX_DELAY);
         g_state.timeSynced = true;
         g_state.timeApprox = false;
+        g_state.ntpSyncEpoch = (uint32_t)time(nullptr);
+        g_state.ntpSyncMs = millis();
         xSemaphoreGive(g_stateMutex);
         s_lastSyncMs = millis();
         time_save_now(); // fresh baseline right after a real sync

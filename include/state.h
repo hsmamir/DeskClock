@@ -14,7 +14,8 @@ enum class DisplayMode
 {
     CLOCK,
     DATE,
-    WEATHER
+    WEATHER,
+    DIAG // full-screen diagnostics page: IP, signal, free heap, last sync
 };
 
 // Shared app state, written by touch/time tasks, read by display/servo tasks.
@@ -33,7 +34,12 @@ struct AppState
     // Weather cache, refreshed periodically by weather_tick()
     bool weatherValid = false;
     float weatherTempC = 0.0f;
-    int weatherCode = 0; // Open-Meteo WMO weather code
+    int weatherCode = 0;           // Open-Meteo WMO weather code
+    uint32_t weatherUpdatedMs = 0; // millis() of the last successful fetch (age = millis() - this)
+
+    // Last successful NTP sync (diagnostics page). 0 = no NTP sync since boot.
+    uint32_t ntpSyncEpoch = 0; // wall-clock time of that sync
+    uint32_t ntpSyncMs = 0;    // millis() of that sync (age = millis() - this)
 };
 
 extern AppState g_state;
