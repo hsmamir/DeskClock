@@ -91,6 +91,18 @@
 #define TRANSITION_ENABLED 1
 #define TRANSITION_MS 220
 
+// ---- Clock digit effects ----
+// DIGIT_ANIM: when a clock digit changes, the old one slides up and fades out while
+//             the new one rises from below (only the digits that actually change).
+// GLOW:       faint halo around every lit 7-segment digit.
+// COLON_PULSE: the colon dots breathe softly instead of blinking on/off.
+// Set any of them to 0 to turn that effect off.
+#define CLOCK_DIGIT_ANIM 1
+#define CLOCK_DIGIT_ANIM_MS 380
+#define CLOCK_GLOW 1
+#define CLOCK_COLON_PULSE 1
+#define CLOCK_COLON_PERIOD_MS 1600 // one full "breath" of the colon
+
 // ---- Eye expressions & reactions ----
 // Idle eyes sometimes wink, yawn (mostly at night) or get startled, and they react
 // to the situation: worried when WiFi has been gone for a while, sad in rain,

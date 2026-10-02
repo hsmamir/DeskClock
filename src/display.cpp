@@ -745,12 +745,20 @@ struct Seg
     int16_t x, y, w, h;
 };
 
-static void drawSegDigit(TFT_eSPI &g, int16_t x, int16_t y, int16_t w, int16_t h, int8_t d,
-                         uint16_t on, uint16_t off)
+// Which parts of a digit to draw.
+enum : uint8_t
+{
+    SEG_GHOST = 1, // the unlit "ghost" segments
+    SEG_LIT = 2,   // the lit segments, with their glow
+    SEG_ALL = 3
+};
+
+static void drawSegDigitEx(TFT_eSPI &g, int16_t x, int16_t y, int16_t w, int16_t h, int8_t d,
+                           uint16_t on, uint16_t off, uint8_t parts)
 {
     int16_t t = imax(2, w / 5);
     int16_t vh = (h - 3 * t) / 2;
-    uint8_t m = (d >= 0 && d <= 10) ? SEG_MASK[d] : 0;
+    uint8_t m = (d >= 0 && d <= 10) ? SEG_MASK[d] : 0; // d < 0: blank = only ghost segments
     Seg s[7] = {
         {(int16_t)(x + t), y, (int16_t)(w - 2 * t), t},                     // a top
         {(int16_t)(x + w - t), (int16_t)(y + t), t, vh},                    // b top-right
@@ -762,14 +770,94 @@ static void drawSegDigit(TFT_eSPI &g, int16_t x, int16_t y, int16_t w, int16_t h
     };
     if (d == 10)
         off = C_BG; // a minus sign has no "ghost" segments
-    for (uint8_t i = 0; i < 7; i++)
-        g.fillRoundRect(s[i].x, s[i].y, s[i].w, s[i].h, t / 2, ((m >> i) & 1) ? on : off);
+
+    // soft glow: two dim halo layers (outer first) behind the lit segments
+    if (CLOCK_GLOW && (parts & SEG_LIT))
+    {
+        for (uint8_t layer = 2; layer >= 1; layer--)
+        {
+            uint16_t hc = dimColor(on, layer == 2 ? 20 : 46);
+            for (uint8_t i = 0; i < 7; i++)
+                if ((m >> i) & 1)
+                    g.fillRoundRect(s[i].x - layer, s[i].y - layer, s[i].w + 2 * layer, s[i].h + 2 * layer,
+                                    t / 2 + layer, hc);
+        }
+    }
+    if (parts & SEG_GHOST)
+        for (uint8_t i = 0; i < 7; i++)
+            if (!((m >> i) & 1))
+                g.fillRoundRect(s[i].x, s[i].y, s[i].w, s[i].h, t / 2, off);
+    if (parts & SEG_LIT)
+        for (uint8_t i = 0; i < 7; i++)
+            if ((m >> i) & 1)
+                g.fillRoundRect(s[i].x, s[i].y, s[i].w, s[i].h, t / 2, on);
 }
 
-static void drawColon(TFT_eSPI &g, int16_t cx, int16_t y, int16_t h, int16_t t, uint16_t c)
+static void drawSegDigit(TFT_eSPI &g, int16_t x, int16_t y, int16_t w, int16_t h, int8_t d,
+                         uint16_t on, uint16_t off)
 {
-    g.fillRoundRect(cx - t / 2, y + h / 3 - t / 2, t, t, t / 2, c);
-    g.fillRoundRect(cx - t / 2, y + 2 * h / 3 - t / 2, t, t, t / 2, c);
+    drawSegDigitEx(g, x, y, w, h, d, on, off, SEG_ALL);
+}
+
+// Colon: two dots with a soft halo. level 0..15 = brightness (it "breathes").
+static void drawColonGlow(TFT_eSPI &g, int16_t cx, int16_t y, int16_t h, int16_t t, uint16_t on, uint8_t level)
+{
+    float k = level / 15.0f;
+    uint16_t c = mixColor(dimColor(on, 38), on, k);
+    for (int i = 1; i <= 2; i++)
+    {
+        int16_t py = y + i * h / 3;
+        if (CLOCK_GLOW)
+        {
+            for (uint8_t layer = 2; layer >= 1; layer--)
+                g.fillRoundRect(cx - t / 2 - layer, py - t / 2 - layer, t + 2 * layer, t + 2 * layer, t / 2 + layer,
+                                mixColor(C_BG, dimColor(on, layer == 2 ? 20 : 46), k)); // fades into the background, never darker than it
+        }
+        g.fillRoundRect(cx - t / 2, py - t / 2, t, t, t / 2, c);
+    }
+}
+
+// 0..15, follows a smooth sine "breath" (or the old on/off blink if the pulse is disabled)
+static uint8_t colonLevelNow(uint32_t now)
+{
+    if (!CLOCK_COLON_PULSE)
+        return ((now / 500) % 2) == 0 ? 15 : 0;
+    float ph = (float)(now % (uint32_t)CLOCK_COLON_PERIOD_MS) / (float)CLOCK_COLON_PERIOD_MS;
+    float pulse = 0.5f - 0.5f * cosf(ph * 2.0f * (float)M_PI); // 0 -> 1 -> 0
+    return (uint8_t)(pulse * 15.0f + 0.5f);
+}
+
+// ---- Clock digit animation ----
+// A changing digit is drawn into a small sprite (so it is clipped to its own cell):
+// the unlit segments stay put, the old digit rises and fades out, the new one
+// rises in from below. Needs the info panel to be a real sprite (not the
+// viewport fallback), otherwise digits just change instantly.
+static TFT_eSprite digSpr(&tft);
+static bool digSprOk = false;
+static const int16_t DIG_PAD = 1;
+static int8_t digCur[4] = {-1, -1, -1, -1};    // digit currently shown (-1 = nothing yet)
+static int8_t digPrev[4] = {-1, -1, -1, -1};   // digit it is replacing
+static uint32_t digChangeMs[4] = {0, 0, 0, 0}; // when it changed; 0 = not animating
+
+static void clockMetrics(int16_t &dw, int16_t &dh)
+{
+    dh = (int16_t)(infoH * 0.42f);
+    dw = (int16_t)(dh * 0.56f);
+}
+
+static void drawAnimDigit(int16_t x, int16_t y, int16_t dw, int16_t dh, int8_t oldD, int8_t newD,
+                          float p, uint16_t on)
+{
+    float inv = 1.0f - p;
+    float e = 1.0f - inv * inv * inv; // ease-out: quick start, soft landing
+    int16_t travel = dh + 2 * DIG_PAD + imax(2, u(2));
+    int16_t off = (int16_t)(e * travel);
+
+    digSpr.fillSprite(C_BG);
+    drawSegDigitEx(digSpr, DIG_PAD, DIG_PAD, dw, dh, -1, on, C_GHOST, SEG_GHOST); // unlit backdrop stays
+    drawSegDigitEx(digSpr, DIG_PAD, DIG_PAD - off, dw, dh, oldD, mixColor(on, C_BG, e), C_GHOST, SEG_LIT);
+    drawSegDigitEx(digSpr, DIG_PAD, DIG_PAD + travel - off, dw, dh, newD, mixColor(C_BG, on, e), C_GHOST, SEG_LIT);
+    digSpr.pushToSprite(&infoCv.spr, x - DIG_PAD, y - DIG_PAD);
 }
 
 static void drawSpinner(TFT_eSPI &g, int16_t cx, int16_t cy, int16_t r, uint16_t c)
@@ -1067,7 +1155,42 @@ static void drawSegNumber(TFT_eSPI &g, int16_t x, int16_t y, int16_t dw, int16_t
 static void drawInfoPanel(DisplayMode mode, bool alarm, bool haveTime, const struct tm &ti, uint32_t now)
 {
     DisplayMode shown = alarm ? DisplayMode::CLOCK : mode; // an alarm always shows the time
-    bool colonOn = ((now / 500) % 2) == 0;
+    uint8_t colonLevel = colonLevelNow(now);
+
+    // ---- clock digits: spot a changed digit and start its slide animation ----
+    int8_t cd[4] = {0, 0, 0, 0};
+    bool digAnimating = false;
+    if (shown == DisplayMode::CLOCK && haveTime)
+    {
+        cd[0] = (int8_t)(ti.tm_hour / 10);
+        cd[1] = (int8_t)(ti.tm_hour % 10);
+        cd[2] = (int8_t)(ti.tm_min / 10);
+        cd[3] = (int8_t)(ti.tm_min % 10);
+        bool fresh = (lastMode != DisplayMode::CLOCK) || digCur[0] < 0; // came from another page / first time
+        for (uint8_t i = 0; i < 4; i++)
+        {
+            if (fresh)
+            {
+                digCur[i] = digPrev[i] = cd[i];
+                digChangeMs[i] = 0;
+            }
+            else if (cd[i] != digCur[i])
+            {
+                digPrev[i] = digCur[i];
+                digCur[i] = cd[i];
+                digChangeMs[i] = (CLOCK_DIGIT_ANIM && digSprOk) ? now : 0;
+            }
+            if (digChangeMs[i] != 0)
+            {
+                if (now - digChangeMs[i] < (uint32_t)CLOCK_DIGIT_ANIM_MS)
+                    digAnimating = true;
+                else
+                    digChangeMs[i] = 0; // finished: from now on a plain static digit
+            }
+        }
+    }
+    else
+        digCur[0] = -1; // no time shown: the next time we show one it appears without animating
 
     bool wValid = false;
     float tempC = 0;
@@ -1084,8 +1207,9 @@ static void drawInfoPanel(DisplayMode mode, bool alarm, bool haveTime, const str
     {
     case DisplayMode::CLOCK:
         if (haveTime)
-            sig = (1u << 28) | ((uint32_t)(ti.tm_hour * 3600 + ti.tm_min * 60 + ti.tm_sec) << 2) |
-                  (colonOn ? 2u : 0u) | (alarmFlashOn ? 1u : 0u);
+            sig = (1u << 28) | (uint32_t)(ti.tm_hour * 3600 + ti.tm_min * 60 + ti.tm_sec) | // bits 0-16
+                  (alarmFlashOn ? (1u << 17) : 0u) | ((uint32_t)colonLevel << 18) |         // colon "breath"
+                  (digAnimating ? ((((now / 33) & 0x1Fu) + 1u) << 22) : 0u);                // redraw every frame while a digit slides
         else
             sig = (2u << 28) | (now / 90);
         break;
@@ -1134,16 +1258,24 @@ static void drawInfoPanel(DisplayMode mode, bool alarm, bool haveTime, const str
     {
         if (haveTime)
         {
-            int8_t d[4] = {(int8_t)(ti.tm_hour / 10), (int8_t)(ti.tm_hour % 10),
-                           (int8_t)(ti.tm_min / 10), (int8_t)(ti.tm_min % 10)};
             int16_t cw = imax(4, u(8));
             int16_t total = 4 * dw + 2 * gap + 2 * gap + cw;
             int16_t x0 = (W - total) / 2;
             uint16_t on = alarm ? (alarmFlashOn ? C_RED : dimColor(C_RED, 90)) : C_CYAN;
-            drawSegNumber(g, x0, dy, dw, dh, gap, d, 2, on);
-            drawColon(g, x0 + 2 * dw + gap + gap + cw / 2, dy, dh, imax(2, dw / 4),
-                      colonOn ? on : dimColor(on, 40));
-            drawSegNumber(g, x0 + 2 * dw + gap + 2 * gap + cw, dy, dw, dh, gap, d + 2, 2, on);
+            int16_t xs[4] = {x0, (int16_t)(x0 + dw + gap),
+                             (int16_t)(x0 + 2 * dw + gap + 2 * gap + cw),
+                             (int16_t)(x0 + 2 * dw + gap + 2 * gap + cw + dw + gap)};
+            for (uint8_t i = 0; i < 4; i++)
+            {
+                if (digChangeMs[i] != 0 && digSprOk)
+                {
+                    float pr = (now - digChangeMs[i]) / (float)CLOCK_DIGIT_ANIM_MS;
+                    drawAnimDigit(xs[i], dy, dw, dh, digPrev[i], digCur[i], pr > 1.0f ? 1.0f : pr, on);
+                }
+                else
+                    drawSegDigit(g, xs[i], dy, dw, dh, digCur[i], on, C_GHOST);
+            }
+            drawColonGlow(g, x0 + 2 * dw + gap + gap + cw / 2, dy, dh, imax(2, dw / 4), on, colonLevel);
             strftime(cap, sizeof(cap), "%a %d %b", &ti);
 
             // seconds progress bar
@@ -1650,8 +1782,18 @@ void display_init()
 
     bool f = faceCv.init(0, W, faceH);
     bool i = infoCv.init(faceH, W, infoH);
-    Serial.printf("display sprites: face=%s info=%s (free heap %u)\n",
-                  f ? "ok" : "fallback", i ? "ok" : "fallback", (unsigned)ESP.getFreeHeap());
+
+    // small sprite for the clock-digit slide animation (needs the info panel to be a sprite too)
+    if (CLOCK_DIGIT_ANIM && i)
+    {
+        int16_t dw, dh;
+        clockMetrics(dw, dh);
+        digSpr.setColorDepth(16);
+        digSprOk = (digSpr.createSprite(dw + 2 * DIG_PAD, dh + 2 * DIG_PAD) != nullptr);
+    }
+    Serial.printf("display sprites: face=%s info=%s digit=%s (free heap %u)\n",
+                  f ? "ok" : "fallback", i ? "ok" : "fallback", digSprOk ? "ok" : "off",
+                  (unsigned)ESP.getFreeHeap());
 
     blinkPhaseStartMs = millis();
 }
