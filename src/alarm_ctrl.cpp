@@ -18,6 +18,8 @@ static uint32_t s_ringStartMs = 0;
 static uint32_t s_snoozeUntilMs = 0;
 static int32_t s_lastFiredKey = -1; // date + hh:mm of the last scheduled ring
 static volatile bool s_snoozeRequested = false;
+static volatile bool s_dismissRequested = false;
+static uint8_t s_snoozeCount = 0; // snoozes used by the current alarm
 
 static bool readTimeSynced()
 {
@@ -46,6 +48,7 @@ static void startRinging(uint32_t now)
     s_snoozeRequested = false; // drop any stale request from before this ring
     setRinging(true);
     audio_play_loop(SOUND_INDEX_ALARM);
+    Serial.println("Alarm: ringing");
 }
 
 static void stopRinging()
@@ -59,9 +62,29 @@ void alarm_request_snooze()
     s_snoozeRequested = true;
 }
 
+void alarm_request_dismiss()
+{
+    s_dismissRequested = true;
+}
+
 void alarm_tick()
 {
     uint32_t now = millis();
+
+    // A full stop wins over everything else, in every phase.
+    if (s_dismissRequested)
+    {
+        s_dismissRequested = false;
+        s_snoozeRequested = false;
+        if (s_phase != AlarmPhase::WAITING)
+        {
+            if (s_phase == AlarmPhase::RINGING)
+                stopRinging(); // (a snoozed alarm is already silent)
+            s_phase = AlarmPhase::WAITING;
+            s_snoozeCount = 0;
+            Serial.println("Alarm: switched off");
+        }
+    }
 
     switch (s_phase)
     {
@@ -84,6 +107,7 @@ void alarm_tick()
             if (key != s_lastFiredKey)
             {
                 s_lastFiredKey = key;
+                s_snoozeCount = 0; // a fresh alarm: all snoozes available again
                 startRinging(now);
             }
         }
@@ -95,13 +119,28 @@ void alarm_tick()
         {
             s_snoozeRequested = false;
             stopRinging();
-            s_snoozeUntilMs = now + ALARM_SNOOZE_MIN * 60UL * 1000UL;
-            s_phase = AlarmPhase::SNOOZED;
+            if (ALARM_MAX_SNOOZES > 0 && s_snoozeCount >= ALARM_MAX_SNOOZES)
+            {
+                // Out of snoozes: this tap ends the alarm instead of delaying it again.
+                s_phase = AlarmPhase::WAITING;
+                s_snoozeCount = 0;
+                Serial.println("Alarm: no snoozes left, switched off");
+            }
+            else
+            {
+                s_snoozeCount++;
+                s_snoozeUntilMs = now + ALARM_SNOOZE_MIN * 60UL * 1000UL;
+                s_phase = AlarmPhase::SNOOZED;
+                Serial.printf("Alarm: snoozed (%u of %u), rings again in %u min\n",
+                              (unsigned)s_snoozeCount, (unsigned)ALARM_MAX_SNOOZES, (unsigned)ALARM_SNOOZE_MIN);
+            }
         }
         else if ((now - s_ringStartMs) >= ALARM_AUTO_OFF_MIN * 60UL * 1000UL)
         {
             stopRinging();
             s_phase = AlarmPhase::WAITING; // next ring is tomorrow's alarm time
+            s_snoozeCount = 0;
+            Serial.println("Alarm: nobody answered, switched off");
         }
         break;
 

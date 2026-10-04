@@ -23,8 +23,14 @@ static DebouncedButton btnPet{TOUCH_PET_PIN};
 static DebouncedButton btnMode{TOUCH_MODE_PIN};
 static DebouncedButton btnAlarm{TOUCH_ALARM_PIN};
 
-// Returns true exactly once, on the debounced press (HIGH -> LOW) edge.
-static bool pollPressEdge(DebouncedButton &btn)
+enum class BtnEvent : uint8_t
+{
+    NONE,
+    PRESSED, // debounced press   (HIGH -> LOW), reported once
+    RELEASED // debounced release (LOW -> HIGH), reported once
+};
+
+static BtnEvent pollButton(DebouncedButton &btn)
 {
     bool pressed = digitalRead(btn.pin) == LOW;
     uint32_t now = millis();
@@ -38,9 +44,9 @@ static bool pollPressEdge(DebouncedButton &btn)
     if ((now - btn.lastChangeMs) > TOUCH_DEBOUNCE_MS && pressed != btn.lastStable)
     {
         btn.lastStable = pressed;
-        return pressed; // true only on the debounced press transition
+        return pressed ? BtnEvent::PRESSED : BtnEvent::RELEASED;
     }
-    return false;
+    return BtnEvent::NONE;
 }
 
 // Pet button doesn't interrupt an active alarm — you snooze/confirm that
@@ -83,16 +89,37 @@ static void cycleDisplayMode()
     xSemaphoreGive(g_stateMutex);
 }
 
-// Snoozes the alarm if it is ringing; otherwise does nothing. The alarm task
-// owns the actual snooze timing — this only passes the request along.
+// Alarm button:
+//   tap  while ringing -> snooze at once (the sound stops immediately)
+//   hold ALARM_LONG_PRESS_MS (ringing or snoozed) -> alarm off completely
+// The snooze fires on the press, not the release, so there is no delay; if the
+// finger stays down, the same press then becomes "off". The alarm task owns the
+// timing and the snooze limit — this only passes the requests along.
+static uint32_t alarmPressedAtMs = 0;
+static bool alarmLongHandled = false;
+
 static void handleAlarmButton()
 {
-    xSemaphoreTake(g_stateMutex, portMAX_DELAY);
-    bool ringing = g_state.alarmActive;
-    xSemaphoreGive(g_stateMutex);
+    BtnEvent ev = pollButton(btnAlarm);
+    uint32_t now = millis();
 
-    if (ringing)
-        alarm_request_snooze();
+    if (ev == BtnEvent::PRESSED)
+    {
+        alarmPressedAtMs = now;
+        alarmLongHandled = false;
+
+        xSemaphoreTake(g_stateMutex, portMAX_DELAY);
+        bool ringing = g_state.alarmActive;
+        xSemaphoreGive(g_stateMutex);
+        if (ringing)
+            alarm_request_snooze();
+    }
+    else if (btnAlarm.lastStable && !alarmLongHandled &&
+             (uint32_t)(now - alarmPressedAtMs) >= ALARM_LONG_PRESS_MS)
+    {
+        alarmLongHandled = true;
+        alarm_request_dismiss(); // ignored by the alarm task while it is idle
+    }
 }
 
 void touch_init()
@@ -104,10 +131,9 @@ void touch_init()
 
 void touch_tick()
 {
-    if (pollPressEdge(btnPet))
+    if (pollButton(btnPet) == BtnEvent::PRESSED)
         triggerPetHappy();
-    if (pollPressEdge(btnMode))
+    if (pollButton(btnMode) == BtnEvent::PRESSED)
         cycleDisplayMode();
-    if (pollPressEdge(btnAlarm))
-        handleAlarmButton();
+    handleAlarmButton();
 }

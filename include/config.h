@@ -73,6 +73,14 @@
 #define ALARM_AUTO_OFF_MIN 3 // nobody pressed anything: stop by itself after this long
                              // (no more rings until the next day's alarm time)
 
+// How to switch the alarm OFF completely (not just snooze it):
+//   * hold the alarm button for ALARM_LONG_PRESS_MS (works while it rings AND while it
+//     is snoozed - a short tap snoozes at once, holding on turns it off), or
+//   * use up all the snoozes: after ALARM_MAX_SNOOZES snoozes the next tap ends the alarm.
+// The next day's alarm is not affected either way.
+#define ALARM_LONG_PRESS_MS 1000 // hold time for "off"
+#define ALARM_MAX_SNOOZES 3      // 0 = unlimited snoozes
+
 // ---- Face background scene ----
 // The area behind the eyes follows the weather and the time of day: sun / moon,
 // drifting clouds, rain, snow, fog, lightning, stars. Everything is drawn dim so
