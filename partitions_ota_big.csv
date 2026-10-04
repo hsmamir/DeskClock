@@ -1,0 +1,12 @@
+# Name,    Type, SubType,  Offset,   Size,     Flags
+# 4 MB flash, two big OTA slots. Same as default.csv for everything up to and
+# including app0's start (nvs @0x9000, otadata @0xe000, app0 @0x10000), so the
+# settings / boot log / saved time in NVS survive the USB flash that installs this.
+# default.csv had 2 x 1.25 MB slots + a 1.375 MB spiffs partition nothing used;
+# here the spiffs space is given to the two app slots (2 x 1.9375 MB).
+# Needs a real 4 MB chip. The partition table can only be changed over USB, not OTA.
+nvs,       data, nvs,      0x9000,   0x5000,
+otadata,   data, ota,      0xe000,   0x2000,
+app0,      app,  ota_0,    0x10000,  0x1F0000,
+app1,      app,  ota_1,    0x200000, 0x1F0000,
+coredump,  data, coredump, 0x3F0000, 0x10000,
