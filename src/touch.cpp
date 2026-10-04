@@ -68,6 +68,8 @@ static void triggerPetHappy()
         audio_play_gentle(SOUND_INDEX_PET);
 }
 
+// Tap on Mode: Clock -> Date -> Weather -> Clock. Diagnostics is not part of the
+// cycle (see toggleDiagPage); tapping while on it just goes back to the clock.
 static void cycleDisplayMode()
 {
     xSemaphoreTake(g_stateMutex, portMAX_DELAY);
@@ -80,11 +82,72 @@ static void cycleDisplayMode()
         g_state.displayMode = DisplayMode::WEATHER;
         break;
     case DisplayMode::WEATHER:
-        g_state.displayMode = DisplayMode::DIAG;
-        break;
     case DisplayMode::DIAG:
         g_state.displayMode = DisplayMode::CLOCK;
         break;
+    }
+    xSemaphoreGive(g_stateMutex);
+}
+
+// Hold on Mode: open the diagnostics page from anywhere, or leave it.
+static void toggleDiagPage()
+{
+    xSemaphoreTake(g_stateMutex, portMAX_DELAY);
+    g_state.displayMode = g_state.displayMode == DisplayMode::DIAG ? DisplayMode::CLOCK : DisplayMode::DIAG;
+    xSemaphoreGive(g_stateMutex);
+}
+
+// Mode button: a tap acts on RELEASE (so a long press doesn't also flip a page first);
+// holding MODE_LONG_PRESS_MS acts while still held. Returns true on any activity.
+static uint32_t modePressedAtMs = 0;
+static bool modeLongHandled = false;
+
+static bool handleModeButton()
+{
+    BtnEvent ev = pollButton(btnMode);
+    uint32_t now = millis();
+
+    if (ev == BtnEvent::PRESSED)
+    {
+        modePressedAtMs = now;
+        modeLongHandled = false;
+        return true;
+    }
+    if (btnMode.lastStable && !modeLongHandled && (uint32_t)(now - modePressedAtMs) >= MODE_LONG_PRESS_MS)
+    {
+        modeLongHandled = true;
+        toggleDiagPage();
+        return true;
+    }
+    if (ev == BtnEvent::RELEASED)
+    {
+        if (!modeLongHandled)
+            cycleDisplayMode();
+        return true;
+    }
+    return btnMode.lastStable; // held = still interacting
+}
+
+// Back to the clock after a while without any button press. The timer restarts
+// whenever the page changes or a button is used.
+static uint32_t lastActivityMs = 0;
+static DisplayMode lastSeenMode = DisplayMode::CLOCK;
+
+static void autoReturnToClock(bool activity)
+{
+    uint32_t now = millis();
+    xSemaphoreTake(g_stateMutex, portMAX_DELAY);
+    DisplayMode m = g_state.displayMode;
+    if (activity || m != lastSeenMode)
+    {
+        lastActivityMs = now;
+        lastSeenMode = m;
+    }
+    uint32_t limit = m == DisplayMode::CLOCK ? 0 : (m == DisplayMode::DIAG ? DIAG_RETURN_MS : DISPLAY_RETURN_MS);
+    if (limit != 0 && (uint32_t)(now - lastActivityMs) >= limit)
+    {
+        g_state.displayMode = DisplayMode::CLOCK;
+        lastSeenMode = DisplayMode::CLOCK;
     }
     xSemaphoreGive(g_stateMutex);
 }
@@ -98,7 +161,7 @@ static void cycleDisplayMode()
 static uint32_t alarmPressedAtMs = 0;
 static bool alarmLongHandled = false;
 
-static void handleAlarmButton()
+static bool handleAlarmButton()
 {
     BtnEvent ev = pollButton(btnAlarm);
     uint32_t now = millis();
@@ -113,13 +176,16 @@ static void handleAlarmButton()
         xSemaphoreGive(g_stateMutex);
         if (ringing)
             alarm_request_snooze();
+        return true;
     }
     else if (btnAlarm.lastStable && !alarmLongHandled &&
              (uint32_t)(now - alarmPressedAtMs) >= ALARM_LONG_PRESS_MS)
     {
         alarmLongHandled = true;
         alarm_request_dismiss(); // ignored by the alarm task while it is idle
+        return true;
     }
+    return btnAlarm.lastStable;
 }
 
 void touch_init()
@@ -131,9 +197,13 @@ void touch_init()
 
 void touch_tick()
 {
+    bool activity = false;
     if (pollButton(btnPet) == BtnEvent::PRESSED)
+    {
         triggerPetHappy();
-    if (pollButton(btnMode) == BtnEvent::PRESSED)
-        cycleDisplayMode();
-    handleAlarmButton();
+        activity = true;
+    }
+    activity |= handleModeButton();
+    activity |= handleAlarmButton();
+    autoReturnToClock(activity);
 }

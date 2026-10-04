@@ -36,6 +36,17 @@
 // ---- Button debounce (mechanical microswitch contact bounce) ----
 #define TOUCH_DEBOUNCE_MS 50
 
+// ---- Pages: Mode button and automatic return to the clock ----
+// Tap Mode: Clock -> Date -> Weather -> Clock. The diagnostics page is NOT in that
+// cycle: HOLD the Mode button for MODE_LONG_PRESS_MS to open it (hold again to leave).
+// With no button pressed for DISPLAY_RETURN_MS on the Date / Weather page, or
+// DIAG_RETURN_MS on the diagnostics page, the display goes back to the clock.
+// 0 = stay where you left it. (The weather page alternates its two views every
+// WEATHER_PAGE_SWITCH_MS, so keep DISPLAY_RETURN_MS above 2x that to see both.)
+#define MODE_LONG_PRESS_MS 1000
+#define DISPLAY_RETURN_MS 15000
+#define DIAG_RETURN_MS 15000
+
 // ---- Servo angles ----
 #define SERVO_REST_ANGLE 90
 #define SERVO_PET_ANGLE 130

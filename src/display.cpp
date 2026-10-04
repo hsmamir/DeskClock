@@ -1347,7 +1347,7 @@ static void drawWeatherIcon(TFT_eSPI &g, int code, int16_t cx, int16_t cy, int16
     }
 }
 
-static const int MODE_COUNT = 4; // CLOCK, DATE, WEATHER, DIAG
+static const int MODE_COUNT = 3; // CLOCK, DATE, WEATHER (the DIAG page is opened by holding Mode, it has no dot)
 
 static void drawModeDots(TFT_eSPI &g, DisplayMode shown, uint16_t accent, int16_t y)
 {
@@ -2076,8 +2076,6 @@ static void drawDiagContent(TFT_eSPI &g, int16_t yOff, const DiagData &d)
 
     // boot counter; "BO n" = brownouts so far (amber once there is one)
     drawDiagRow(g, Y(136), "Boots", d.boots, d.bootsWarn ? C_AMBER : C_WHITE);
-
-    drawModeDots(g, DisplayMode::DIAG, accent, H - u(5) - yOff);
 }
 
 static void drawDiagScreen(uint32_t now)
