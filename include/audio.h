@@ -10,10 +10,12 @@ void audio_init();
 // Restarts the sound if it is already playing. Non-blocking.
 void audio_play(uint16_t fileIndex);
 
-// Volume 0-30.
+// Volume 0-30. (Every play call below sets the volume it needs first, so this
+// is only for previews; it never has to be "put back".)
 void audio_set_volume(uint8_t volume);
 
-// Plays a file on repeat (gapless, no need to know the clip length) until
+// Plays a file on repeat at the saved ALARM volume (gapless, no need to know the
+// clip length) until
 // audio_stop() is called. Blocks ~50 ms between the two serial commands, so
 // call it from a task, not from an ISR.
 void audio_play_loop(uint16_t fileIndex);

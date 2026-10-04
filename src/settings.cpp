@@ -10,6 +10,10 @@
 
 static const char *NVS_NAMESPACE = "deskclock";
 
+static_assert(ALARM_DAYS_MASK > 0 && ALARM_DAYS_MASK <= 0x7F, "ALARM_DAYS_MASK must be 1-127");
+static_assert(SOUND_INDEX_ALARM >= 1 && SOUND_INDEX_ALARM <= AUDIO_FILE_COUNT, "SOUND_INDEX_ALARM must be 1..AUDIO_FILE_COUNT");
+static_assert(AUDIO_ALARM_VOLUME >= 1 && AUDIO_ALARM_VOLUME <= 30, "AUDIO_ALARM_VOLUME must be 1-30");
+
 static Settings s_cur;
 static SemaphoreHandle_t s_mutex = nullptr;
 
@@ -25,6 +29,9 @@ static void loadDefaults(Settings &s)
     s.alarmEnabled = ALARM_ENABLED;
     s.alarmHour = ALARM_HOUR;
     s.alarmMinute = ALARM_MINUTE;
+    s.alarmDays = ALARM_DAYS_MASK;
+    s.alarmSound = SOUND_INDEX_ALARM;
+    s.alarmVolume = AUDIO_ALARM_VOLUME;
     s.volume = AUDIO_VOLUME;
     s.latitude = (float)atof(WEATHER_LATITUDE);
     s.longitude = (float)atof(WEATHER_LONGITUDE);
@@ -48,6 +55,21 @@ static bool validate(const Settings &s, const char **err)
     if (s.volume < 0 || s.volume > 30)
     {
         *err = "volume must be 0-30";
+        return false;
+    }
+    if (s.alarmVolume < 1 || s.alarmVolume > 30)
+    {
+        *err = "alarm volume must be 1-30";
+        return false;
+    }
+    if (s.alarmDays < 1 || s.alarmDays > 0x7F)
+    {
+        *err = "pick at least one alarm day";
+        return false;
+    }
+    if (s.alarmSound < 1 || s.alarmSound > AUDIO_FILE_COUNT)
+    {
+        *err = "alarm sound out of range";
         return false;
     }
     // written so that NaN fails too
@@ -97,6 +119,14 @@ void settings_init()
         s.alarmHour = p.getUChar("aH", s.alarmHour);
         s.alarmMinute = p.getUChar("aM", s.alarmMinute);
         s.volume = p.getUChar("vol", s.volume);
+        // Clocks updated from an older firmware have no "avol" yet: the alarm then
+        // keeps the volume it used to have (the one shared volume), so nothing changes.
+        if (p.isKey("avol"))
+            s.alarmVolume = p.getUChar("avol", s.alarmVolume);
+        else if (p.isKey("vol"))
+            s.alarmVolume = s.volume < 1 ? 1 : s.volume;
+        s.alarmDays = p.getUChar("aD", s.alarmDays);
+        s.alarmSound = p.getUChar("aS", s.alarmSound);
         s.latitude = p.getFloat("lat", s.latitude);
         s.longitude = p.getFloat("lon", s.longitude);
         if (p.isKey("city"))
@@ -141,6 +171,9 @@ bool settings_update(const Settings &in, const char **err)
     ok &= p.putUChar("aH", (uint8_t)in.alarmHour) > 0;
     ok &= p.putUChar("aM", (uint8_t)in.alarmMinute) > 0;
     ok &= p.putUChar("vol", (uint8_t)in.volume) > 0;
+    ok &= p.putUChar("avol", (uint8_t)in.alarmVolume) > 0;
+    ok &= p.putUChar("aD", (uint8_t)in.alarmDays) > 0;
+    ok &= p.putUChar("aS", (uint8_t)in.alarmSound) > 0;
     ok &= p.putFloat("lat", in.latitude) > 0;
     ok &= p.putFloat("lon", in.longitude) > 0;
     // city / tzName may legitimately be empty (putString then returns 0),

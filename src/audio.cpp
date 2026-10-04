@@ -115,12 +115,12 @@ void audio_play_gentle(uint16_t fileIndex)
     sendPlay(fileIndex);
 }
 
-// The alarm always plays at the saved volume, whatever the time of day and
-// whatever level the module was left at by a night-time pet sound or a web
-// page volume preview.
+// The alarm always plays at the saved ALARM volume (separate from the pet
+// volume), whatever the time of day and whatever level the module was left at
+// by a night-time pet sound or a web page volume preview.
 void audio_play_loop(uint16_t fileIndex)
 {
-    uint8_t full = (uint8_t)settings_get().volume;
+    uint8_t full = (uint8_t)settings_get().alarmVolume;
 
     AudioLock lock;
     ensureVolume(full);

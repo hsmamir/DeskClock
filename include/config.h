@@ -53,13 +53,16 @@
 
 // ---- Audio (JQ6500-16P onboard flash, UART2 @ 9600) ----
 #define AUDIO_BAUD 9600
-#define AUDIO_VOLUME 30 // default volume 0-30 (changeable from the settings page)
+#define AUDIO_VOLUME 30       // default volume of the pet/touch sound, 0-30 (changeable from the settings page)
+#define AUDIO_ALARM_VOLUME 30 // default volume of the ALARM, 1-30 (changeable from the settings page).
+                              // Separate from the pet volume. Minimum 1: an alarm can't be set to silent.
+#define AUDIO_FILE_COUNT 5    // how many clips are on the module; the settings page offers 1..this as alarm sounds
 
 // File index = upload order into the module's onboard flash, starting at 1.
 // The module's K1..K5 pins play files 1..5, so the sound wired to K3 is file 3.
 // If a clip plays one off from what you expect, change the index below.
 #define SOUND_INDEX_PET 3   // pet/touch reaction = the K3 sound
-#define SOUND_INDEX_ALARM 2 // alarm tone — played on repeat while the alarm rings
+#define SOUND_INDEX_ALARM 2 // default alarm tone (changeable from the settings page) — played on repeat while the alarm rings
                             // Not used yet - assign a file number here when you add it:
                             // #define SOUND_INDEX_CLICK 1  // mode-switch click
 
@@ -69,6 +72,8 @@
 #define ALARM_ENABLED 1      // 0 = never ring
 #define ALARM_HOUR 7         // 0-23
 #define ALARM_MINUTE 30      // 0-59
+#define ALARM_DAYS_MASK 0x7F // default days it rings (changeable from the settings page):
+                             // bit0 = Sunday, bit1 = Monday ... bit6 = Saturday; 0x7F = every day
 #define ALARM_SNOOZE_MIN 5   // alarm button while ringing = silence for this long, then ring again
 #define ALARM_AUTO_OFF_MIN 3 // nobody pressed anything: stop by itself after this long
                              // (no more rings until the next day's alarm time)
@@ -130,7 +135,7 @@
 // ---- Night mode ----
 // Between NIGHT_START_HOUR (inclusive) and NIGHT_END_HOUR (exclusive), local
 // time, the backlight is dimmed and the pet sound is muted. The alarm
-// is NOT affected: it always rings at the saved volume and full brightness.
+// is NOT affected: it always rings at the saved alarm volume and full brightness.
 // A window that crosses midnight works too (e.g. start 23, end 6).
 // (The #ifndef guards let a build flag override these, e.g. the
 // esp32dev-nighttest env in platformio.ini forces "always night" for testing.)

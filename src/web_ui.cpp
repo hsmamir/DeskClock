@@ -18,12 +18,12 @@ static bool s_serverStarted = false;
 static bool s_mdnsStarted = false;
 static bool s_wasConnected = false;
 
-// A volume preview from the test button is temporary: a few seconds later
-// the saved volume is put back, so "tried it, didn't save" can't leave the
-// module at a different level than the one in flash.
+// A sound preview (pet sound or a candidate alarm tone) is temporary: a few seconds
+// later it is cut off and the saved pet volume is put back, so "tried it, didn't
+// save" can't leave the module at a different level than the one in flash.
 static bool s_restoreVolume = false;
 static uint32_t s_restoreAtMs = 0;
-static const uint32_t PREVIEW_MS = 4000;
+static const uint32_t PREVIEW_MS = 5000;
 
 // Optional HTTP Basic auth (user "admin"); off while WEB_UI_PASSWORD is "".
 static bool authorized()
@@ -57,6 +57,10 @@ static void sendSettings(int code)
     d["alarmEnabled"] = s.alarmEnabled;
     d["alarmHour"] = s.alarmHour;
     d["alarmMinute"] = s.alarmMinute;
+    d["alarmDays"] = s.alarmDays;
+    d["alarmSound"] = s.alarmSound;
+    d["alarmVolume"] = s.alarmVolume;
+    d["soundCount"] = AUDIO_FILE_COUNT;
     d["volume"] = s.volume;
     d["latitude"] = s.latitude;
     d["longitude"] = s.longitude;
@@ -114,6 +118,9 @@ static void handlePostSettings()
     s.alarmEnabled = doc["alarmEnabled"] | old.alarmEnabled;
     s.alarmHour = doc["alarmHour"] | old.alarmHour;
     s.alarmMinute = doc["alarmMinute"] | old.alarmMinute;
+    s.alarmDays = doc["alarmDays"] | old.alarmDays;
+    s.alarmSound = doc["alarmSound"] | old.alarmSound;
+    s.alarmVolume = doc["alarmVolume"] | old.alarmVolume;
     s.volume = doc["volume"] | old.volume;
     s.latitude = doc["latitude"] | old.latitude;
     s.longitude = doc["longitude"] | old.longitude;
@@ -128,26 +135,40 @@ static void handlePostSettings()
         return;
     }
 
-    s_restoreVolume = false; // the saved value is now the real one
-    if (s.volume != old.volume)
-        audio_set_volume((uint8_t)s.volume);
+    // No volume command here: every sound sets the volume it needs just before it
+    // plays (pet = saved volume, alarm = saved alarm volume), so a changed value
+    // takes effect on the next sound without disturbing one that is playing.
     if (s.latitude != old.latitude || s.longitude != old.longitude)
         weather_refresh_now();
 
     sendSettings(200);
 }
 
+// Previews a clip once at the given volume: /api/test-sound?volume=N[&sound=K].
+// No "sound" = the pet sound. Not while the alarm is ringing or snoozed: it would
+// cut the alarm off.
 static void handleTestSound()
 {
     if (!authorized())
         return;
+    if (alarm_get_state() != AlarmState::IDLE)
+    {
+        sendError(409, "alarm is active");
+        return;
+    }
     int v = server.hasArg("volume") ? server.arg("volume").toInt() : settings_get().volume;
     if (v < 0)
         v = 0;
     if (v > 30)
         v = 30;
+    int sound = server.hasArg("sound") ? server.arg("sound").toInt() : SOUND_INDEX_PET;
+    if (sound < 1 || sound > AUDIO_FILE_COUNT)
+    {
+        sendError(400, "sound out of range");
+        return;
+    }
     audio_set_volume((uint8_t)v);
-    audio_play(SOUND_INDEX_PET);
+    audio_play((uint16_t)sound);
     s_restoreVolume = true;
     s_restoreAtMs = millis() + PREVIEW_MS;
     server.send(200, "application/json", "{\"ok\":true}");
@@ -174,7 +195,8 @@ static void handleGetAlarm()
     sendJson(200, d);
 }
 
-// Rings the real alarm now: saved volume, alarm sound on repeat, servo, red eyes.
+// Rings the real alarm now: saved alarm sound + volume on repeat, servo, red eyes
+// (whatever the alarm days / enabled setting say).
 static void handleAlarmTest()
 {
     if (!authorized() || !requireJsonPost())
@@ -271,6 +293,11 @@ void web_ui_tick()
     if (s_restoreVolume && (int32_t)(millis() - s_restoreAtMs) >= 0)
     {
         s_restoreVolume = false;
-        audio_set_volume((uint8_t)settings_get().volume);
+        // If the alarm started meanwhile it owns the module: leave it alone.
+        if (alarm_get_state() == AlarmState::IDLE)
+        {
+            audio_stop(); // end of the preview (alarm clips can be long)
+            audio_set_volume((uint8_t)settings_get().volume);
+        }
     }
 }

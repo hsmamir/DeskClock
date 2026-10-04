@@ -1,8 +1,8 @@
 #pragma once
 
-// Alarm scheduler. Rings at the alarm time from settings (see settings.h;
-// config.h only holds the factory default), plays
-// SOUND_INDEX_ALARM on repeat, and drives g_state.alarmActive / mood.
+// Alarm scheduler. Rings at the alarm time, on the alarm days, from settings (see
+// settings.h; config.h only holds the factory default), plays the chosen alarm
+// sound on repeat at the alarm volume, and drives g_state.alarmActive / mood.
 //   - snooze:   alarm button while ringing -> silent for ALARM_SNOOZE_MIN, then rings again
 //               (after ALARM_MAX_SNOOZES snoozes the next tap ends the alarm instead)
 //   - off:      hold the alarm button ALARM_LONG_PRESS_MS -> alarm ends, also while snoozed

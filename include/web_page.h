@@ -32,6 +32,12 @@ input[type=range]{flex:1;accent-color:var(--acc)}
 input[type=checkbox]{width:22px;height:22px;accent-color:var(--acc)}
 button{background:var(--acc);color:var(--on);border:0;border-radius:10px;padding:9px 16px;cursor:pointer}
 button.ghost{background:transparent;color:var(--acc);border:1px solid var(--acc)}
+.days{display:flex;gap:6px;margin:8px 0}
+.days label{flex:1;position:relative}
+.days input{position:absolute;opacity:0;width:0;height:0}
+.days span{display:block;text-align:center;padding:8px 0;border:1px solid var(--bd);border-radius:10px;background:var(--bg);cursor:pointer;user-select:none}
+.days input:checked+span{background:var(--acc);color:var(--on);border-color:var(--acc)}
+#aSound{flex:1;width:auto}
 button.danger{background:transparent;color:var(--err);border:1px solid var(--err)}
 button:disabled{opacity:.4;cursor:default}
 .btns{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
@@ -52,12 +58,16 @@ details{margin-top:10px}
 <h2>آلارم</h2>
 <label class="row"><span>فعال</span><input type="checkbox" id="aEn"></label>
 <label class="row"><span>ساعت زنگ</span><input type="time" id="aTime"></label>
+<div class="mut">روزهای زنگ</div>
+<div class="days" id="days"></div>
+<div class="row"><span>صدای زنگ</span><select id="aSound"></select><button type="button" class="ghost" id="aSoundBtn">پیش‌نمایش</button></div>
+<div class="row"><span>ولوم آلارم</span><input type="range" id="avol" min="1" max="30"><output id="avOut"></output></div>
 </section>
 
 <section>
-<h2>صدا</h2>
-<div class="row"><input type="range" id="vol" min="0" max="30"><output id="volOut"></output></div>
-<button type="button" class="ghost" id="testBtn">پیش‌نمایش ولوم (صدای نوازش)</button>
+<h2>صدای نوازش</h2>
+<div class="row"><span>ولوم</span><input type="range" id="vol" min="0" max="30"><output id="volOut"></output></div>
+<button type="button" class="ghost" id="testBtn">پخش صدای نوازش</button>
 </section>
 
 <section>
@@ -68,7 +78,7 @@ details{margin-top:10px}
 <button type="button" class="ghost" id="aSnooze">اسنوز</button>
 <button type="button" class="danger" id="aOff">خاموش</button>
 </div>
-<p class="mut">آلارم واقعی با همان صدا، حرکت سروو و ولوم <b>ذخیره‌شده</b> زنگ می‌خورد (تغییر نوار ولوم بالا را اول ذخیره کنید). اسنوز و خاموش روی آلارم واقعی هم کار می‌کنند.</p>
+<p class="mut">آلارم واقعی با صدا و ولوم آلارمِ <b>ذخیره‌شده</b> زنگ می‌خورد (تغییرات بالا را اول ذخیره کنید)، بدون توجه به روزهای هفته. اسنوز و خاموش روی آلارم واقعی هم کار می‌کنند.</p>
 </section>
 
 <section>
@@ -140,11 +150,23 @@ const c=document.createElement('option');c.value='custom';c.textContent='سفا�
 $('tz').onchange=()=>{const z=tzById($('tz').value);if(z)$('tzp').value=z[2];};
 $('tzp').oninput=()=>{$('tz').value='custom';};
 $('vol').oninput=()=>{$('volOut').textContent=$('vol').value;};
+$('avol').oninput=()=>{$('avOut').textContent=$('avol').value;};
+// [tm_wday, short label, full name] in Persian week order (Saturday first)
+const DAYS=[[6,'ش','شنبه'],[0,'ی','یکشنبه'],[1,'د','دوشنبه'],[2,'س','سه‌شنبه'],[3,'چ','چهارشنبه'],[4,'پ','پنجشنبه'],[5,'ج','جمعه']];
+(function(){const box=$('days');DAYS.forEach(d=>{const l=document.createElement('label');l.title=d[2];
+const i=document.createElement('input');i.type='checkbox';i.dataset.d=d[0];
+const s=document.createElement('span');s.textContent=d[1];l.append(i,s);box.appendChild(l);});})();
+function setDays(m){document.querySelectorAll('#days input').forEach(i=>{i.checked=((m>>(+i.dataset.d))&1)===1;});}
+function getDays(){let m=0;document.querySelectorAll('#days input').forEach(i=>{if(i.checked)m|=1<<(+i.dataset.d);});return m;}
+function fillSounds(n,cur){const sel=$('aSound');sel.textContent='';
+for(let k=1;k<=n;k++){const o=document.createElement('option');o.value=k;o.textContent='صدای '+k;sel.appendChild(o);}sel.value=cur;}
 async function load(){
  try{
   const s=await (await fetch('/api/settings')).json();
   $('aEn').checked=s.alarmEnabled;
   $('aTime').value=String(s.alarmHour).padStart(2,'0')+':'+String(s.alarmMinute).padStart(2,'0');
+  setDays(s.alarmDays);fillSounds(s.soundCount,s.alarmSound);
+  $('avol').value=s.alarmVolume;$('avOut').textContent=s.alarmVolume;
   $('vol').value=s.volume;$('volOut').textContent=s.volume;
   setLoc(s.latitude,s.longitude,s.city);
   pickTz(s.tzName,s.tzPosix);
@@ -154,7 +176,10 @@ async function load(){
 async function save(){
  const t=$('aTime').value;
  if(!t){msg('ساعت زنگ را وارد کنید',false);return;}
+ const days=getDays();
+ if(!days){msg('حداقل یک روز را برای زنگ انتخاب کنید',false);return;}
  const body={alarmEnabled:$('aEn').checked,alarmHour:+t.slice(0,2),alarmMinute:+t.slice(3,5),
+  alarmDays:days,alarmSound:+$('aSound').value,alarmVolume:+$('avol').value,
   volume:+$('vol').value,latitude:S.lat,longitude:S.lon,city:S.city,
   tzName:$('tz').value,tzPosix:$('tzp').value.trim()};
  try{
@@ -188,7 +213,13 @@ async function find(){
 $('findBtn').onclick=find;
 $('q').onkeydown=e=>{if(e.key==='Enter')find();};
 $('save').onclick=save;
-$('testBtn').onclick=()=>fetch('/api/test-sound?volume='+$('vol').value,{method:'POST'});
+async function preview(q){
+ try{const r=await fetch('/api/test-sound?'+q,{method:'POST'});
+  if(!r.ok){const j=await r.json();msg('خطا: '+(j.error||r.status),false);}else msg('',true);
+ }catch(e){msg('ارتباط با ساعت برقرار نشد',false);}
+}
+$('testBtn').onclick=()=>preview('volume='+$('vol').value);
+$('aSoundBtn').onclick=()=>preview('sound='+$('aSound').value+'&volume='+$('avol').value);
 const AST={idle:'آماده (آلارم زنگ نمی‌زند)',ringing:'در حال زنگ‌زدن 🔔',snoozed:'اسنوز شده'};
 async function alarmState(){
  try{

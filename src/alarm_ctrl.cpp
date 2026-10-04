@@ -48,7 +48,7 @@ static void startRinging(uint32_t now)
     s_ringStartMs = now;
     s_snoozeRequested = false; // drop any stale request from before this ring
     setRinging(true);
-    audio_play_loop(SOUND_INDEX_ALARM);
+    audio_play_loop((uint16_t)settings_get().alarmSound); // the clip chosen on the settings page
     Serial.println("Alarm: ringing");
 }
 
@@ -139,7 +139,9 @@ void alarm_tick()
         if (!readTimeSynced() || !getLocalTime(&ti, 0))
             break; // no valid clock yet — can't schedule
 
-        if (ti.tm_hour == cfg.alarmHour && ti.tm_min == cfg.alarmMinute)
+        // tm_wday: 0 = Sunday ... 6 = Saturday, the same numbering as the days mask
+        bool dayOk = ((cfg.alarmDays >> ti.tm_wday) & 1) != 0;
+        if (dayOk && ti.tm_hour == cfg.alarmHour && ti.tm_min == cfg.alarmMinute)
         {
             // Unique per calendar day + minute. Once fired, this exact minute
             // can't fire again — even after a snooze/auto-off inside it.
