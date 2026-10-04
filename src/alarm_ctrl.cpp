@@ -13,12 +13,13 @@ enum class AlarmPhase
     SNOOZED  // silent, counting down to the next ring
 };
 
-static AlarmPhase s_phase = AlarmPhase::WAITING;
+static volatile AlarmPhase s_phase = AlarmPhase::WAITING;
 static uint32_t s_ringStartMs = 0;
 static uint32_t s_snoozeUntilMs = 0;
 static int32_t s_lastFiredKey = -1; // date + hh:mm of the last scheduled ring
 static volatile bool s_snoozeRequested = false;
 static volatile bool s_dismissRequested = false;
+static volatile bool s_testRequested = false;
 static uint8_t s_snoozeCount = 0; // snoozes used by the current alarm
 
 static bool readTimeSynced()
@@ -67,9 +68,38 @@ void alarm_request_dismiss()
     s_dismissRequested = true;
 }
 
+void alarm_request_test()
+{
+    s_testRequested = true;
+}
+
+AlarmState alarm_get_state()
+{
+    switch (s_phase)
+    {
+    case AlarmPhase::RINGING:
+        return AlarmState::RINGING;
+    case AlarmPhase::SNOOZED:
+        return AlarmState::SNOOZED;
+    default:
+        return AlarmState::IDLE;
+    }
+}
+
+int alarm_snooze_left_s()
+{
+    if (s_phase != AlarmPhase::SNOOZED)
+        return -1;
+    int32_t leftMs = (int32_t)(s_snoozeUntilMs - millis()); // wrap-safe
+    return leftMs <= 0 ? 0 : (int)((leftMs + 999) / 1000);
+}
+
 void alarm_tick()
 {
     uint32_t now = millis();
+
+    if (s_phase != AlarmPhase::WAITING)
+        s_testRequested = false; // a test only makes sense while idle; drop a stale one
 
     // A full stop wins over everything else, in every phase.
     if (s_dismissRequested)
@@ -90,6 +120,17 @@ void alarm_tick()
     {
     case AlarmPhase::WAITING:
     {
+        if (s_testRequested)
+        {
+            // Test ring: works even with the alarm switched off or the clock not
+            // synced, and leaves s_lastFiredKey alone so the real alarm still rings.
+            s_testRequested = false;
+            s_snoozeCount = 0;
+            Serial.println("Alarm: test ring");
+            startRinging(now);
+            break;
+        }
+
         Settings cfg = settings_get();
         if (!cfg.alarmEnabled)
             break;

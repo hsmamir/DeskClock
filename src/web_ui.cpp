@@ -9,6 +9,7 @@
 #include "web_page.h"
 #include "settings.h"
 #include "audio.h"
+#include "alarm_ctrl.h"
 #include "weather.h"
 #include "config.h"
 
@@ -152,6 +153,67 @@ static void handleTestSound()
     server.send(200, "application/json", "{\"ok\":true}");
 }
 
+// The alarm buttons change what the clock does, so (like the settings POST) they
+// insist on a JSON content type: a random web page can't fire them cross-site.
+static bool requireJsonPost()
+{
+    if (server.header("Content-Type").startsWith("application/json"))
+        return true;
+    sendError(415, "send application/json");
+    return false;
+}
+
+static void handleGetAlarm()
+{
+    if (!authorized())
+        return;
+    AlarmState st = alarm_get_state();
+    JsonDocument d;
+    d["state"] = st == AlarmState::RINGING ? "ringing" : (st == AlarmState::SNOOZED ? "snoozed" : "idle");
+    d["snoozeLeftS"] = alarm_snooze_left_s();
+    sendJson(200, d);
+}
+
+// Rings the real alarm now: saved volume, alarm sound on repeat, servo, red eyes.
+static void handleAlarmTest()
+{
+    if (!authorized() || !requireJsonPost())
+        return;
+    if (alarm_get_state() != AlarmState::IDLE)
+    {
+        sendError(409, "alarm is already active");
+        return;
+    }
+    alarm_request_test();
+    server.send(200, "application/json", "{\"ok\":true}");
+}
+
+static void handleAlarmSnooze()
+{
+    if (!authorized() || !requireJsonPost())
+        return;
+    if (alarm_get_state() != AlarmState::RINGING)
+    {
+        sendError(409, "alarm is not ringing");
+        return;
+    }
+    alarm_request_snooze();
+    server.send(200, "application/json", "{\"ok\":true}");
+}
+
+static void handleAlarmDismiss()
+{
+    if (!authorized() || !requireJsonPost())
+        return;
+    if (alarm_get_state() == AlarmState::IDLE)
+    {
+        sendError(409, "alarm is not active");
+        return;
+    }
+    alarm_request_dismiss();
+    server.send(200, "application/json", "{\"ok\":true}");
+}
+
 static void handleRoot()
 {
     if (!authorized())
@@ -169,6 +231,10 @@ static void startServer()
     server.on("/api/settings", HTTP_GET, handleGetSettings);
     server.on("/api/settings", HTTP_POST, handlePostSettings);
     server.on("/api/test-sound", HTTP_POST, handleTestSound);
+    server.on("/api/alarm", HTTP_GET, handleGetAlarm);
+    server.on("/api/alarm/test", HTTP_POST, handleAlarmTest);
+    server.on("/api/alarm/snooze", HTTP_POST, handleAlarmSnooze);
+    server.on("/api/alarm/dismiss", HTTP_POST, handleAlarmDismiss);
     server.onNotFound([]()
                       { server.send(404, "text/plain", "not found"); });
     server.begin();

@@ -32,6 +32,10 @@ input[type=range]{flex:1;accent-color:var(--acc)}
 input[type=checkbox]{width:22px;height:22px;accent-color:var(--acc)}
 button{background:var(--acc);color:var(--on);border:0;border-radius:10px;padding:9px 16px;cursor:pointer}
 button.ghost{background:transparent;color:var(--acc);border:1px solid var(--acc)}
+button.danger{background:transparent;color:var(--err);border:1px solid var(--err)}
+button:disabled{opacity:.4;cursor:default}
+.btns{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
+.btns button{flex:1;min-width:90px}
 #save{width:100%;padding:12px;font-size:1.05rem}
 .res button{display:block;width:100%;text-align:right;background:var(--bg);color:var(--fg);border:1px solid var(--bd);margin:6px 0}
 details{margin-top:10px}
@@ -53,7 +57,18 @@ details{margin-top:10px}
 <section>
 <h2>صدا</h2>
 <div class="row"><input type="range" id="vol" min="0" max="30"><output id="volOut"></output></div>
-<button type="button" class="ghost" id="testBtn">پخش صدای آزمایشی</button>
+<button type="button" class="ghost" id="testBtn">پیش‌نمایش ولوم (صدای نوازش)</button>
+</section>
+
+<section>
+<h2>تست آلارم</h2>
+<p class="mut" id="aState">…</p>
+<div class="btns">
+<button type="button" id="aTest">تست آلارم</button>
+<button type="button" class="ghost" id="aSnooze">اسنوز</button>
+<button type="button" class="danger" id="aOff">خاموش</button>
+</div>
+<p class="mut">آلارم واقعی با همان صدا، حرکت سروو و ولوم <b>ذخیره‌شده</b> زنگ می‌خورد (تغییر نوار ولوم بالا را اول ذخیره کنید). اسنوز و خاموش روی آلارم واقعی هم کار می‌کنند.</p>
 </section>
 
 <section>
@@ -174,7 +189,31 @@ $('findBtn').onclick=find;
 $('q').onkeydown=e=>{if(e.key==='Enter')find();};
 $('save').onclick=save;
 $('testBtn').onclick=()=>fetch('/api/test-sound?volume='+$('vol').value,{method:'POST'});
+const AST={idle:'آماده (آلارم زنگ نمی‌زند)',ringing:'در حال زنگ‌زدن 🔔',snoozed:'اسنوز شده'};
+async function alarmState(){
+ try{
+  const j=await (await fetch('/api/alarm')).json();
+  let t=AST[j.state]||'—';
+  if(j.state==='snoozed'&&j.snoozeLeftS>=0){const m=Math.floor(j.snoozeLeftS/60),s=j.snoozeLeftS%60;t+=' — زنگ بعدی تا '+m+':'+String(s).padStart(2,'0');}
+  $('aState').textContent=t;
+  $('aTest').disabled=j.state!=='idle';
+  $('aSnooze').disabled=j.state!=='ringing';
+  $('aOff').disabled=j.state==='idle';
+ }catch(e){$('aState').textContent='ارتباط با ساعت برقرار نشد';}
+}
+async function alarmAct(a){
+ try{
+  const r=await fetch('/api/alarm/'+a,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+  if(!r.ok){const j=await r.json();msg('خطا: '+(j.error||r.status),false);}else msg('',true);
+ }catch(e){msg('ارتباط با ساعت برقرار نشد',false);}
+ setTimeout(alarmState,600);
+}
+$('aTest').onclick=()=>alarmAct('test');
+$('aSnooze').onclick=()=>alarmAct('snooze');
+$('aOff').onclick=()=>alarmAct('dismiss');
+setInterval(()=>{if(!document.hidden)alarmState();},2000);
 load();
+alarmState();
 </script>
 </body>
 </html>)HTML";

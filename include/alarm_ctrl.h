@@ -9,8 +9,31 @@
 //   - auto-off: stops by itself after ALARM_AUTO_OFF_MIN without a button press
 //   - one ring per scheduled minute: it can't re-trigger inside the same minute
 //
+//   - test:     alarm_request_test() rings the alarm right now (same sound, saved volume,
+//               servo and red eyes as the real one) so it can be tried from the web page.
+//               A test behaves like a real ring: snooze / off / auto-off all apply to it.
+//
 // Called repeatedly from the alarm task (e.g. every 200 ms).
 void alarm_tick();
+
+// What the alarm is doing right now (read by the web page).
+enum class AlarmState : uint8_t
+{
+    IDLE,    // waiting for the alarm time
+    RINGING, // sound + servo + red eyes
+    SNOOZED  // silent, will ring again
+};
+
+// Safe to call from another task.
+AlarmState alarm_get_state();
+
+// Seconds until a snoozed alarm rings again; -1 when the alarm is not snoozed.
+int alarm_snooze_left_s();
+
+// Rings the alarm now, whatever the alarm time / enabled setting is. Safe to
+// call from another task; ignored unless the alarm is idle. Does not use up
+// today's real alarm.
+void alarm_request_test();
 
 // Asks the alarm to snooze. Safe to call from another task (e.g. touch);
 // ignored unless the alarm is currently ringing.
