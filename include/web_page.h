@@ -47,6 +47,9 @@ button:disabled{opacity:.4;cursor:default}
 details{margin-top:10px}
 #tzp{width:100%;direction:ltr;margin-top:8px}
 #msg{min-height:1.6em;text-align:center}
+#bl{width:100%;border-collapse:collapse;direction:ltr;font-size:.92rem}
+#bl td,#bl th{padding:4px 6px;text-align:left;border-bottom:1px solid var(--bd)}
+#bl .bad{color:var(--err);font-weight:600}
 </style>
 </head>
 <body>
@@ -94,6 +97,13 @@ details{margin-top:10px}
 <p class="mut">تغییر ساعت تابستانی به‌صورت خودکار اعمال می‌شود.</p>
 <details><summary class="mut">پیشرفته: قاعده‌ی POSIX</summary>
 <input type="text" id="tzp" spellcheck="false"></details>
+</section>
+
+<section>
+<h2>تشخیص و ریست‌ها</h2>
+<p class="mut" id="blSum">…</p>
+<table id="bl"><tbody></tbody></table>
+<p class="mut">Brownout یعنی افت ولتاژ تغذیه (سروو و صدا روی یک تغذیه‌اند): منبع تغذیه و کابل را بررسی کنید. ثبت‌ها در حافظهٔ فلش می‌مانند و با قطع برق پاک نمی‌شوند.</p>
 </section>
 
 <button id="save">ذخیره</button>
@@ -242,9 +252,21 @@ async function alarmAct(a){
 $('aTest').onclick=()=>alarmAct('test');
 $('aSnooze').onclick=()=>alarmAct('snooze');
 $('aOff').onclick=()=>alarmAct('dismiss');
+async function bootLog(){
+ try{
+  const j=await (await fetch('/api/bootlog')).json();
+  $('blSum').textContent='تعداد بوت: '+j.boots+' — brownout: '+j.brownouts;
+  const tb=document.querySelector('#bl tbody');tb.textContent='';
+  (j.history||[]).forEach(h=>{const tr=document.createElement('tr');
+   const a=document.createElement('td');a.textContent='#'+h.boot;
+   const b=document.createElement('td');b.textContent=h.reason;if(h.bad)b.className='bad';
+   tr.append(a,b);tb.append(tr);});
+ }catch(e){$('blSum').textContent='ارتباط با ساعت برقرار نشد';}
+}
 setInterval(()=>{if(!document.hidden)alarmState();},2000);
 load();
 alarmState();
+bootLog();
 </script>
 </body>
 </html>)HTML";

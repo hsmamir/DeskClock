@@ -9,6 +9,7 @@
 #include "config.h"
 #include "weather.h"
 #include "settings.h"
+#include "boot_log.h"
 
 static TFT_eSPI tft = TFT_eSPI();
 
@@ -1692,6 +1693,10 @@ struct DiagData
     bool weatherOk;
     bool weatherStale;
     char uptime[16];
+    char reset[12]; // why this boot happened: "Brownout", "Power on", ...
+    bool resetBad;  // brownout / panic / watchdog
+    char boots[16]; // "42" or "42 | BO 3" (BO = brownouts so far)
+    bool bootsWarn; // at least one brownout on record
 };
 static uint32_t lastDiagDrawMs = 0;
 static bool diagShown = false;
@@ -1758,6 +1763,24 @@ static void collectDiag(DiagData &d, uint32_t now)
         snprintf(d.uptime, sizeof(d.uptime), "%uh %02um", (unsigned)hours, (unsigned)mins);
     else
         snprintf(d.uptime, sizeof(d.uptime), "%um", (unsigned)mins);
+
+    BootRecord cur;
+    if (boot_log_history(&cur, 1) == 1)
+    {
+        strlcpy(d.reset, boot_log_reason_name(cur.reason), sizeof(d.reset));
+        d.resetBad = boot_log_reason_abnormal(cur.reason);
+    }
+    else
+    {
+        strcpy(d.reset, "--");
+        d.resetBad = false;
+    }
+    uint32_t bo = boot_log_brownouts();
+    d.bootsWarn = bo > 0;
+    if (bo > 0)
+        snprintf(d.boots, sizeof(d.boots), "%u | BO %u", (unsigned)boot_log_count(), (unsigned)bo);
+    else
+        snprintf(d.boots, sizeof(d.boots), "%u", (unsigned)boot_log_count());
 }
 
 static void drawDiagRow(TFT_eSPI &g, int16_t y, const char *label, const char *value, uint16_t valueColor)
@@ -1783,13 +1806,13 @@ static void drawDiagContent(TFT_eSPI &g, int16_t yOff, const DiagData &d)
 
     g.setTextDatum(MC_DATUM);
     g.setTextColor(C_WHITE);
-    g.drawString("Diagnostics", W / 2, Y(13), 2);
-    g.drawFastHLine(u(6), Y(23), W - 2 * u(6), tint(C_SOFT, 0.31f));
+    g.drawString("Diagnostics", W / 2, Y(11), 2);
+    g.drawFastHLine(u(6), Y(20), W - 2 * u(6), tint(C_SOFT, 0.31f));
 
     // IP, centred on its own line (a full 192.168.xxx.xxx would not fit next to a label)
     g.setTextDatum(MC_DATUM);
     g.setTextColor(d.wifi ? C_ACCENT : C_RED);
-    g.drawString(d.wifi ? d.ip : "Offline", W / 2, Y(35), 2);
+    g.drawString(d.wifi ? d.ip : "Offline", W / 2, Y(30), 2);
 
     char buf[24];
     uint16_t c;
@@ -1805,21 +1828,27 @@ static void drawDiagContent(TFT_eSPI &g, int16_t yOff, const DiagData &d)
         strcpy(buf, "--");
         c = C_RED;
     }
-    drawDiagRow(g, Y(56), "Signal", buf, c);
+    drawDiagRow(g, Y(46), "Signal", buf, c);
 
     // free heap
     snprintf(buf, sizeof(buf), "%u KB", (unsigned)d.heapKb);
     c = d.heapKb < 30 ? C_RED : (d.heapKb < 60 ? C_AMBER : C_WHITE);
-    drawDiagRow(g, Y(75), "Heap", buf, c);
+    drawDiagRow(g, Y(61), "Heap", buf, c);
 
     // last NTP sync (clock time + age)
-    drawDiagRow(g, Y(94), "Sync", d.sync, d.syncOk ? C_WHITE : C_AMBER);
+    drawDiagRow(g, Y(76), "Sync", d.sync, d.syncOk ? C_WHITE : C_AMBER);
 
     // weather reading age
-    drawDiagRow(g, Y(113), "Weather", d.weather, d.weatherOk ? (d.weatherStale ? C_AMBER : C_WHITE) : C_AMBER);
+    drawDiagRow(g, Y(91), "Weather", d.weather, d.weatherOk ? (d.weatherStale ? C_AMBER : C_WHITE) : C_AMBER);
 
     // uptime
-    drawDiagRow(g, Y(132), "Uptime", d.uptime, C_WHITE);
+    drawDiagRow(g, Y(106), "Uptime", d.uptime, C_WHITE);
+
+    // why this boot happened (kept in flash; red = brownout / panic / watchdog)
+    drawDiagRow(g, Y(121), "Reset", d.reset, d.resetBad ? C_RED : C_WHITE);
+
+    // boot counter; "BO n" = brownouts so far (amber once there is one)
+    drawDiagRow(g, Y(136), "Boots", d.boots, d.bootsWarn ? C_AMBER : C_WHITE);
 
     drawModeDots(g, DisplayMode::DIAG, accent, H - u(5) - yOff);
 }

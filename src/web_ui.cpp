@@ -10,6 +10,7 @@
 #include "settings.h"
 #include "audio.h"
 #include "alarm_ctrl.h"
+#include "boot_log.h"
 #include "weather.h"
 #include "config.h"
 
@@ -236,6 +237,28 @@ static void handleAlarmDismiss()
     server.send(200, "application/json", "{\"ok\":true}");
 }
 
+// Boot counter + the reasons of the last boots, newest first (kept in flash).
+static void handleGetBootLog()
+{
+    if (!authorized())
+        return;
+    JsonDocument d;
+    d["boots"] = boot_log_count();
+    d["brownouts"] = boot_log_brownouts();
+    d["uptimeS"] = millis() / 1000;
+    JsonArray h = d["history"].to<JsonArray>();
+    BootRecord rec[BOOT_LOG_HISTORY];
+    int n = boot_log_history(rec, BOOT_LOG_HISTORY);
+    for (int i = 0; i < n; i++)
+    {
+        JsonObject o = h.add<JsonObject>();
+        o["boot"] = rec[i].bootNo;
+        o["reason"] = boot_log_reason_name(rec[i].reason);
+        o["bad"] = boot_log_reason_abnormal(rec[i].reason);
+    }
+    sendJson(200, d);
+}
+
 static void handleRoot()
 {
     if (!authorized())
@@ -254,6 +277,7 @@ static void startServer()
     server.on("/api/settings", HTTP_POST, handlePostSettings);
     server.on("/api/test-sound", HTTP_POST, handleTestSound);
     server.on("/api/alarm", HTTP_GET, handleGetAlarm);
+    server.on("/api/bootlog", HTTP_GET, handleGetBootLog);
     server.on("/api/alarm/test", HTTP_POST, handleAlarmTest);
     server.on("/api/alarm/snooze", HTTP_POST, handleAlarmSnooze);
     server.on("/api/alarm/dismiss", HTTP_POST, handleAlarmDismiss);
