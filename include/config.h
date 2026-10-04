@@ -196,6 +196,23 @@ static inline bool isNightHour(int hour)
 #define TIME_SAVE_INTERVAL_MS (10UL * 60 * 1000) // 10 min
 #define TIME_MIN_VALID_EPOCH 1577836800UL        // 2020-01-01: anything older is "no time"
 
+// ---- Task watchdog ----
+// The display, touch, servo and alarm tasks each have to report in (every loop
+// pass) within TASK_WDT_TIMEOUT_S seconds. If one of them hangs - a deadlocked
+// mutex, a stuck SPI/UART call - the chip resets itself instead of sitting there
+// with a dead alarm. Time and settings are in flash, so it comes back by itself
+// (see the "Time persistence" block below). The WiFi-side tasks (time, weather,
+// web, OTA) are deliberately NOT watched: connecting, the setup portal and an OTA
+// transfer legitimately block for a long time. 0 = no watchdog.
+// After a watchdog reset the Serial log starts with "Reset reason: TASK_WDT".
+#define TASK_WDT_ENABLED 1
+#define TASK_WDT_TIMEOUT_S 10
+// Test only: 1 = the alarm task deliberately stops reporting in 20 s after boot, so
+// you can see the reset happen. Use the esp32dev-wdttest env in platformio.ini.
+#ifndef TASK_WDT_SELFTEST
+#define TASK_WDT_SELFTEST 0
+#endif
+
 // ---- Servo ----
 // After each movement the servo gets this long to reach its position, then it
 // is detached (no holding current, no buzzing) until the next movement.

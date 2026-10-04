@@ -1,5 +1,7 @@
 #include <Arduino.h>
 #include <esp_system.h>
+#include <esp_task_wdt.h>
+#include <esp_idf_version.h>
 #include "pins.h"
 #include "config.h"
 #include "state.h"
@@ -62,15 +64,61 @@ static void logResetReason()
     Serial.printf("Reset reason: %s [%d]\n", name, (int)r);
 }
 
+// ---- Task watchdog (see "Task watchdog" in config.h) ----
+// The system already runs a task watchdog (it watches the core-0 idle task); here
+// it is reconfigured to TASK_WDT_TIMEOUT_S and our own tasks subscribe to it.
+// The two IDF generations (arduino-esp32 2.x = IDF 4, 3.x = IDF 5) have different APIs.
+
+static void watchdogInit()
+{
+#if TASK_WDT_ENABLED
+    esp_err_t e;
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
+    esp_task_wdt_config_t cfg = {};
+    cfg.timeout_ms = (uint32_t)TASK_WDT_TIMEOUT_S * 1000UL;
+    cfg.idle_core_mask = 1; // keep watching the core-0 idle task, as the default setup does
+    cfg.trigger_panic = true;
+    e = esp_task_wdt_reconfigure(&cfg);
+    if (e == ESP_ERR_INVALID_STATE)
+        e = esp_task_wdt_init(&cfg); // the system had not started one
+#else
+    e = esp_task_wdt_init(TASK_WDT_TIMEOUT_S, true); // true = reset the chip on timeout
+#endif
+    Serial.printf("Task watchdog: %u s timeout (%s)\n", (unsigned)TASK_WDT_TIMEOUT_S, esp_err_to_name(e));
+#endif
+}
+
+// Call from inside the task, once its init is done (display_init() etc. can take a while).
+static void watchdogWatchThisTask(const char *name)
+{
+#if TASK_WDT_ENABLED
+    esp_err_t e = esp_task_wdt_add(nullptr);
+    if (e != ESP_OK)
+        Serial.printf("Task watchdog: could not watch '%s' (%s)\n", name, esp_err_to_name(e));
+#else
+    (void)name;
+#endif
+}
+
+// "Still alive": call once per loop pass of a watched task.
+static inline void watchdogFeed()
+{
+#if TASK_WDT_ENABLED
+    esp_task_wdt_reset();
+#endif
+}
+
 // ---- Task functions ----
 
 static void displayTask(void *pvParameters)
 {
     display_init();
+    watchdogWatchThisTask("display");
     const TickType_t frameDelay = pdMS_TO_TICKS(33); // ~30fps
     for (;;)
     {
         display_tick();
+        watchdogFeed();
         vTaskDelay(frameDelay);
     }
 }
@@ -78,10 +126,12 @@ static void displayTask(void *pvParameters)
 static void touchTask(void *pvParameters)
 {
     touch_init();
+    watchdogWatchThisTask("touch");
     const TickType_t pollDelay = pdMS_TO_TICKS(10);
     for (;;)
     {
         touch_tick();
+        watchdogFeed();
         vTaskDelay(pollDelay);
     }
 }
@@ -89,10 +139,12 @@ static void touchTask(void *pvParameters)
 static void servoTask(void *pvParameters)
 {
     servo_init();
+    watchdogWatchThisTask("servo");
     const TickType_t tickDelay = pdMS_TO_TICKS(20);
     for (;;)
     {
         servo_tick();
+        watchdogFeed();
         vTaskDelay(tickDelay);
     }
 }
@@ -125,10 +177,22 @@ static void weatherTask(void *pvParameters)
 
 static void alarmTask(void *pvParameters)
 {
+    watchdogWatchThisTask("alarm");
     const TickType_t tickDelay = pdMS_TO_TICKS(200);
     for (;;)
     {
         alarm_tick();
+#if TASK_WDT_SELFTEST
+        // Pretend this task hung: stop reporting in. The watchdog must reset the chip
+        // TASK_WDT_TIMEOUT_S seconds later ("Reset reason: TASK_WDT" on the next boot).
+        if (millis() > 20000)
+        {
+            Serial.println("WDT selftest: alarm task stops reporting in now");
+            for (;;)
+                vTaskDelay(pdMS_TO_TICKS(1000));
+        }
+#endif
+        watchdogFeed();
         vTaskDelay(tickDelay);
     }
 }
@@ -165,6 +229,7 @@ void setup()
     settings_init();           // load NVS settings + apply timezone before any task reads them
     time_restore_from_flash(); // approximate clock from flash so the alarm works before/without WiFi
     audio_init();
+    watchdogInit(); // before the tasks start; each watched task subscribes itself
 
     // Pinned to core 1 (app core) to leave core 0 free for WiFi/BT stack.
     xTaskCreatePinnedToCore(displayTask, "display", 8192, nullptr, 2, nullptr, 1);
