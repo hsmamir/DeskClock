@@ -7,7 +7,10 @@
 //               (after ALARM_MAX_SNOOZES snoozes the next tap ends the alarm instead)
 //   - off:      hold the alarm button ALARM_LONG_PRESS_MS -> alarm ends, also while snoozed
 //   - auto-off: stops by itself after ALARM_AUTO_OFF_MIN without a button press
-//   - one ring per scheduled minute: it can't re-trigger inside the same minute
+//   - one ring per scheduled day: it can't re-trigger after it already rang (also not after a reboot)
+//   - catch-up: if the alarm minute was missed (busy ringing a test, snoozed, rebooting, clock
+//               not synced yet) it still rings up to ALARM_GRACE_MIN minutes late. Saving a changed
+//               alarm time/days/enabled never rings a time that has already passed today.
 //
 //   - test:     alarm_request_test() rings the alarm right now (same sound, saved volume,
 //               servo and red eyes as the real one) so it can be tried from the web page.

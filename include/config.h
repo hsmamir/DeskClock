@@ -77,6 +77,10 @@
 #define ALARM_SNOOZE_MIN 5   // alarm button while ringing = silence for this long, then ring again
 #define ALARM_AUTO_OFF_MIN 3 // nobody pressed anything: stop by itself after this long
                              // (no more rings until the next day's alarm time)
+#define ALARM_GRACE_MIN 10   // missed-alarm catch-up: if the clock was busy (test ring, snooze),
+                             // rebooting or not yet synced at the alarm minute, it still rings
+                             // when this is up to this many minutes late - once per day, and
+                             // never after the alarm already rang. 0 = only in the exact minute
 
 // How to switch the alarm OFF completely (not just snooze it):
 //   * hold the alarm button for ALARM_LONG_PRESS_MS (works while it rings AND while it
