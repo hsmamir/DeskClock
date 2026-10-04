@@ -3,6 +3,7 @@
 #include <WiFiClientSecure.h>
 #include <ArduinoJson.h>
 #include <math.h>
+#include <string.h>
 #include "weather.h"
 #include "config.h"
 #include "settings.h"
@@ -42,11 +43,16 @@ static void fetchWeather()
 
     HTTPClient http;
     Settings cfg = settings_get();
-    char url[160];
+    // current reading + humidity/wind + today's high/low + the next hours' temperature
+    // and chance of rain. timezone=auto makes "today" and the hourly times local to
+    // the coordinates.
+    char url[420];
     snprintf(url, sizeof(url),
              "https://api.open-meteo.com/v1/forecast?latitude=%.4f&longitude=%.4f"
-             "&current=temperature_2m,weather_code",
-             cfg.latitude, cfg.longitude);
+             "&current=temperature_2m,weather_code,relative_humidity_2m,wind_speed_10m,wind_direction_10m"
+             "&daily=temperature_2m_max,temperature_2m_min"
+             "&hourly=temperature_2m,precipitation_probability&forecast_hours=%d&forecast_days=1&timezone=auto",
+             cfg.latitude, cfg.longitude, WEATHER_BARS);
 
     if (!http.begin(client, String(url)))
         return;
@@ -62,9 +68,64 @@ static void fetchWeather()
             float temp = doc["current"]["temperature_2m"] | NAN;
             int code = doc["current"]["weather_code"] | -1;
 
+            // ---- details (optional: the basic reading is still used without them) ----
+            float tMax = doc["daily"]["temperature_2m_max"][0] | NAN;
+            float tMin = doc["daily"]["temperature_2m_min"][0] | NAN;
+            float hum = doc["current"]["relative_humidity_2m"] | -1.0f;
+            float wind = doc["current"]["wind_speed_10m"] | -1.0f;
+            float windDir = doc["current"]["wind_direction_10m"] | -1.0f;
+
+            // Hourly arrays should start at the current hour (forecast_hours); find that
+            // entry by its time anyway. No match = no bars rather than wrong ones.
+            uint8_t bars = 0;
+            uint8_t bHour[AppState::WEATHER_MAX_BARS];
+            int8_t bTemp[AppState::WEATHER_MAX_BARS], bRain[AppState::WEATHER_MAX_BARS];
+            JsonArray hTime = doc["hourly"]["time"].as<JsonArray>();
+            JsonArray hTemp = doc["hourly"]["temperature_2m"].as<JsonArray>();
+            JsonArray hProb = doc["hourly"]["precipitation_probability"].as<JsonArray>();
+            const char *curT = doc["current"]["time"] | "";
+            if (!hTime.isNull() && !hTemp.isNull() && curT[0])
+            {
+                int start = -1;
+                for (int i = 0; i < (int)hTime.size(); i++)
+                {
+                    const char *ht = hTime[i] | "";
+                    if (strncmp(ht, curT, 13) == 0) // same "YYYY-MM-DDTHH"
+                    {
+                        start = i;
+                        break;
+                    }
+                }
+                for (int k = 0; start >= 0 && k < WEATHER_BARS && start + k < (int)hTime.size() && start + k < (int)hTemp.size(); k++)
+                {
+                    float t = hTemp[start + k] | NAN;
+                    const char *ht = hTime[start + k] | "";
+                    if (isnan(t) || strlen(ht) < 13)
+                        break;
+                    int pr = hProb.isNull() ? -1 : (hProb[start + k] | -1);
+                    bHour[bars] = (uint8_t)(atoi(ht + 11) % 24);
+                    bTemp[bars] = (int8_t)constrain((int)lroundf(t), -127, 127);
+                    bRain[bars] = (int8_t)constrain(pr, -1, 100);
+                    bars++;
+                }
+            }
+
             if (!isnan(temp) && code >= 0)
             {
                 xSemaphoreTake(g_stateMutex, portMAX_DELAY);
+                g_state.detailValid = !isnan(tMax) && !isnan(tMin);
+                g_state.tMaxC = tMax;
+                g_state.tMinC = tMin;
+                g_state.humidityPct = hum >= 0 ? (int)lroundf(hum) : -1;
+                g_state.windKmh = wind;
+                g_state.windDirDeg = windDir >= 0 ? ((int)lroundf(windDir)) % 360 : -1;
+                g_state.barCount = bars;
+                for (uint8_t i = 0; i < bars; i++)
+                {
+                    g_state.barHour[i] = bHour[i];
+                    g_state.barTempC[i] = bTemp[i];
+                    g_state.barRainPct[i] = bRain[i];
+                }
                 g_state.weatherTempC = temp;
                 g_state.weatherCode = code;
                 g_state.weatherValid = true;
@@ -90,6 +151,7 @@ void weather_refresh_now()
 {
     xSemaphoreTake(g_stateMutex, portMAX_DELAY);
     g_state.weatherValid = false;
+    g_state.detailValid = false;
     xSemaphoreGive(g_stateMutex);
     s_forceRefresh = true;
 }

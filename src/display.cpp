@@ -343,6 +343,38 @@ static void readWeather(bool &valid, float &tempC, int &code, uint32_t &updatedM
     xSemaphoreGive(g_stateMutex);
 }
 
+struct WeatherDetail
+{
+    bool valid;
+    float maxC, minC;
+    int humidityPct; // -1 = unknown
+    float windKmh;   // < 0 = unknown
+    int windDirDeg;  // -1 = unknown
+    uint8_t barCount;
+    uint8_t hour[AppState::WEATHER_MAX_BARS];
+    int8_t tempC[AppState::WEATHER_MAX_BARS];
+    int8_t rainPct[AppState::WEATHER_MAX_BARS];
+};
+
+static void readWeatherDetail(WeatherDetail &d)
+{
+    xSemaphoreTake(g_stateMutex, portMAX_DELAY);
+    d.valid = g_state.weatherValid && g_state.detailValid;
+    d.maxC = g_state.tMaxC;
+    d.minC = g_state.tMinC;
+    d.humidityPct = g_state.humidityPct;
+    d.windKmh = g_state.windKmh;
+    d.windDirDeg = g_state.windDirDeg;
+    d.barCount = g_state.barCount;
+    for (uint8_t i = 0; i < d.barCount && i < AppState::WEATHER_MAX_BARS; i++)
+    {
+        d.hour[i] = g_state.barHour[i];
+        d.tempC[i] = g_state.barTempC[i];
+        d.rainPct[i] = g_state.barRainPct[i];
+    }
+    xSemaphoreGive(g_stateMutex);
+}
+
 // "45s", "12m", "3h", "2d" — compact age for the small screen.
 static void fmtAge(char *out, size_t n, uint32_t ageMs)
 {
@@ -1390,6 +1422,130 @@ static void drawAlarmBadge(TFT_eSPI &g, bool ringing, int16_t cy)
 }
 #endif
 
+// Big seven-segment temperature with the degree ring and "C", right-hand side of
+// the weather / forecast pages.
+static void drawTempReadout(TFT_eSPI &g, float tempC, int16_t dw, int16_t dh, int16_t gap, int16_t dy, uint16_t accent)
+{
+    int t = (int)lroundf(tempC);
+    int8_t d[3];
+    uint8_t n = 0;
+    if (t < 0)
+        d[n++] = 10;
+    int a = t < 0 ? -t : t;
+    if (a >= 10)
+        d[n++] = (int8_t)(a / 10);
+    d[n++] = (int8_t)(a % 10);
+
+    int16_t dwT = (int16_t)(dw * 0.85f);
+    int16_t dhT = (int16_t)(dh * 0.95f);
+    int16_t numW = n * dwT + (n - 1) * gap;
+    g.setTextDatum(ML_DATUM);
+    int16_t wC = g.textWidth("C", 4);
+    int16_t ring = imax(2, u(2.5f));
+    int16_t total = numW + gap + ring * 2 + gap + wC;
+    int16_t x0 = (int16_t)(W * 0.50f) + ((int16_t)(W * 0.48f) - total) / 2;
+    if (x0 < (int16_t)(W * 0.40f))
+        x0 = (int16_t)(W * 0.40f);
+    int16_t y0 = dy + (dh - dhT) / 2;
+    drawSegNumber(g, x0, y0, dwT, dhT, gap, d, n, accent);
+    int16_t rx = x0 + numW + gap + ring;
+    g.drawCircle(rx, y0 + ring, ring, accent);
+    g.drawCircle(rx, y0 + ring, imax(1, ring - 1), accent);
+    g.setTextColor(accent);
+    g.drawString("C", x0 + numW + gap * 2 + ring * 2, y0 + dhT / 2, 4);
+}
+
+// ---- Weather "details" view: Hi / Lo, humidity, wind and small hourly bars ----
+static const char *windDirName(int deg)
+{
+    static const char *const N8[8] = {"N", "NE", "E", "SE", "S", "SW", "W", "NW"};
+    return N8[((deg + 22) / 45) % 8];
+}
+
+static void drawWeatherDetails(TFT_eSPI &g, const WeatherDetail &d, uint16_t accent)
+{
+    const uint8_t fontRow = 2;
+    const uint8_t fontLbl = sc >= 1.5f ? 2 : 1;
+    const uint16_t rainCol = rgb(120, 200, 255);
+    int16_t margin = u(6);
+    char buf[32];
+
+    // row 1: today's high / low (left), humidity (right)
+    int16_t y1 = u(13);
+    snprintf(buf, sizeof(buf), "Hi %d  Lo %d", (int)lroundf(d.maxC), (int)lroundf(d.minC));
+    g.setTextDatum(ML_DATUM);
+    g.setTextColor(accent);
+    g.drawString(buf, margin, y1, fontRow);
+    if (d.humidityPct >= 0)
+    {
+        snprintf(buf, sizeof(buf), "%d%%", d.humidityPct);
+        int16_t tw = g.textWidth(buf, fontRow);
+        g.setTextDatum(MR_DATUM);
+        g.setTextColor(C_SOFT);
+        g.drawString(buf, W - margin, y1, fontRow);
+        drawDrop(g, W - margin - tw - u(6), y1 + 1, imax(2, u(3)), rainCol); // humidity = a water drop
+    }
+
+    // row 2: wind, the longest variant that fits
+    int16_t y2 = u(29);
+    if (d.windKmh >= 0)
+    {
+        int spd = (int)lroundf(d.windKmh);
+        const char *dir = d.windDirDeg >= 0 ? windDirName(d.windDirDeg) : "";
+        char opt[3][32];
+        snprintf(opt[0], 32, "Wind %d km/h %s", spd, dir);
+        snprintf(opt[1], 32, "%d km/h %s", spd, dir);
+        snprintf(opt[2], 32, "%d km/h", spd);
+        uint8_t pick = 2;
+        for (uint8_t i = 0; i < 3; i++)
+            if (g.textWidth(opt[i], fontRow) <= W - 2 * margin)
+            {
+                pick = i;
+                break;
+            }
+        g.setTextDatum(ML_DATUM);
+        g.setTextColor(C_SOFT);
+        g.drawString(opt[pick], margin, y2, fontRow);
+    }
+
+    // hourly bars: height = temperature relative to the other shown hours,
+    // colour = temperature, hour label below (blue = rain likely)
+    int n = d.barCount;
+    if (n <= 0)
+        return;
+    int16_t top = u(39), base = infoH - u(19);
+    int16_t area = base - top;
+    int16_t x0 = u(8);
+    int16_t slot = (W - 2 * x0) / n;
+    int16_t barW = imax(3, slot * 6 / 10);
+    int tmin = d.tempC[0], tmax = d.tempC[0];
+    for (int i = 1; i < n; i++)
+    {
+        if (d.tempC[i] < tmin)
+            tmin = d.tempC[i];
+        if (d.tempC[i] > tmax)
+            tmax = d.tempC[i];
+    }
+    int16_t hMin = imax(3, area / 4);
+    for (int i = 0; i < n; i++)
+    {
+        int16_t h = tmax > tmin ? hMin + (int16_t)((long)(area - hMin) * (d.tempC[i] - tmin) / (tmax - tmin)) : (int16_t)(area * 3 / 5);
+        int16_t bx = x0 + i * slot + (slot - barW) / 2;
+        bool rain = d.rainPct[i] >= WEATHER_BAR_RAIN_PCT;
+        uint16_t col = tempColor((float)d.tempC[i]);
+        g.fillRect(bx, base - h, barW, h, i == 0 ? col : tint(col, 0.75f));
+        if (rain)
+            g.fillRect(bx, base + 1, barW, imax(1, u(1.5f)), rainCol);
+        if (i == 0)
+            strcpy(buf, "now");
+        else
+            snprintf(buf, sizeof(buf), "%d", d.hour[i]);
+        g.setTextDatum(MC_DATUM);
+        g.setTextColor(rain ? rainCol : C_SOFT);
+        g.drawString(buf, bx + barW / 2, infoH - u(12), fontLbl);
+    }
+}
+
 static void drawInfoPanel(DisplayMode mode, bool alarm, bool haveTime, const struct tm &ti, uint32_t now)
 {
 #if ALARM_ICON_ENABLED
@@ -1442,6 +1598,18 @@ static void drawInfoPanel(DisplayMode mode, bool alarm, bool haveTime, const str
     uint32_t wAgeMs = wValid ? ageSince(millis(), wUpdatedMs) : 0;
     bool wStale = wValid && wAgeMs > WEATHER_STALE_MS; // offline / fetches failing: reading is old
 
+    // Weather page: opens on the big temperature, then alternates with the details view.
+    static uint32_t weatherEnterMs = 0;
+    if (shown == DisplayMode::WEATHER && lastMode != DisplayMode::WEATHER)
+        weatherEnterMs = now;
+    WeatherDetail wd = {};
+    bool detailView = false;
+    if (WEATHER_DETAILS_ENABLED && shown == DisplayMode::WEATHER)
+    {
+        readWeatherDetail(wd);
+        detailView = wd.valid && wValid && (((now - weatherEnterMs) / WEATHER_PAGE_SWITCH_MS) & 1);
+    }
+
     // ---- signature: only redraw when something visible changed ----
     uint32_t sig = 0;
     switch (shown)
@@ -1459,7 +1627,8 @@ static void drawInfoPanel(DisplayMode mode, bool alarm, bool haveTime, const str
               ((themeStamp & 0xFFFu) << 16); // theme moved -> redraw
         break;
     default:
-        sig = (4u << 28) | ((now / 120) & 0xFF) | (((uint32_t)((int)lroundf(tempC) + 128) & 0xFF) << 8) |
+        sig = (detailView ? (6u << 28) | ((now / 1000) & 0xFF) : (4u << 28) | ((now / 120) & 0xFF)) | // details don't animate
+              (((uint32_t)((int)lroundf(tempC) + 128) & 0xFF) << 8) |
               (((uint32_t)wCode & 0x7F) << 16) | (wValid ? (1u << 23) : 0u);
         break;
     }
@@ -1568,38 +1737,16 @@ static void drawInfoPanel(DisplayMode mode, bool alarm, bool haveTime, const str
     }
     else // WEATHER
     {
-        if (wValid)
+        if (wValid && detailView)
+        {
+            drawWeatherDetails(g, wd, accent);
+        }
+        else if (wValid)
         {
             int16_t r = u(14);
             drawWeatherIcon(g, wCode, (int16_t)(W * 0.22f), dy + dh / 2, r, now);
 
-            int t = (int)lroundf(tempC);
-            int8_t d[3];
-            uint8_t n = 0;
-            if (t < 0)
-                d[n++] = 10;
-            int a = t < 0 ? -t : t;
-            if (a >= 10)
-                d[n++] = (int8_t)(a / 10);
-            d[n++] = (int8_t)(a % 10);
-
-            int16_t dwT = (int16_t)(dw * 0.85f);
-            int16_t dhT = (int16_t)(dh * 0.95f);
-            int16_t numW = n * dwT + (n - 1) * gap;
-            g.setTextDatum(ML_DATUM);
-            int16_t wC = g.textWidth("C", 4);
-            int16_t ring = imax(2, u(2.5f));
-            int16_t total = numW + gap + ring * 2 + gap + wC;
-            int16_t x0 = (int16_t)(W * 0.50f) + ((int16_t)(W * 0.48f) - total) / 2;
-            if (x0 < (int16_t)(W * 0.40f))
-                x0 = (int16_t)(W * 0.40f);
-            int16_t y0 = dy + (dh - dhT) / 2;
-            drawSegNumber(g, x0, y0, dwT, dhT, gap, d, n, accent);
-            int16_t rx = x0 + numW + gap + ring;
-            g.drawCircle(rx, y0 + ring, ring, accent);
-            g.drawCircle(rx, y0 + ring, imax(1, ring - 1), accent);
-            g.setTextColor(accent);
-            g.drawString("C", x0 + numW + gap * 2 + ring * 2, y0 + dhT / 2, 4);
+            drawTempReadout(g, tempC, dw, dh, gap, dy, accent);
 
             strncpy(cap, weather_code_to_label(wCode), sizeof(cap) - 1);
             cap[sizeof(cap) - 1] = '\0';

@@ -37,6 +37,21 @@ struct AppState
     int weatherCode = 0;           // Open-Meteo WMO weather code
     uint32_t weatherUpdatedMs = 0; // millis() of the last successful fetch (age = millis() - this)
 
+    // Extra weather details, from the same request as the reading above
+    // (weather_tick()). Valid together with weatherValid; detailValid is false if the
+    // response lacked them (the basic reading is still shown then).
+    static const int WEATHER_MAX_BARS = 8;
+    bool detailValid = false;
+    float tMaxC = 0.0f; // today's high / low
+    float tMinC = 0.0f;
+    int humidityPct = -1;                     // relative humidity, 0-100; -1 = unknown
+    float windKmh = -1.0f;                    // wind speed at 10 m; < 0 = unknown
+    int windDirDeg = -1;                      // direction the wind comes FROM, 0-359; -1 = unknown
+    uint8_t barCount = 0;                     // hourly forecast entries below (starting with the current hour)
+    uint8_t barHour[WEATHER_MAX_BARS] = {};   // local hour of the entry, 0-23
+    int8_t barTempC[WEATHER_MAX_BARS] = {};   // temperature, rounded
+    int8_t barRainPct[WEATHER_MAX_BARS] = {}; // chance of rain, 0-100; -1 = unknown
+
     // Last successful NTP sync (diagnostics page). 0 = no NTP sync since boot.
     uint32_t ntpSyncEpoch = 0; // wall-clock time of that sync
     uint32_t ntpSyncMs = 0;    // millis() of that sync (age = millis() - this)
