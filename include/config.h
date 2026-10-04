@@ -119,6 +119,11 @@
 #define SUN_ENABLED 1
 #endif
 
+// Moon phase: the night sky shows the real phase (new, crescent, quarter, gibbous,
+// full), computed from the date, mirrored for the southern hemisphere. 0 = the
+// old fixed crescent.
+#define MOON_PHASE_ENABLED 1
+
 // ---- Page transition ----
 // Pressing the Mode button slides the new page in from the right over the old one
 // instead of swapping instantly. Only between clock / date / weather (the

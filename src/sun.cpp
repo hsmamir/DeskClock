@@ -54,6 +54,17 @@ SunTimes sun_compute(int year, int yday, double latDeg, double lonDeg, int utcOf
     return r;
 }
 
+float moon_phase(time_t utc)
+{
+    const double kSynodic = 29.530588853;   // days
+    const double kRefNewMoon = 947182440.0; // 2000-01-06 18:14 UTC, a new moon
+    double days = ((double)utc - kRefNewMoon) / 86400.0;
+    double p = fmod(days / kSynodic, 1.0);
+    if (p < 0)
+        p += 1.0;
+    return (float)p;
+}
+
 #ifdef ARDUINO
 
 // UTC offset (minutes) of the local timezone at this moment, DST included.
@@ -137,6 +148,14 @@ SunTimes sun_today(const struct tm &local)
     else
         Serial.printf("Sun (%.3f, %.3f): %s\n", lat, lon, r.valid ? (r.polarNight ? "polar night" : "midnight sun") : "n/a");
     return r;
+}
+
+float moon_phase_view()
+{
+    float lat, lon;
+    currentLocation(lat, lon);
+    float p = moon_phase(time(nullptr));
+    return lat < 0 ? fmodf(1.0f - p, 1.0f) : p;
 }
 
 static float hourOf(const struct tm &t) { return t.tm_hour + t.tm_min / 60.0f + t.tm_sec / 3600.0f; }

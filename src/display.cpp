@@ -506,6 +506,7 @@ struct SceneInfo
     bool weatherKnown; // a recent-enough weather reading exists
     int code;          // Open-Meteo WMO weather code (valid if weatherKnown)
     float tempC;       // current temperature (valid if weatherKnown)
+    float moonPhase;   // 0 new .. 0.5 full .. 1 new; 0.25 = right half lit (see moon_phase_view)
 };
 
 // How the eyes react to the situation (steady while it lasts).
@@ -1072,11 +1073,43 @@ static void drawDimSun(TFT_eSPI &g, int16_t cx, int16_t cy, int16_t r, uint32_t 
     }
 }
 
-// Crescent: a disc with a background-coloured disc carved out of it.
-static void drawMoon(TFT_eSPI &g, int16_t cx, int16_t cy, int16_t r)
+// Moon with its real phase. phase: 0 new, 0.25 first quarter (right half lit),
+// 0.5 full, 0.75 last quarter (left half lit). The terminator is an ellipse, drawn
+// row by row: lit part of each row runs from the terminator to the limb.
+static void drawMoon(TFT_eSPI &g, int16_t cx, int16_t cy, int16_t r, float phase)
 {
-    g.fillCircle(cx, cy, r, dimColor(rgb(225, 230, 255), 235));
+    uint16_t lit = dimColor(rgb(225, 230, 255), 235);
+#if !MOON_PHASE_ENABLED
+    (void)phase;
+    g.fillCircle(cx, cy, r, lit);
     g.fillCircle(cx + (int16_t)(r * 0.55f), cy - (int16_t)(r * 0.25f), (int16_t)(r * 0.85f), C_BG);
+#else
+    // the dark side is still faintly there (earthshine)
+    g.fillCircle(cx, cy, r, tint(lit, 0.14f));
+
+    float k = cosf(2.0f * (float)M_PI * phase); // 1 new .. 0 quarter .. -1 full
+    bool waxing = phase < 0.5f;
+    if ((1.0f - k) * 0.5f < 0.02f)
+        return; // new moon: only the faint disc
+    for (int16_t dy = -r; dy <= r; dy++)
+    {
+        float w = sqrtf((float)(r * r - dy * dy) + 0.25f);
+        float t = k * w; // terminator x offset on this row
+        int16_t x0, x1;
+        if (waxing)
+        {
+            x0 = (int16_t)lroundf(t);
+            x1 = (int16_t)lroundf(w);
+        }
+        else
+        {
+            x0 = (int16_t)lroundf(-w);
+            x1 = (int16_t)lroundf(-t);
+        }
+        if (x1 >= x0)
+            g.drawFastHLine(cx + x0, cy + dy, x1 - x0 + 1, lit);
+    }
+#endif
 }
 
 static void drawShootingStar(TFT_eSPI &g, uint32_t now)
@@ -1185,7 +1218,7 @@ static void drawSceneBackground(TFT_eSPI &g, uint32_t now, const SceneInfo &scn)
             drawDimSun(g, u(16), u(16), u(7), now);
         else
         {
-            drawMoon(g, u(16), u(16), u(8));
+            drawMoon(g, u(16), u(16), u(8), scn.moonPhase);
             if (!partly)
                 drawShootingStar(g, now);
         }
@@ -2119,6 +2152,7 @@ void display_tick()
     SceneInfo scn;
     scn.timeKnown = haveTime;
     scn.day = haveTime && sun_is_day(ti);
+    scn.moonPhase = haveTime ? moon_phase_view() : 0.5f;
     {
         bool wv = false;
         float wt = 0;

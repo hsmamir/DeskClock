@@ -30,3 +30,14 @@ bool sun_is_day(const struct tm &local);
 // (+SUN_NIGHT_END_AFTER_SUNRISE_H). Otherwise / if the sun can't be computed: the
 // fixed NIGHT_START_HOUR..NIGHT_END_HOUR window.
 bool sun_is_night(const struct tm &local);
+
+// ---- Moon phase ----
+// Age of the moon as a fraction of the synodic month for a UTC time:
+// 0 = new, 0.25 = first quarter, 0.5 = full, 0.75 = last quarter.
+// Mean-lunation formula (no internet): accurate to about +-1 day, plenty for a picture.
+float moon_phase(time_t utc);
+
+// Phase as it LOOKS from the saved location: same as moon_phase(now), but mirrored in
+// the southern hemisphere (the lit side is on the other side there), so 0.25 always
+// means "right half lit" on screen.
+float moon_phase_view();
