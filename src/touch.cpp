@@ -107,6 +107,26 @@ static bool handleModeButton()
     BtnEvent ev = pollButton(btnMode);
     uint32_t now = millis();
 
+    // progress ring for the display task (only when the hold would OPEN the diagnostics
+    // page; on that page a plain tap already leaves it)
+    uint8_t ring = 0;
+    if (MODE_HOLD_RING && btnMode.lastStable && !modeLongHandled && ev != BtnEvent::PRESSED)
+    {
+        uint32_t held = (uint32_t)(now - modePressedAtMs);
+        if (held > MODE_HOLD_RING_DELAY_MS && held < MODE_LONG_PRESS_MS)
+        {
+            xSemaphoreTake(g_stateMutex, portMAX_DELAY);
+            bool onDiag = g_state.displayMode == DisplayMode::DIAG;
+            xSemaphoreGive(g_stateMutex);
+            if (!onDiag)
+            {
+                uint32_t pct = (held - MODE_HOLD_RING_DELAY_MS) * 100 / (MODE_LONG_PRESS_MS - MODE_HOLD_RING_DELAY_MS);
+                ring = (uint8_t)(pct < 1 ? 1 : (pct > 100 ? 100 : pct));
+            }
+        }
+    }
+    g_state.modeHoldPct = ring;
+
     if (ev == BtnEvent::PRESSED)
     {
         modePressedAtMs = now;
@@ -116,6 +136,7 @@ static bool handleModeButton()
     if (btnMode.lastStable && !modeLongHandled && (uint32_t)(now - modePressedAtMs) >= MODE_LONG_PRESS_MS)
     {
         modeLongHandled = true;
+        g_state.modeHoldPct = 0;
         toggleDiagPage();
         return true;
     }

@@ -26,10 +26,11 @@ struct AppState
     Mood mood = Mood::IDLE_BLINK;
     DisplayMode displayMode = DisplayMode::CLOCK;
     bool alarmActive = false;
-    bool timeSynced = false;       // clock holds a usable time (NTP, or restored from flash)
-    bool timeApprox = false;       // ...but it came from flash, not NTP yet (may be behind)
-    bool wifiPortalActive = false; // WiFiManager setup portal is open (real hardware)
-    int8_t otaPercent = -1;        // OTA update progress 0-100; -1 = no update running
+    bool timeSynced = false;          // clock holds a usable time (NTP, or restored from flash)
+    bool timeApprox = false;          // ...but it came from flash, not NTP yet (may be behind)
+    bool wifiPortalActive = false;    // WiFiManager setup portal is open (real hardware)
+    volatile uint8_t modeHoldPct = 0; // Mode button held toward the diagnostics page: 0 = not shown, 1-100 = ring progress
+    int8_t otaPercent = -1;           // OTA update progress 0-100; -1 = no update running
 
     // Weather cache, refreshed periodically by weather_tick()
     bool weatherValid = false;

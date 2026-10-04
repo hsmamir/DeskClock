@@ -1902,6 +1902,35 @@ static void drawStatusIcons(TFT_eSPI &g, uint32_t now)
     g.drawLine(cx - r + 1, cy - r, cx + r + 1, cy + 4, C_RED);
 }
 
+// Ring that fills while the Mode button is held toward the diagnostics page
+// (g_state.modeHoldPct, set by touch.cpp). Drawn over the middle of the face.
+static void drawHoldRing(TFT_eSPI &g)
+{
+    if (!MODE_HOLD_RING)
+        return;
+    uint8_t pct = g_state.modeHoldPct;
+    if (pct == 0)
+        return;
+
+    int16_t cx = W / 2, cy = faceH / 2;
+    int16_t r = u(17);
+    int16_t dot = imax(1, u(1.8f));
+    g.fillCircle(cx, cy, r + dot + u(3), C_BG);
+    g.drawCircle(cx, cy, r + dot + u(3), C_GHOST);
+
+    const int N = 40; // dots around the ring, starting at 12 o'clock, clockwise
+    int filled = (pct * N + 50) / 100;
+    for (int i = 0; i < N; i++)
+    {
+        float a = -(float)M_PI / 2.0f + i * 2.0f * (float)M_PI / N;
+        int16_t x = cx + (int16_t)lroundf(r * cosf(a)), y = cy + (int16_t)lroundf(r * sinf(a));
+        g.fillCircle(x, y, dot, i < filled ? C_ACCENT : C_GHOST);
+    }
+    g.setTextDatum(MC_DATUM);
+    g.setTextColor(C_SOFT);
+    g.drawString("DIAG", cx, cy, sc >= 1.5f ? 2 : 1);
+}
+
 // =====================================================================
 //  Diagnostics page (full screen) — IP, signal, free heap, last sync
 // =====================================================================
@@ -2333,6 +2362,7 @@ void display_tick()
     TFT_eSPI &g = faceCv.begin();
     drawFace(g, now, alarm, happy, sleepy, blinkOpen, scn, reaction, exprP);
     drawStatusIcons(g, now);
+    drawHoldRing(g);
     faceCv.end();
 
     drawInfoPanel(mode, alarm, haveTime, ti, now);

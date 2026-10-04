@@ -44,6 +44,12 @@
 // 0 = stay where you left it. (The weather page alternates its two views every
 // WEATHER_PAGE_SWITCH_MS, so keep DISPLAY_RETURN_MS above 2x that to see both.)
 #define MODE_LONG_PRESS_MS 1000
+// While Mode is held, a small ring fills on the face and completes exactly when the
+// diagnostics page opens. It appears after MODE_HOLD_RING_DELAY_MS so a normal tap
+// never flashes it. 0 = no ring.
+#define MODE_HOLD_RING 1
+#define MODE_HOLD_RING_DELAY_MS 250
+static_assert(MODE_HOLD_RING_DELAY_MS < MODE_LONG_PRESS_MS, "ring delay must be shorter than the long press");
 #define DISPLAY_RETURN_MS 15000
 #define DIAG_RETURN_MS 15000
 
