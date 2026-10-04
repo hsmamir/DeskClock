@@ -81,6 +81,10 @@
 #define ALARM_LONG_PRESS_MS 1000 // hold time for "off"
 #define ALARM_MAX_SNOOZES 3      // 0 = unlimited snoozes
 
+// Bell icon + alarm time at the bottom-left of the clock page, shown while the
+// alarm is switched on (red and flashing while it rings). 0 = no indicator.
+#define ALARM_ICON_ENABLED 1
+
 // ---- Face background scene ----
 // The area behind the eyes follows the weather and the time of day: sun / moon,
 // drifting clouds, rain, snow, fog, lightning, stars. Everything is drawn dim so

@@ -8,6 +8,7 @@
 #include "pins.h"
 #include "config.h"
 #include "weather.h"
+#include "settings.h"
 
 static TFT_eSPI tft = TFT_eSPI();
 
@@ -1256,8 +1257,63 @@ static void drawSegNumber(TFT_eSPI &g, int16_t x, int16_t y, int16_t dw, int16_t
         drawSegDigit(g, x + i * (dw + gap), y, dw, dh, digits[i], on, C_GHOST);
 }
 
+#if ALARM_ICON_ENABLED
+// ---- Alarm badge (clock page, bottom-left): bell icon + the alarm time ----
+// Shown only while the alarm is switched on in the settings. While it rings the
+// bell turns red, flashes and its clapper swings. The setting is cached and
+// re-read once a second (settings_get() takes a mutex + copies the struct).
+static bool alarmCfgOn = false;
+static int alarmCfgHour = 0, alarmCfgMin = 0;
+static uint32_t lastAlarmCfgMs = 0;
+
+static void pollAlarmCfg(uint32_t now)
+{
+    if (lastAlarmCfgMs != 0 && now - lastAlarmCfgMs < 1000)
+        return;
+    lastAlarmCfgMs = now ? now : 1;
+    Settings cfg = settings_get();
+    alarmCfgOn = cfg.alarmEnabled;
+    alarmCfgHour = cfg.alarmHour;
+    alarmCfgMin = cfg.alarmMinute;
+}
+
+// Small bell: dome + body + rim + clapper. (cx, cy) = middle of the body,
+// r = dome radius, swing = clapper offset in px (0 = hanging straight).
+static void drawBell(TFT_eSPI &g, int16_t cx, int16_t cy, int16_t r, int16_t swing, uint16_t c)
+{
+    g.fillCircle(cx, cy - 1, r, c);                          // dome
+    g.fillRect(cx - r, cy - 1, 2 * r + 1, r - 1, c);         // body
+    g.fillRect(cx - r - 1, cy + r - 2, 2 * r + 3, 2, c);     // flared rim
+    g.fillCircle(cx, cy - r - 1, imax(1, r / 3), c);         // top knob
+    g.fillCircle(cx + swing, cy + r + 1, imax(1, r / 3), c); // clapper
+}
+
+static void drawAlarmBadge(TFT_eSPI &g, bool ringing, int16_t cy)
+{
+    int16_t r = imax(3, u(3.2f));
+    int16_t cx = u(9);
+    uint16_t bellC = C_AMBER, textC = C_SOFT;
+    int16_t swing = 0;
+    if (ringing)
+    {
+        bellC = textC = alarmFlashOn ? C_RED : tint(C_RED, 0.35f);
+        swing = alarmFlashOn ? imax(1, r / 2) : -imax(1, r / 2);
+    }
+    drawBell(g, cx, cy, r, swing, bellC);
+
+    char buf[8];
+    snprintf(buf, sizeof(buf), "%02d:%02d", alarmCfgHour, alarmCfgMin);
+    g.setTextDatum(ML_DATUM);
+    g.setTextColor(textC);
+    g.drawString(buf, cx + r + u(4), cy + 1, sc >= 1.5f ? 2 : 1);
+}
+#endif
+
 static void drawInfoPanel(DisplayMode mode, bool alarm, bool haveTime, const struct tm &ti, uint32_t now)
 {
+#if ALARM_ICON_ENABLED
+    pollAlarmCfg(now);
+#endif
     DisplayMode shown = alarm ? DisplayMode::CLOCK : mode; // an alarm always shows the time
     uint8_t colonLevel = colonLevelNow(now);
 
@@ -1390,6 +1446,11 @@ static void drawInfoPanel(DisplayMode mode, bool alarm, bool haveTime, const str
             int16_t fw = (int16_t)((int32_t)bw * (ti.tm_sec + 1) / 60);
             if (fw > 0)
                 g.fillRoundRect(bx, by, fw, bh, bh / 2, accent);
+
+#if ALARM_ICON_ENABLED
+            if (alarmCfgOn || alarm)
+                drawAlarmBadge(g, alarm, infoH - u(7));
+#endif
         }
         else
         {
