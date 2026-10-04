@@ -5,6 +5,7 @@
 #include "config.h"
 #include "settings.h"
 #include "state.h"
+#include "sun.h"
 
 // Several tasks talk to the module (touch, alarm, web). Each public call is a
 // multi-step sequence (volume -> delay -> play), so it is guarded by a mutex
@@ -81,7 +82,7 @@ static bool isNightNow()
     struct tm ti;
     if (!synced || !getLocalTime(&ti, 0))
         return false; // clock unknown -> behave like daytime
-    return isNightHour(ti.tm_hour);
+    return sun_is_night(ti);
 }
 
 // ---- Public API ----

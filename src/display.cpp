@@ -10,6 +10,7 @@
 #include "weather.h"
 #include "settings.h"
 #include "boot_log.h"
+#include "sun.h"
 
 static TFT_eSPI tft = TFT_eSPI();
 
@@ -92,17 +93,51 @@ struct ThemeKey
 };
 // Ascending hours; before the first and after the last key it is simply night.
 // The two twilight keys sit halfway between their neighbours.
-static const ThemeKey THEME_KEYS[] = {
-    {THEME_NIGHT_END_H, &TH_NIGHT},
-    {(THEME_NIGHT_END_H + THEME_DAWN_H) / 2.0f, &TH_TWILIGHT},
-    {THEME_DAWN_H, &TH_DAWN},
-    {THEME_DAY_FROM_H, &TH_DAY},
-    {THEME_DAY_TO_H, &TH_DAY},
-    {THEME_DUSK_H, &TH_DUSK},
-    {(THEME_DUSK_H + THEME_NIGHT_FROM_H) / 2.0f, &TH_TWILIGHT},
-    {THEME_NIGHT_FROM_H, &TH_NIGHT},
-};
-static const int THEME_KEY_COUNT = sizeof(THEME_KEYS) / sizeof(THEME_KEYS[0]);
+static const int THEME_KEY_COUNT = 8;
+static ThemeKey THEME_KEYS[THEME_KEY_COUNT];
+
+// Fills THEME_KEYS for today. With the real sun the hours are offsets from sunrise /
+// sunset; they are kept non-decreasing so a very short winter day can't scramble them.
+// Returns false when there is no usable sunrise/sunset (polar day/night): the caller
+// then picks a fixed look.
+static bool themeBuildKeys(bool haveTime, const struct tm &ti, bool &polarNight, bool &midnightSun)
+{
+    polarNight = midnightSun = false;
+    float h[6] = {THEME_NIGHT_END_H, THEME_DAWN_H, THEME_DAY_FROM_H, THEME_DAY_TO_H, THEME_DUSK_H, THEME_NIGHT_FROM_H};
+    if (SUN_ENABLED && haveTime)
+    {
+        SunTimes s = sun_today(ti);
+        if (s.valid)
+        {
+            if (s.polarNight || s.midnightSun)
+            {
+                polarNight = s.polarNight;
+                midnightSun = s.midnightSun;
+                return false;
+            }
+            h[0] = s.riseH + THEME_NIGHT_END_FROM_SUNRISE_H;
+            h[1] = s.riseH + THEME_DAWN_FROM_SUNRISE_H;
+            h[2] = s.riseH + THEME_DAY_FROM_SUNRISE_H;
+            h[3] = s.setH + THEME_DAY_TO_FROM_SUNSET_H;
+            h[4] = s.setH + THEME_DUSK_FROM_SUNSET_H;
+            h[5] = s.setH + THEME_NIGHT_FROM_SUNSET_H;
+            if (h[3] < h[2]) // short day: bright part collapses to one point
+                h[2] = h[3] = (h[2] + h[3]) / 2.0f;
+            for (int i = 1; i < 6; i++)
+                if (h[i] < h[i - 1])
+                    h[i] = h[i - 1];
+        }
+    }
+    THEME_KEYS[0] = {h[0], &TH_NIGHT};
+    THEME_KEYS[1] = {(h[0] + h[1]) / 2.0f, &TH_TWILIGHT};
+    THEME_KEYS[2] = {h[1], &TH_DAWN};
+    THEME_KEYS[3] = {h[2], &TH_DAY};
+    THEME_KEYS[4] = {h[3], &TH_DAY};
+    THEME_KEYS[5] = {h[4], &TH_DUSK};
+    THEME_KEYS[6] = {(h[4] + h[5]) / 2.0f, &TH_TWILIGHT};
+    THEME_KEYS[7] = {h[5], &TH_NIGHT};
+    return true;
+}
 
 // Changes whenever a themed colour changes: pages that are normally redrawn only
 // when their content changes (the date page) include it in their redraw signature.
@@ -133,21 +168,33 @@ static void themeUpdate(bool haveTime, const struct tm &ti, uint32_t now)
         hour = ti.tm_hour + ti.tm_min / 60.0f + ti.tm_sec / 3600.0f;
 
     ThemeColors c = TH_NIGHT;
-    if (hour > THEME_KEYS[0].hour && hour < THEME_KEYS[THEME_KEY_COUNT - 1].hour)
+    bool polarNight, midnightSun;
+    if (!themeBuildKeys(haveTime && !THEME_PREVIEW, ti, polarNight, midnightSun))
     {
-        int i = 0;
-        while (i < THEME_KEY_COUNT - 2 && hour >= THEME_KEYS[i + 1].hour)
-            i++;
-        const ThemeKey &k0 = THEME_KEYS[i], &k1 = THEME_KEYS[i + 1];
-        float span = k1.hour - k0.hour;
-        float t = span > 0.01f ? (hour - k0.hour) / span : 1.0f;
-        t = t < 0 ? 0 : (t > 1 ? 1 : t);
-        t = t * t * (3.0f - 2.0f * t); // smoothstep: lingers at each look, moves in between
-        lerp3(c.bg, k0.look->bg, k1.look->bg, t);
-        lerp3(c.ghost, k0.look->ghost, k1.look->ghost, t);
-        lerp3(c.accent, k0.look->accent, k1.look->accent, t);
-        lerp3(c.eyeTop, k0.look->eyeTop, k1.look->eyeTop, t);
-        lerp3(c.eyeBot, k0.look->eyeBot, k1.look->eyeBot, t);
+        if (midnightSun)
+            c = TH_DAY; // sun never sets today
+    }
+    else
+    {
+        // a sunset after midnight: the small hours still belong to yesterday's evening
+        if (hour < THEME_KEYS[0].hour && hour + 24.0f < THEME_KEYS[THEME_KEY_COUNT - 1].hour)
+            hour += 24.0f;
+        if (hour > THEME_KEYS[0].hour && hour < THEME_KEYS[THEME_KEY_COUNT - 1].hour)
+        {
+            int i = 0;
+            while (i < THEME_KEY_COUNT - 2 && hour >= THEME_KEYS[i + 1].hour)
+                i++;
+            const ThemeKey &k0 = THEME_KEYS[i], &k1 = THEME_KEYS[i + 1];
+            float span = k1.hour - k0.hour;
+            float t = span > 0.01f ? (hour - k0.hour) / span : 1.0f;
+            t = t < 0 ? 0 : (t > 1 ? 1 : t);
+            t = t * t * (3.0f - 2.0f * t); // smoothstep: lingers at each look, moves in between
+            lerp3(c.bg, k0.look->bg, k1.look->bg, t);
+            lerp3(c.ghost, k0.look->ghost, k1.look->ghost, t);
+            lerp3(c.accent, k0.look->accent, k1.look->accent, t);
+            lerp3(c.eyeTop, k0.look->eyeTop, k1.look->eyeTop, t);
+            lerp3(c.eyeBot, k0.look->eyeBot, k1.look->eyeBot, t);
+        }
     }
 
     uint16_t bg = rgb(c.bg[0], c.bg[1], c.bg[2]);
@@ -455,7 +502,7 @@ static void drawHappyEye(TFT_eSPI &g, int16_t cx, int16_t cy, int16_t R)
 struct SceneInfo
 {
     bool timeKnown;    // clock has a usable time (else: plain night sky, as at boot)
-    bool day;          // between SCENE_DAY_START_HOUR and SCENE_DAY_END_HOUR
+    bool day;          // sun is up (real sunrise..sunset, see sun.h)
     bool weatherKnown; // a recent-enough weather reading exists
     int code;          // Open-Meteo WMO weather code (valid if weatherKnown)
     float tempC;       // current temperature (valid if weatherKnown)
@@ -2041,7 +2088,7 @@ void display_tick()
     themeUpdate(haveTime, ti, now); // background / accent follow the time of day
 
     bool alarm = (mood == Mood::ALARM_ALERT);
-    bool night = haveTime && isNightHour(ti.tm_hour);
+    bool night = haveTime && sun_is_night(ti);
     bool sleepy = night && !alarm;
 
     // Dim at night; an alarm always gets full brightness, immediately.
@@ -2071,7 +2118,7 @@ void display_tick()
     // what the face background / reactions need to know
     SceneInfo scn;
     scn.timeKnown = haveTime;
-    scn.day = haveTime && !night && ti.tm_hour >= SCENE_DAY_START_HOUR && ti.tm_hour < SCENE_DAY_END_HOUR;
+    scn.day = haveTime && sun_is_day(ti);
     {
         bool wv = false;
         float wt = 0;

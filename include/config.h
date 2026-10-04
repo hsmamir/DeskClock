@@ -99,11 +99,25 @@
 // drifting clouds, rain, snow, fog, lightning, stars. Everything is drawn dim so
 // the eyes stay the focus. 0 = back to the plain twinkling stars.
 #define SCENE_ENABLED 1
+// Day / night follow the REAL sunrise and sunset of the city set in the web page
+// (see "Real sun" below). SCENE_DAY_START/END_HOUR are only the fallback when
+// SUN_ENABLED is 0 or the sun times can't be computed.
 #define SCENE_DAY_START_HOUR 6 // sun from this hour (inclusive) ...
 #define SCENE_DAY_END_HOUR 19  // ... until this hour (exclusive), then moon/stars
 // A weather reading older than this is no longer trusted for the scene (the
 // background then follows only the time of day).
 #define SCENE_WEATHER_MAX_AGE_MS (3UL * 60 * 60 * 1000)
+
+// ---- Real sun (sunrise / sunset) ----
+// Sunrise and sunset are computed on the chip from the saved latitude / longitude,
+// today's date and the timezone (NOAA formulas, no internet). They drive:
+//   - the face background (sun by day, moon + stars by night),
+//   - the colour theme (dawn at sunrise, dusk at sunset, see THEME_*_H below),
+//   - night mode (dim backlight, muted pet sound, sleepy eyes).
+// 0 = back to the fixed hours in this file.
+#ifndef SUN_ENABLED
+#define SUN_ENABLED 1
+#endif
 
 // ---- Page transition ----
 // Pressing the Mode button slides the new page in from the right over the old one
@@ -143,6 +157,16 @@
 // A window that crosses midnight works too (e.g. start 23, end 6).
 // (The #ifndef guards let a build flag override these, e.g. the
 // esp32dev-nighttest env in platformio.ini forces "always night" for testing.)
+// NIGHT_FOLLOWS_SUN 1 (needs SUN_ENABLED): night = from sunset to sunrise, and
+// NIGHT_START_HOUR / NIGHT_END_HOUR below are only the fallback. Shift the edges
+// with the two offsets (hours, may be negative / fractional), e.g. start 2.0 =
+// night mode begins 2 h after sunset; end -0.5 = ends 30 min before sunrise.
+// 0 = always use the fixed NIGHT_START_HOUR..NIGHT_END_HOUR window.
+#ifndef NIGHT_FOLLOWS_SUN
+#define NIGHT_FOLLOWS_SUN 1
+#endif
+#define SUN_NIGHT_START_AFTER_SUNSET_H 0.0f
+#define SUN_NIGHT_END_AFTER_SUNRISE_H 0.0f
 #ifndef NIGHT_START_HOUR
 #define NIGHT_START_HOUR 0 // 00:00
 #endif
@@ -235,16 +259,27 @@ static inline bool isNightHour(int hour)
 //   day    bright sky blue + sunny yellow
 //   dusk   ember + orange sunset
 // (a short lilac twilight is blended in between night and dawn / dusk and night)
-// Hours are local time, 0-24 (fractions allowed), in increasing order. Before the
-// clock knows the time the night look is used.
+// With SUN_ENABLED the keys below are OFFSETS (hours) from today's real sunrise /
+// sunset, so the dawn glow follows the sun through the seasons. The defaults give
+// the old look at an equinox (sunrise ~06:00, sunset ~18:00). With SUN_ENABLED 0
+// they are fixed local hours instead (the *_H_FIXED values).
+// Before the clock knows the time the night look is used.
 #define THEME_ENABLED 1
-#define THEME_EYES 1             // 0 = keep the eyes cyan, theme only the rest
-#define THEME_NIGHT_END_H 4.5f   // deep blue until here, then it starts warming up ...
-#define THEME_DAWN_H 6.5f        // ... full dawn glow ...
-#define THEME_DAY_FROM_H 9.0f    // ... bright day from here ...
-#define THEME_DAY_TO_H 16.0f     // ... until here, then it turns ...
-#define THEME_DUSK_H 18.5f       // ... orange at sunset ...
-#define THEME_NIGHT_FROM_H 21.0f // ... and fully deep blue again from here
+#define THEME_EYES 1 // 0 = keep the eyes cyan, theme only the rest
+// offsets from sunrise (+) / sunset (+), in hours:
+#define THEME_NIGHT_END_FROM_SUNRISE_H -1.5f // deep blue until here, then it starts warming up ...
+#define THEME_DAWN_FROM_SUNRISE_H 0.5f       // ... full dawn glow ...
+#define THEME_DAY_FROM_SUNRISE_H 3.0f        // ... bright day from here ...
+#define THEME_DAY_TO_FROM_SUNSET_H -2.0f     // ... until here, then it turns ...
+#define THEME_DUSK_FROM_SUNSET_H 0.5f        // ... orange at sunset ...
+#define THEME_NIGHT_FROM_SUNSET_H 3.0f       // ... and fully deep blue again from here
+// fixed local hours (0-24, increasing) used when SUN_ENABLED is 0 / sun unknown:
+#define THEME_NIGHT_END_H 4.5f
+#define THEME_DAWN_H 6.5f
+#define THEME_DAY_FROM_H 9.0f
+#define THEME_DAY_TO_H 16.0f
+#define THEME_DUSK_H 18.5f
+#define THEME_NIGHT_FROM_H 21.0f
 
 // Preview: 1 = ignore the real time and replay a whole day in THEME_PREVIEW_DAY_MS
 // (a colour time-lapse). Use the esp32dev-themetest env in platformio.ini.
