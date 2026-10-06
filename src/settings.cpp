@@ -33,6 +33,7 @@ static void loadDefaults(Settings &s)
     s.alarmSound = SOUND_INDEX_ALARM;
     s.alarmVolume = AUDIO_ALARM_VOLUME;
     s.volume = AUDIO_VOLUME;
+    s.petReactions = PET_REACTIONS_DEFAULT;
     s.latitude = (float)atof(WEATHER_LATITUDE);
     s.longitude = (float)atof(WEATHER_LONGITUDE);
     strlcpy(s.city, WEATHER_CITY_NAME, sizeof(s.city));
@@ -119,6 +120,7 @@ void settings_init()
         s.alarmHour = p.getUChar("aH", s.alarmHour);
         s.alarmMinute = p.getUChar("aM", s.alarmMinute);
         s.volume = p.getUChar("vol", s.volume);
+        s.petReactions = p.getBool("pRe", s.petReactions);
         // Clocks updated from an older firmware have no "avol" yet: the alarm then
         // keeps the volume it used to have (the one shared volume), so nothing changes.
         if (p.isKey("avol"))
@@ -171,6 +173,7 @@ bool settings_update(const Settings &in, const char **err)
     ok &= p.putUChar("aH", (uint8_t)in.alarmHour) > 0;
     ok &= p.putUChar("aM", (uint8_t)in.alarmMinute) > 0;
     ok &= p.putUChar("vol", (uint8_t)in.volume) > 0;
+    ok &= p.putBool("pRe", in.petReactions) > 0;
     ok &= p.putUChar("avol", (uint8_t)in.alarmVolume) > 0;
     ok &= p.putUChar("aD", (uint8_t)in.alarmDays) > 0;
     ok &= p.putUChar("aS", (uint8_t)in.alarmSound) > 0;

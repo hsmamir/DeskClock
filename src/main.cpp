@@ -14,6 +14,7 @@
 #include "alarm_ctrl.h"
 #include "boot_log.h"
 #include "settings.h"
+#include "pet.h"
 #include "web_ui.h"
 #include "ota.h"
 
@@ -223,16 +224,17 @@ void setup()
 
     g_stateMutex = xSemaphoreCreateMutex();
     settings_init();           // load NVS settings + apply timezone before any task reads them
+    pet_init();                // pet button statistics (needs the mutexes above)
     time_restore_from_flash(); // approximate clock from flash so the alarm works before/without WiFi
     audio_init();
     watchdogInit(); // before the tasks start; each watched task subscribes itself
 
     // Pinned to core 1 (app core) to leave core 0 free for WiFi/BT stack.
-    // touch + servo: 3072 (was 2048). The touch task reaches audio -> sun -> Serial.printf
-    // with floats, which needs far more stack than the plain button code; check the
+    // touch 4096 / servo 3072 (was 2048). The touch task reaches audio -> sun -> Serial.printf
+    // with floats and (pet.cpp) writes NVS, which needs far more stack than the plain button code; check the
     // "Stack free min" log line to see the real margin.
     startTask(displayTask, "display", 8192, 2, 1);
-    startTask(touchTask, "touch", 3072, 3, 1);
+    startTask(touchTask, "touch", 4096, 3, 1);
     startTask(servoTask, "servo", 3072, 2, 1);
     startTask(alarmTask, "alarm", 4096, 2, 1);
     startTask(timeTask, "time", 8192, 1, 0);

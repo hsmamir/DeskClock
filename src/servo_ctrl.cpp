@@ -14,6 +14,7 @@ enum class ServoAnim
     REST,
     PET_WIGGLE_OUT,
     PET_WIGGLE_BACK,
+    PET_PURR, // gentle tremble around the rest angle while the Pet button is held
     ALARM_SWEEP
 };
 static ServoAnim animState = ServoAnim::REST;
@@ -22,6 +23,8 @@ static bool sweepAtAlertAngle = false;
 
 static const uint16_t WIGGLE_LEG_MS = 180; // time for each half of the pet wiggle
 static const uint16_t SWEEP_LEG_MS = 220;  // time for each half of the alarm sweep
+static const uint16_t PURR_LEG_MS = 70;    // one tremble step while purring
+static bool purrUp = false;
 
 // The servo is only powered (attached) while it moves. After a movement it
 // gets SERVO_SETTLE_MS to arrive, then it is detached: no holding current,
@@ -97,7 +100,7 @@ void servo_tick()
 
     if (mood == Mood::PET_HAPPY)
     {
-        if (animState == ServoAnim::REST)
+        if (animState == ServoAnim::REST || animState == ServoAnim::PET_PURR)
         {
             animState = ServoAnim::PET_WIGGLE_OUT;
             animStepStartMs = now;
@@ -114,6 +117,22 @@ void servo_tick()
             animState = ServoAnim::REST;
             servoReleaseSoon(now);
             setMood(Mood::IDLE_BLINK); // wiggle's done — hand control back to idle
+        }
+    }
+    else if (mood == Mood::PET_PURR)
+    {
+        if (animState != ServoAnim::PET_PURR)
+        {
+            animState = ServoAnim::PET_PURR;
+            animStepStartMs = now;
+            purrUp = true;
+            servoMove(SERVO_REST_ANGLE + PET_PURR_SERVO_DEG);
+        }
+        else if ((now - animStepStartMs) > PURR_LEG_MS)
+        {
+            animStepStartMs = now;
+            purrUp = !purrUp;
+            servoMove(SERVO_REST_ANGLE + (purrUp ? PET_PURR_SERVO_DEG : -PET_PURR_SERVO_DEG));
         }
     }
     else if (mood == Mood::ALARM_ALERT)

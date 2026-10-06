@@ -11,6 +11,7 @@
 #include "audio.h"
 #include "alarm_ctrl.h"
 #include "boot_log.h"
+#include "pet.h"
 #include "weather.h"
 #include "config.h"
 
@@ -63,6 +64,7 @@ static void sendSettings(int code)
     d["alarmVolume"] = s.alarmVolume;
     d["soundCount"] = AUDIO_FILE_COUNT;
     d["volume"] = s.volume;
+    d["petReactions"] = s.petReactions;
     d["latitude"] = s.latitude;
     d["longitude"] = s.longitude;
     d["city"] = s.city;
@@ -123,6 +125,7 @@ static void handlePostSettings()
     s.alarmSound = doc["alarmSound"] | old.alarmSound;
     s.alarmVolume = doc["alarmVolume"] | old.alarmVolume;
     s.volume = doc["volume"] | old.volume;
+    s.petReactions = doc["petReactions"] | old.petReactions;
     s.latitude = doc["latitude"] | old.latitude;
     s.longitude = doc["longitude"] | old.longitude;
     copyString(s.city, sizeof(s.city), doc["city"]);
@@ -258,6 +261,20 @@ static void handleGetBootLog()
     sendJson(200, d);
 }
 
+// Pet button statistics (taps today / best streak / total).
+static void handleGetPet()
+{
+    if (!authorized())
+        return;
+    PetStats ps = pet_stats();
+    JsonDocument d;
+    d["today"] = ps.today;
+    d["bestStreak"] = ps.bestStreak;
+    d["streak"] = ps.streak;
+    d["total"] = ps.total;
+    sendJson(200, d);
+}
+
 static void handleRoot()
 {
     if (!authorized())
@@ -277,6 +294,7 @@ static void startServer()
     server.on("/api/test-sound", HTTP_POST, handleTestSound);
     server.on("/api/alarm", HTTP_GET, handleGetAlarm);
     server.on("/api/bootlog", HTTP_GET, handleGetBootLog);
+    server.on("/api/pet", HTTP_GET, handleGetPet);
     server.on("/api/alarm/test", HTTP_POST, handleAlarmTest);
     server.on("/api/alarm/snooze", HTTP_POST, handleAlarmSnooze);
     server.on("/api/alarm/dismiss", HTTP_POST, handleAlarmDismiss);

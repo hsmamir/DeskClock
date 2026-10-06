@@ -6,6 +6,7 @@ enum class Mood
 {
     IDLE_BLINK, // default resting animation
     PET_HAPPY,  // pad 1 touched — happy eyes + servo wiggle
+    PET_PURR,   // pet button held — purring (closed eyes, gentle servo tremble)
     ALARM_ALERT // alarm firing — urgent animation + servo pattern
 };
 

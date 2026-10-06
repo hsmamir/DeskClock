@@ -184,6 +184,29 @@ static_assert(WEATHER_BARS >= 2 && WEATHER_BARS <= 8, "WEATHER_BARS must be 2-8"
 #define REACT_COLD_C 0               // at or below (deg C): shivering
 #define REACT_OFFLINE_DELAY_MS 20000 // WiFi down this long -> worried eyes
 
+// ---- Pet button reactions (pet.cpp decides, display.cpp draws) ----
+// The Pet button no longer always gives the same happy face. In priority order:
+//   fast repeated taps ... hearts for the eyes, then dizzy, then annoyed
+//   first tap of the morning ... yawn + happy; first tap after a long absence ... "missed you"
+//   a rare random one ... wink with tongue / surprise + big heart
+//   night ... sleepy contented eyes; rain ... one raised eyebrow, then a smile
+//   hot / cold weather ... sweating / shivering happy face; anything else ... the classic happy face
+//   holding the button ... purring (closed eyes, the servo trembles gently)
+// Everything can be switched off from the settings page (that setting is the default below).
+#define PET_REACTIONS_DEFAULT 1
+#define PET_STREAK_GAP_MS 3000     // taps closer together than this count as one streak
+#define PET_HEART_STREAK 4         // this many taps in a row -> heart eyes
+#define PET_DIZZY_STREAK 12        // ... dizzy spiral eyes
+#define PET_ANNOYED_STREAK 15      // ... "that's enough!" (until you pause)
+#define PET_PURR_HOLD_MS 1000      // hold the button this long -> purring
+#define PET_PURR_MAX_MS 8000       // purring stops by itself after this (keeps the servo/supply calm)
+#define PET_PURR_SERVO_DEG 3       // trembling amplitude around the rest angle while purring
+#define PET_MISSED_HOURS 6         // first tap after this many hours -> "missed you"
+#define PET_MORNING_FROM_H 5       // first tap of the day between these local hours -> yawn + happy
+#define PET_MORNING_TO_H 11        // (exclusive)
+#define PET_RARE_PERCENT 5         // chance (%) of a rare reaction instead of the usual one
+#define PET_SAVE_INTERVAL_MS 60000 // pet statistics are written to flash at most this often
+
 // ---- Night mode ----
 // Between NIGHT_START_HOUR (inclusive) and NIGHT_END_HOUR (exclusive), local
 // time, the backlight is dimmed and the pet sound is muted. The alarm

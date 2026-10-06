@@ -74,6 +74,13 @@ details{margin-top:10px}
 </section>
 
 <section>
+<h2>واکنش‌های نوازش</h2>
+<label class="row"><span>واکنش‌های متنوع</span><input type="checkbox" id="petOn"></label>
+<p class="mut" id="petStats">…</p>
+<p class="mut">چند بار پشت‌سرهم = قلب، بعد گیجی و در آخر اخم 😄 — شب خواب‌آلود، در باران یک ابرو بالا، و نگه‌داشتن دکمه بیش از یک ثانیه = خرخر. خاموش = همیشه همان چهره‌ی خوشحال.</p>
+</section>
+
+<section>
 <h2>تست آلارم</h2>
 <p class="mut" id="aState">…</p>
 <div class="btns">
@@ -178,6 +185,7 @@ async function load(){
   setDays(s.alarmDays);fillSounds(s.soundCount,s.alarmSound);
   $('avol').value=s.alarmVolume;$('avOut').textContent=s.alarmVolume;
   $('vol').value=s.volume;$('volOut').textContent=s.volume;
+  $('petOn').checked=s.petReactions;
   setLoc(s.latitude,s.longitude,s.city);
   pickTz(s.tzName,s.tzPosix);
   $('now').textContent='ساعت دستگاه: '+(s.time||'هنوز همگام نشده');
@@ -190,7 +198,7 @@ async function save(){
  if(!days){msg('حداقل یک روز را برای زنگ انتخاب کنید',false);return;}
  const body={alarmEnabled:$('aEn').checked,alarmHour:+t.slice(0,2),alarmMinute:+t.slice(3,5),
   alarmDays:days,alarmSound:+$('aSound').value,alarmVolume:+$('avol').value,
-  volume:+$('vol').value,latitude:S.lat,longitude:S.lon,city:S.city,
+  volume:+$('vol').value,petReactions:$('petOn').checked,latitude:S.lat,longitude:S.lon,city:S.city,
   tzName:$('tz').value,tzPosix:$('tzp').value.trim()};
  try{
   const r=await fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
@@ -263,10 +271,18 @@ async function bootLog(){
    tr.append(a,b);tb.append(tr);});
  }catch(e){$('blSum').textContent='ارتباط با ساعت برقرار نشد';}
 }
+async function petStats(){
+ try{
+  const j=await (await fetch('/api/pet')).json();
+  $('petStats').textContent='امروز: '+j.today+' — بیشترین پشت‌سرهم: '+j.bestStreak+' — کل: '+j.total;
+ }catch(e){$('petStats').textContent='ارتباط با ساعت برقرار نشد';}
+}
 setInterval(()=>{if(!document.hidden)alarmState();},2000);
+setInterval(()=>{if(!document.hidden)petStats();},10000);
 load();
 alarmState();
 bootLog();
+petStats();
 </script>
 </body>
 </html>)HTML";

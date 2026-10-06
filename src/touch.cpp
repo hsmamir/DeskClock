@@ -5,6 +5,8 @@
 #include "state.h"
 #include "audio.h"
 #include "alarm_ctrl.h"
+#include "pet.h"
+#include "settings.h"
 
 // Each button wires one leg to its GPIO and the other leg to GND.
 // INPUT_PULLUP holds the pin HIGH when idle, so a press reads LOW.
@@ -65,7 +67,47 @@ static void triggerPetHappy()
     // Sound is sent outside the mutex; skipped while an alarm is ringing.
     // audio_play_gentle() stays quiet (or muted) during the night window.
     if (petted)
+    {
+        pet_on_press(millis()); // picks the reaction the display will draw (streak, night, rain, ...)
         audio_play_gentle(SOUND_INDEX_PET);
+    }
+}
+
+// Holding the Pet button: after PET_PURR_HOLD_MS the clock purrs (Mood::PET_PURR: closed eyes,
+// the servo trembles gently) until the button is released or PET_PURR_MAX_MS is over.
+// An alarm replaces the mood by itself, so it always wins.
+static uint32_t petPressedAtMs = 0;
+static bool petPurrHandled = false; // this hold already purred (or was not allowed to)
+
+static void updatePurr(uint32_t now)
+{
+    bool held = btnPet.lastStable;
+    uint32_t heldMs = (uint32_t)(now - petPressedAtMs);
+
+    if (!held)
+    {
+        petPurrHandled = false;
+    }
+    else if (!petPurrHandled && heldMs >= PET_PURR_HOLD_MS)
+    {
+        petPurrHandled = true;
+        if (settings_get().petReactions)
+        {
+            xSemaphoreTake(g_stateMutex, portMAX_DELAY);
+            if (g_state.mood == Mood::IDLE_BLINK)
+                g_state.mood = Mood::PET_PURR;
+            xSemaphoreGive(g_stateMutex);
+        }
+    }
+
+    // stop purring: released, held too long
+    if (!held || heldMs > PET_PURR_MAX_MS)
+    {
+        xSemaphoreTake(g_stateMutex, portMAX_DELAY);
+        if (g_state.mood == Mood::PET_PURR)
+            g_state.mood = Mood::IDLE_BLINK;
+        xSemaphoreGive(g_stateMutex);
+    }
 }
 
 // Tap on Mode: Clock -> Date -> Weather -> Clock. Diagnostics is not part of the
@@ -221,9 +263,13 @@ void touch_tick()
     bool activity = false;
     if (pollButton(btnPet) == BtnEvent::PRESSED)
     {
+        petPressedAtMs = millis();
+        petPurrHandled = false;
         triggerPetHappy();
         activity = true;
     }
+    updatePurr(millis());
+    pet_tick(millis());
     activity |= handleModeButton();
     activity |= handleAlarmButton();
     autoReturnToClock(activity);
