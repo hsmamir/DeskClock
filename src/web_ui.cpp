@@ -168,8 +168,7 @@ static void handleTestSound()
         sendError(400, "sound out of range");
         return;
     }
-    audio_set_volume((uint8_t)v);
-    audio_play((uint16_t)sound);
+    audio_play_preview((uint16_t)sound, (uint8_t)v); // volume + play as one sequence, with settle delay
     s_restoreVolume = true;
     s_restoreAtMs = millis() + PREVIEW_MS;
     server.send(200, "application/json", "{\"ok\":true}");

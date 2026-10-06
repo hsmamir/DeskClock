@@ -91,6 +91,14 @@ void audio_set_volume(uint8_t volume)
 {
     AudioLock lock;
     sendVolume(volume);
+    delay(30); // same settle time as ensureVolume(): a play command right after must not be lost
+}
+
+void audio_play_preview(uint16_t fileIndex, uint8_t volume)
+{
+    AudioLock lock;
+    ensureVolume(volume); // sends the volume + settle delay only when the level really changes
+    sendPlay(fileIndex);
 }
 
 void audio_play(uint16_t fileIndex)

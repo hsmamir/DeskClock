@@ -64,6 +64,46 @@ static inline void watchdogFeed()
 #endif
 }
 
+// ---- Stack / heap report ----
+// Stack sizes below are in BYTES (arduino-esp32). Every STACK_REPORT_INTERVAL_S seconds the
+// Serial log shows how much stack each task has never used ("free min"). If a number
+// gets close to 0 the task is about to overflow: raise its stack in setup().
+// 0 = no report.
+#ifndef STACK_REPORT_INTERVAL_S
+#define STACK_REPORT_INTERVAL_S 300
+#endif
+
+struct TaskEntry
+{
+    const char *name;
+    TaskHandle_t handle;
+};
+static TaskEntry s_tasks[8];
+static uint8_t s_taskCount = 0;
+
+static void startTask(TaskFunction_t fn, const char *name, uint32_t stackBytes, UBaseType_t priority, BaseType_t core)
+{
+    TaskHandle_t h = nullptr;
+    if (xTaskCreatePinnedToCore(fn, name, stackBytes, nullptr, priority, &h, core) != pdPASS)
+    {
+        // Not enough heap for the stack: say so instead of silently running without that task.
+        Serial.printf("ERROR: task '%s' could not be created (free heap %u)\n", name, (unsigned)ESP.getFreeHeap());
+        return;
+    }
+    if (s_taskCount < sizeof(s_tasks) / sizeof(s_tasks[0]))
+        s_tasks[s_taskCount++] = {name, h};
+}
+
+#if STACK_REPORT_INTERVAL_S > 0
+static void reportStacks()
+{
+    Serial.print("Stack free min (bytes):");
+    for (uint8_t i = 0; i < s_taskCount; i++)
+        Serial.printf(" %s=%u", s_tasks[i].name, (unsigned)uxTaskGetStackHighWaterMark(s_tasks[i].handle));
+    Serial.printf(" | heap free %u, lowest ever %u\n", (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMinFreeHeap());
+}
+#endif
+
 // ---- Task functions ----
 
 static void displayTask(void *pvParameters)
@@ -188,18 +228,30 @@ void setup()
     watchdogInit(); // before the tasks start; each watched task subscribes itself
 
     // Pinned to core 1 (app core) to leave core 0 free for WiFi/BT stack.
-    xTaskCreatePinnedToCore(displayTask, "display", 8192, nullptr, 2, nullptr, 1);
-    xTaskCreatePinnedToCore(touchTask, "touch", 2048, nullptr, 3, nullptr, 1);
-    xTaskCreatePinnedToCore(servoTask, "servo", 2048, nullptr, 2, nullptr, 1);
-    xTaskCreatePinnedToCore(alarmTask, "alarm", 4096, nullptr, 2, nullptr, 1);
-    xTaskCreatePinnedToCore(timeTask, "time", 8192, nullptr, 1, nullptr, 0);
-    xTaskCreatePinnedToCore(weatherTask, "weather", 10240, nullptr, 1, nullptr, 0);
-    xTaskCreatePinnedToCore(webTask, "web", 8192, nullptr, 1, nullptr, 0);
-    xTaskCreatePinnedToCore(otaTask, "ota", 6144, nullptr, 1, nullptr, 0);
+    // touch + servo: 3072 (was 2048). The touch task reaches audio -> sun -> Serial.printf
+    // with floats, which needs far more stack than the plain button code; check the
+    // "Stack free min" log line to see the real margin.
+    startTask(displayTask, "display", 8192, 2, 1);
+    startTask(touchTask, "touch", 3072, 3, 1);
+    startTask(servoTask, "servo", 3072, 2, 1);
+    startTask(alarmTask, "alarm", 4096, 2, 1);
+    startTask(timeTask, "time", 8192, 1, 0);
+    startTask(weatherTask, "weather", 10240, 1, 0);
+    startTask(webTask, "web", 8192, 1, 0);
+    startTask(otaTask, "ota", 6144, 1, 0);
 }
 
 void loop()
 {
-    // Empty — all work happens in FreeRTOS tasks.
+    // All real work happens in FreeRTOS tasks; this only prints the stack report.
+#if STACK_REPORT_INTERVAL_S > 0
+    static uint32_t lastReportMs = 0;
+    uint32_t now = millis();
+    if ((uint32_t)(now - lastReportMs) >= (uint32_t)STACK_REPORT_INTERVAL_S * 1000UL)
+    {
+        lastReportMs = now;
+        reportStacks();
+    }
+#endif
     vTaskDelay(pdMS_TO_TICKS(1000));
 }

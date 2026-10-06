@@ -13,6 +13,15 @@
 #include <WiFiManager.h>
 #endif
 
+// Fallback NTP servers: with only one name, a single unreachable / filtered pool
+// leaves the clock on the (approximate) time restored from flash.
+#ifndef NTP_SERVER2
+#define NTP_SERVER2 "time.cloudflare.com"
+#endif
+#ifndef NTP_SERVER3
+#define NTP_SERVER3 "time.google.com"
+#endif
+
 static uint32_t s_lastSyncMs = 0;
 static uint32_t s_lastSaveMs = 0; // 0 = not saved since boot
 static volatile bool s_sntpDone = false;
@@ -123,7 +132,7 @@ static void syncTime()
     // restore from flash the time is already valid but not yet confirmed.
     Settings cfg = settings_get();
     s_sntpDone = false;
-    configTzTime(cfg.tzPosix, NTP_SERVER);
+    configTzTime(cfg.tzPosix, NTP_SERVER, NTP_SERVER2, NTP_SERVER3);
 
     uint32_t start = millis();
     while (!s_sntpDone && (millis() - start) < 10000)

@@ -11,8 +11,15 @@ void audio_init();
 void audio_play(uint16_t fileIndex);
 
 // Volume 0-30. (Every play call below sets the volume it needs first, so this
-// is only for previews; it never has to be "put back".)
+// is only for putting the saved volume back after a preview.) Waits ~30 ms after
+// the command so a play command sent right afterwards is not swallowed by the module.
 void audio_set_volume(uint8_t volume);
+
+// Plays a clip once at `volume` (0-30) for the web page's preview buttons. Volume and
+// play command are sent as ONE guarded sequence (with the settle delay between them),
+// so neither a quick back-to-back send nor the alarm task can break it up.
+// Blocks up to ~30 ms; call it from a task.
+void audio_play_preview(uint16_t fileIndex, uint8_t volume);
 
 // Plays a file on repeat at the saved ALARM volume (gapless, no need to know the
 // clip length) until

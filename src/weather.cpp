@@ -9,7 +9,15 @@
 #include "settings.h"
 #include "state.h"
 
+// After a failed fetch (no internet, server error, bad JSON) the next attempt comes
+// after this, not after a whole WEATHER_REFRESH_INTERVAL_MS. The weather task polls
+// every 30 s, so the real retry gap is rounded up to a multiple of that.
+#ifndef WEATHER_RETRY_INTERVAL_MS
+#define WEATHER_RETRY_INTERVAL_MS (60UL * 1000)
+#endif
+
 static uint32_t s_lastFetchMs = 0;
+static bool s_lastFetchFailed = false;
 static volatile bool s_forceRefresh = false;
 
 const char *weather_code_to_label(int code)
@@ -27,7 +35,7 @@ const char *weather_code_to_label(int code)
         return "Drizzle";
     if (code >= 61 && code <= 67)
         return "Rain";
-    if (code >= 71 && code <= 77)
+    if ((code >= 71 && code <= 77) || code == 85 || code == 86) // 85/86 = snow showers
         return "Snow";
     if (code >= 80 && code <= 82)
         return "Showers";
@@ -36,8 +44,11 @@ const char *weather_code_to_label(int code)
     return "N/A";
 }
 
-static void fetchWeather()
+// Returns true when a complete reading was stored in g_state.
+static bool fetchWeather()
 {
+    bool stored = false;
+
     WiFiClientSecure client;
     client.setInsecure(); // skip cert validation — fine for a read-only public API here
 
@@ -55,8 +66,10 @@ static void fetchWeather()
              cfg.latitude, cfg.longitude, WEATHER_BARS);
 
     if (!http.begin(client, String(url)))
-        return;
+        return false;
 
+    http.setConnectTimeout(8000); // never hang the weather task on a dead connection
+    http.setTimeout(8000);
     int status = http.GET();
     if (status == HTTP_CODE_OK)
     {
@@ -131,6 +144,7 @@ static void fetchWeather()
                 g_state.weatherValid = true;
                 g_state.weatherUpdatedMs = millis();
                 xSemaphoreGive(g_stateMutex);
+                stored = true;
             }
         }
     }
@@ -140,6 +154,7 @@ static void fetchWeather()
     // missed refresh cycle.
 
     http.end();
+    return stored;
 }
 
 void weather_init()
@@ -162,10 +177,11 @@ void weather_tick()
         return;
 
     uint32_t now = millis();
-    if (!s_forceRefresh && s_lastFetchMs != 0 && (now - s_lastFetchMs) < WEATHER_REFRESH_INTERVAL_MS)
+    uint32_t interval = s_lastFetchFailed ? WEATHER_RETRY_INTERVAL_MS : WEATHER_REFRESH_INTERVAL_MS;
+    if (!s_forceRefresh && s_lastFetchMs != 0 && (now - s_lastFetchMs) < interval)
         return;
 
     s_forceRefresh = false;
-    fetchWeather();
+    s_lastFetchFailed = !fetchWeather();
     s_lastFetchMs = now;
 }
