@@ -17,6 +17,46 @@ static uint32_t happyUntilMs = 0;
 static bool portalScreenShown = false;
 static bool otaScreenShown = false;
 
+// How far the sun (by day, 0 = sunrise .. 1 = sunset) or the moon (by night, 0 = sunset ..
+// 1 = next sunrise) has travelled along its path across the sky. -1 = no sensible value
+// (polar day / night): the scene then keeps the sun / moon in the corner.
+static float skyArc(const struct tm &ti, bool day)
+{
+    float riseH, setH;
+    SunTimes st = sun_today(ti);
+    if (st.valid)
+    {
+        if (st.polarNight || st.midnightSun)
+            return -1.0f;
+        riseH = st.riseH;
+        setH = st.setH; // always > riseH, may be > 24
+    }
+    else
+    {
+        riseH = SCENE_DAY_START_HOUR; // same fallback sun_is_day() uses
+        setH = SCENE_DAY_END_HOUR;
+    }
+    float h = ti.tm_hour + ti.tm_min / 60.0f + ti.tm_sec / 3600.0f;
+    float len, p;
+    if (day)
+    {
+        if (h < riseH)
+            h += 24.0f; // a sunset after midnight: the small hours still belong to yesterday's day
+        len = setH - riseH;
+        p = (h - riseH) / len;
+    }
+    else
+    {
+        while (h < setH)
+            h += 24.0f;
+        len = riseH + 24.0f - setH;
+        p = (h - setH) / len;
+    }
+    if (len < 0.05f)
+        return -1.0f;
+    return p < 0 ? 0 : (p > 1 ? 1 : p);
+}
+
 void display_init()
 {
     // Backlight (see the Backlight section): dims at night, see display_tick.
@@ -134,6 +174,7 @@ void display_tick()
     scn.timeKnown = haveTime;
     scn.day = haveTime && sun_is_day(ti);
     scn.moonPhase = haveTime ? moon_phase_view() : 0.5f;
+    scn.arc = (SCENE_SUN_ARC && haveTime) ? skyArc(ti, scn.day) : -1.0f;
     {
         bool wv = false;
         float wt = 0;

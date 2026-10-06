@@ -48,9 +48,8 @@ namespace disp
     // All pieces are dim, procedural (derived from `now`, no per-drop state) and
     // drawn BEFORE the eyes, so the eyes always stay on top and in front.
 
-    static void drawDimSun(TFT_eSPI &g, int16_t cx, int16_t cy, int16_t r, uint32_t now)
+    static void drawDimSun(TFT_eSPI &g, int16_t cx, int16_t cy, int16_t r, uint32_t now, uint16_t sun)
     {
-        uint16_t sun = rgb(255, 200, 40);
         g.fillCircle(cx, cy, r + u(3), tint(sun, 0.14f));
         g.fillCircle(cx, cy, r, dimColor(sun, 200));
         float rot = now / 1400.0f;
@@ -66,9 +65,9 @@ namespace disp
     // Moon with its real phase. phase: 0 new, 0.25 first quarter (right half lit),
     // 0.5 full, 0.75 last quarter (left half lit). The terminator is an ellipse, drawn
     // row by row: lit part of each row runs from the terminator to the limb.
-    static void drawMoon(TFT_eSPI &g, int16_t cx, int16_t cy, int16_t r, float phase)
+    static void drawMoon(TFT_eSPI &g, int16_t cx, int16_t cy, int16_t r, float phase, float bright)
     {
-        uint16_t lit = dimColor(rgb(225, 230, 255), 235);
+        uint16_t lit = dimColor(rgb(225, 230, 255), (uint8_t)(235.0f * bright));
 #if !MOON_PHASE_ENABLED
         (void)phase;
         g.fillCircle(cx, cy, r, lit);
@@ -251,14 +250,26 @@ namespace disp
         if (!scn.day && clearish)
             drawStars(g, now);
 
-        // sun / moon, only once the time is known
+        // sun / moon, only once the time is known. With SCENE_SUN_ARC they travel along an arc
+        // (left = rise, top = middle of the day / night, right = set); near the horizon the sun is
+        // redder and both are dimmer. `lift` is 0 on the horizon .. 1 at the top of the arc.
         if (scn.timeKnown && clearish)
         {
+            int16_t cx = u(16), cy = u(16);
+            float lift = 1.0f;
+            if (SCENE_SUN_ARC && scn.arc >= 0)
+            {
+                lift = sinf((float)M_PI * scn.arc);
+                int16_t margin = u(14);
+                cx = margin + (int16_t)((W - 2 * margin) * scn.arc);
+                cy = (int16_t)(faceH * 0.42f - faceH * 0.30f * lift);
+                cy = imax(cy, u(13)); // keep the top rays on the screen
+            }
             if (scn.day)
-                drawDimSun(g, u(16), u(16), u(7), now);
+                drawDimSun(g, cx, cy, u(7), now, mixColor(rgb(255, 110, 30), rgb(255, 205, 50), clamp01(lift * 1.6f)));
             else
             {
-                drawMoon(g, u(16), u(16), u(8), scn.moonPhase);
+                drawMoon(g, cx, cy, u(8), scn.moonPhase, 0.55f + 0.45f * lift);
                 if (!partly)
                     drawShootingStar(g, now);
             }

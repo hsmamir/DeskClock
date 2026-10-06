@@ -135,6 +135,10 @@ static_assert(WEATHER_BARS >= 2 && WEATHER_BARS <= 8, "WEATHER_BARS must be 2-8"
 #define SCENE_SKY_GRADIENT 1
 #define SCENE_SKY_TOP_DARKEN 0.60f // 0 = the top has the background colour, 1 = black
 #define SCENE_SKY_GLOW_SCALE 1.0f  // multiplies the horizon glow (0 = only the darker top)
+// The sun (by day) and the moon (by night) travel across the sky: they rise on the left, climb to
+// the top in the middle of the day / night and set on the right, following the real sunrise and
+// sunset. Near the horizon the sun is redder and both are dimmer. 0 = fixed in the top-left corner.
+#define SCENE_SUN_ARC 1
 // Day / night follow the REAL sunrise and sunset of the city set in the web page
 // (see "Real sun" below). SCENE_DAY_START/END_HOUR are only the fallback when
 // SUN_ENABLED is 0 or the sun times can't be computed.
