@@ -185,6 +185,7 @@ namespace disp
 
     // ---- Time-of-day theme ----
     extern uint32_t themeStamp;
+    extern float themeGlow; // horizon glow strength of the current time-of-day look (0..1)
     void themeUpdate(bool haveTime, const struct tm &ti, uint32_t now);
 
     // ---- Digits ----
