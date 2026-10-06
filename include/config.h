@@ -73,9 +73,10 @@ static_assert(MODE_HOLD_RING_DELAY_MS < MODE_LONG_PRESS_MS, "ring delay must be 
 // "details" view with Hi / Lo, humidity, wind and small hourly bars.
 // 0 = only the big temperature, as before.
 #define WEATHER_DETAILS_ENABLED 1
-#define WEATHER_PAGE_SWITCH_MS 6000 // each view stays this long (the page opens on the big temperature)
-#define WEATHER_BARS 6              // hours shown as bars, starting with the current hour (2-8)
-#define WEATHER_BAR_RAIN_PCT 50     // an hour with at least this chance of rain is marked blue
+#define WEATHER_PAGE_SWITCH_MS 6000   // each view stays this long (the page opens on the big temperature)
+#define WEATHER_WIND_ARROW_DOWNWIND 1 // details view: wind arrow points where the wind blows TO (1, like weather maps) or where it comes FROM (0)
+#define WEATHER_BARS 6                // hours shown as bars, starting with the current hour (2-8)
+#define WEATHER_BAR_RAIN_PCT 50       // an hour with at least this chance of rain is marked blue
 static_assert(WEATHER_BARS >= 2 && WEATHER_BARS <= 8, "WEATHER_BARS must be 2-8");
 
 #define WEATHER_STALE_MS (2UL * WEATHER_REFRESH_INTERVAL_MS)
