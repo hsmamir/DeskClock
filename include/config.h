@@ -133,7 +133,7 @@ static_assert(WEATHER_BARS >= 2 && WEATHER_BARS <= 8, "WEATHER_BARS must be 2-8"
 // bottom edge (the horizon). The glow is strongest at dawn / dusk and weaker under clouds, rain
 // and fog. 0 = flat background as before.
 #define SCENE_SKY_GRADIENT 1
-#define SCENE_SKY_TOP_DARKEN 0.40f // 0 = the top has the background colour, 1 = black
+#define SCENE_SKY_TOP_DARKEN 0.60f // 0 = the top has the background colour, 1 = black
 #define SCENE_SKY_GLOW_SCALE 1.0f  // multiplies the horizon glow (0 = only the darker top)
 // Day / night follow the REAL sunrise and sunset of the city set in the web page
 // (see "Real sun" below). SCENE_DAY_START/END_HOUR are only the fallback when

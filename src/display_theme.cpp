@@ -13,13 +13,13 @@ namespace disp
         float glow; // strength of the horizon glow in the face background (0..1), see themeGlow
     };
     //                                   background      unlit segments    accent           eye top          eye bottom         glow
-    static const ThemeColors TH_NIGHT = {{6, 9, 26}, {16, 26, 52}, {0, 225, 255}, {140, 245, 255}, {0, 140, 235}, 0.16f};
-    static const ThemeColors TH_DAWN = {{34, 14, 26}, {64, 28, 44}, {255, 170, 105}, {255, 222, 178}, {240, 105, 85}, 0.50f};
-    static const ThemeColors TH_DAY = {{22, 62, 112}, {36, 84, 138}, {255, 238, 140}, {255, 250, 208}, {255, 185, 55}, 0.20f};
-    static const ThemeColors TH_DUSK = {{40, 16, 14}, {74, 32, 22}, {255, 125, 40}, {255, 196, 122}, {235, 80, 30}, 0.50f};
+    static const ThemeColors TH_NIGHT = {{6, 9, 26}, {16, 26, 52}, {0, 225, 255}, {140, 245, 255}, {0, 140, 235}, 0.34f};
+    static const ThemeColors TH_DAWN = {{34, 14, 26}, {64, 28, 44}, {255, 170, 105}, {255, 222, 178}, {240, 105, 85}, 0.85f};
+    static const ThemeColors TH_DAY = {{22, 62, 112}, {36, 84, 138}, {255, 238, 140}, {255, 250, 208}, {255, 185, 55}, 0.45f};
+    static const ThemeColors TH_DUSK = {{40, 16, 14}, {74, 32, 22}, {255, 125, 40}, {255, 196, 122}, {235, 80, 30}, 0.85f};
     // Twilight sits between night <-> dawn and dusk <-> night. Blending cyan straight into
     // orange passes through a muddy grey; going through lilac/pink follows the real sky.
-    static const ThemeColors TH_TWILIGHT = {{24, 12, 40}, {46, 26, 74}, {205, 145, 255}, {228, 195, 255}, {150, 100, 230}, 0.32f};
+    static const ThemeColors TH_TWILIGHT = {{24, 12, 40}, {46, 26, 74}, {205, 145, 255}, {228, 195, 255}, {150, 100, 230}, 0.60f};
 
     struct ThemeKey
     {
@@ -79,7 +79,7 @@ namespace disp
     uint32_t themeStamp = 0;
 
     // Horizon glow strength of the current look (0..1); drawSceneBackground() paints it.
-    float themeGlow = 0.16f;
+    float themeGlow = 0.34f;
 
     static void lerp3(uint8_t *out, const uint8_t *a, const uint8_t *b, float t)
     {
