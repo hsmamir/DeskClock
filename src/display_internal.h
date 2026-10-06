@@ -206,6 +206,10 @@ namespace disp
                       uint16_t on, uint16_t off);
     void drawSegNumber(TFT_eSPI &g, int16_t x, int16_t y, int16_t dw, int16_t dh, int16_t gap,
                        const int8_t *digits, uint8_t count, uint16_t on);
+    // One digit rolling from oldD to newD (p 0..1), clipped to its own cell. dir > 0: the digits move up
+    // (new one comes from below), dir < 0: down. Draws into the info-panel SPRITE only (uses a viewport).
+    void drawRollDigit(TFT_eSPI &g, int16_t x, int16_t y, int16_t dw, int16_t dh, int8_t oldD, int8_t newD,
+                       float p, int8_t dir, uint16_t on);
 
     // ---- Scene / weather glyphs ----
     void drawSpinner(TFT_eSPI &g, int16_t cx, int16_t cy, int16_t r, uint16_t c);
@@ -225,9 +229,14 @@ namespace disp
     void pollAlarmCfg(uint32_t now);
     void drawAlarmBadge(TFT_eSPI &g, bool ringing, int16_t cy, const struct tm &ti);
 #endif
-    void drawTempReadout(TFT_eSPI &g, float tempC, int16_t dw, int16_t dh, int16_t gap, int16_t dy, uint16_t accent);
+    // settleMs: when the panel has finished sliding in (a roll starts then); pass `now` if it is not sliding.
+    void drawTempReadout(TFT_eSPI &g, float tempC, int16_t dw, int16_t dh, int16_t gap, int16_t dy, uint16_t accent,
+                         uint32_t now, uint32_t settleMs);
+    bool tempRollActive(float tempC, uint32_t now); // a temperature roll is running or about to start
+    uint32_t barsGrowTotalMs(uint8_t barCount);     // how long the hourly bars take to grow in
     void drawViewDots(TFT_eSPI &g, uint8_t active, uint16_t accent, int16_t y);
-    void drawWeatherDetails(TFT_eSPI &g, const WeatherDetail &d, uint16_t accent);
+    // growMs: time since the bars started growing (negative = not yet, large = fully grown).
+    void drawWeatherDetails(TFT_eSPI &g, const WeatherDetail &d, uint16_t accent, int32_t growMs);
 
     // ---- Full-screen pages, status icons, backlight ----
     extern int otaDrawnPct;

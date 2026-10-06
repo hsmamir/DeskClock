@@ -79,6 +79,24 @@ static_assert(MODE_HOLD_RING_DELAY_MS < MODE_LONG_PRESS_MS, "ring delay must be 
 #define WEATHER_BAR_RAIN_PCT 50       // an hour with at least this chance of rain is marked blue
 static_assert(WEATHER_BARS >= 2 && WEATHER_BARS <= 8, "WEATHER_BARS must be 2-8");
 
+// ---- Weather page: smooth view change, growing bars, rolling temperature ----
+// WEATHER_VIEW_TRANSITION: the details view slides in from the right over the big temperature
+//   (and back), like a page change, instead of swapping instantly. Needs the info-panel sprite.
+// WEATHER_BARS_GROW: when the details view has landed, the hourly bars grow up from the baseline,
+//   one after the other (STAGGER = delay between neighbouring bars).
+// WEATHER_TEMP_ROLL: when the big temperature differs from what was on screen the last time it was
+//   drawn (a new reading, also one that arrived while another page was showing), the digits that
+//   changed roll - upward when it got warmer, downward when colder. The first reading after boot
+//   just appears. Needs the info-panel sprite.
+// Set any of them to 0 to turn that effect off.
+#define WEATHER_VIEW_TRANSITION 1
+#define WEATHER_VIEW_TRANSITION_MS 300
+#define WEATHER_BARS_GROW 1
+#define WEATHER_BARS_GROW_MS 420
+#define WEATHER_BARS_STAGGER_MS 60
+#define WEATHER_TEMP_ROLL 1
+#define WEATHER_TEMP_ROLL_MS 450
+
 #define WEATHER_STALE_MS (2UL * WEATHER_REFRESH_INTERVAL_MS)
 
 // ---- Audio (JQ6500-16P onboard flash, UART2 @ 9600) ----
