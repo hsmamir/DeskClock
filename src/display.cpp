@@ -1377,6 +1377,7 @@ static void drawSegNumber(TFT_eSPI &g, int16_t x, int16_t y, int16_t dw, int16_t
 // re-read once a second (settings_get() takes a mutex + copies the struct).
 static bool alarmCfgOn = false;
 static int alarmCfgHour = 0, alarmCfgMin = 0;
+static int alarmCfgDays = 0x7F; // weekday mask, bit0 = Sunday (same as Settings.alarmDays)
 static uint32_t lastAlarmCfgMs = 0;
 
 static void pollAlarmCfg(uint32_t now)
@@ -1388,7 +1389,34 @@ static void pollAlarmCfg(uint32_t now)
     alarmCfgOn = cfg.alarmEnabled;
     alarmCfgHour = cfg.alarmHour;
     alarmCfgMin = cfg.alarmMinute;
+    alarmCfgDays = cfg.alarmDays;
 }
+
+// ---- Next scheduled ring ----
+// Minutes from `ti` (local time, seconds ignored) until the next ring of an alarm set
+// to hour:minute on the weekdays in `days` (bit0 = Sunday ... bit6 = Saturday, like
+// tm_wday). Also returns how many calendar days ahead that is (0 = today, 1 = tomorrow ...)
+// and its weekday. -1 = no weekday selected. An alarm time equal to or before now counts
+// as already rung today. Plain calendar arithmetic: across a DST change it can be off by an hour.
+static int nextAlarmIn(const struct tm &ti, int hour, int minute, int days, int &dayOffset, int &wday)
+{
+    int nowMin = ti.tm_hour * 60 + ti.tm_min;
+    int alarmMin = hour * 60 + minute;
+    for (int add = 0; add <= 7; add++)
+    {
+        int wd = (ti.tm_wday + add) % 7;
+        if (!((days >> wd) & 1))
+            continue;
+        if (add == 0 && alarmMin <= nowMin)
+            continue; // today's time has passed: look at the following days
+        dayOffset = add;
+        wday = wd;
+        return add * 1440 + alarmMin - nowMin;
+    }
+    return -1;
+}
+
+static const char *const NEXT_ALARM_DAY[7] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
 
 // Small bell: dome + body + rim + clapper. (cx, cy) = middle of the body,
 // r = dome radius, swing = clapper offset in px (0 = hanging straight).
@@ -1401,7 +1429,7 @@ static void drawBell(TFT_eSPI &g, int16_t cx, int16_t cy, int16_t r, int16_t swi
     g.fillCircle(cx + swing, cy + r + 1, imax(1, r / 3), c); // clapper
 }
 
-static void drawAlarmBadge(TFT_eSPI &g, bool ringing, int16_t cy)
+static void drawAlarmBadge(TFT_eSPI &g, bool ringing, int16_t cy, const struct tm &ti)
 {
     int16_t r = imax(3, u(3.2f));
     int16_t cx = u(9);
@@ -1414,11 +1442,40 @@ static void drawAlarmBadge(TFT_eSPI &g, bool ringing, int16_t cy)
     }
     drawBell(g, cx, cy, r, swing, bellC);
 
+    // Left of the page dots: the alarm time, as it always was (short, never reaches the dots).
     char buf[8];
     snprintf(buf, sizeof(buf), "%02d:%02d", alarmCfgHour, alarmCfgMin);
+    uint8_t font = sc >= 1.5f ? 2 : 1;
     g.setTextDatum(ML_DATUM);
     g.setTextColor(textC);
-    g.drawString(buf, cx + r + u(4), cy + 1, sc >= 1.5f ? 2 : 1);
+    g.drawString(buf, cx + r + u(4), cy + 1, font);
+
+    // Right of the page dots, right-aligned: when it rings NEXT. Under 24 h it is the time
+    // left ("6h12", "42m"), otherwise "Tmrw" or the weekday ("Sat"). Not while it rings.
+    // Skipped if it would ever reach the dots (other fonts / screen sizes).
+    if (!ringing)
+    {
+        int dayOff = 0, wd = 0;
+        int mins = nextAlarmIn(ti, alarmCfgHour, alarmCfgMin, alarmCfgDays, dayOff, wd);
+        char tail[8] = "";
+        if (mins >= 0)
+        {
+            if (mins >= 24 * 60)
+                snprintf(tail, sizeof(tail), "%s", dayOff == 1 ? "Tmrw" : NEXT_ALARM_DAY[wd]);
+            else if (mins >= 60)
+                snprintf(tail, sizeof(tail), "%dh%02d", mins / 60, mins % 60);
+            else
+                snprintf(tail, sizeof(tail), "%dm", mins);
+        }
+        int16_t rightX = W - u(5);
+        int16_t dotsRight = W / 2 + (int16_t)(((MODE_COUNT - 1) / 2.0f) * u(10)) + imax(2, u(2.5f));
+        if (tail[0] && rightX - g.textWidth(tail, font) > dotsRight + u(3))
+        {
+            g.setTextDatum(MR_DATUM);
+            g.setTextColor(tint(C_SOFT, 0.7f)); // dimmer than the alarm time
+            g.drawString(tail, rightX, cy + 1, font);
+        }
+    }
 }
 #endif
 
@@ -1699,7 +1756,7 @@ static void drawInfoPanel(DisplayMode mode, bool alarm, bool haveTime, const str
 
 #if ALARM_ICON_ENABLED
             if (alarmCfgOn || alarm)
-                drawAlarmBadge(g, alarm, infoH - u(7));
+                drawAlarmBadge(g, alarm, infoH - u(7), ti);
 #endif
         }
         else
