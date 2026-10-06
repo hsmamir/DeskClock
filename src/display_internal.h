@@ -136,6 +136,8 @@ namespace disp
         bool weatherKnown; // a recent-enough weather reading exists
         int code;          // Open-Meteo WMO weather code (valid if weatherKnown)
         float tempC;       // current temperature (valid if weatherKnown)
+        float windKmh;     // wind speed; < 0 = unknown (valid only if weatherKnown)
+        int windDirDeg;    // direction the wind comes FROM, 0-359; -1 = unknown
         float moonPhase;   // 0 new .. 0.5 full .. 1 new; 0.25 = right half lit (see moon_phase_view)
         float arc;         // progress 0..1 of the sun (day) / moon (night) along its path across the sky; <0 = unknown
     };

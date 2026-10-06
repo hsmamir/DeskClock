@@ -148,6 +148,24 @@ static_assert(WEATHER_BARS >= 2 && WEATHER_BARS <= 8, "WEATHER_BARS must be 2-8"
 // background then follows only the time of day).
 #define SCENE_WEATHER_MAX_AGE_MS (3UL * 60 * 60 * 1000)
 
+// ---- Real wind on the scene ----
+// The background uses the wind speed and direction of the weather reading (the same ones the
+// weather page shows): clouds and fog drift with the wind - faster when it is stronger, left or
+// right depending on where it blows to - and rain / snow fall at a slant.
+// The scene is a side view with the screen's right edge = east, so a west wind blows the clouds to
+// the right, an east wind to the left. A pure north / south wind has no sideways part: clouds then
+// only crawl (and rain falls straight). Changes of the wind are blended over SCENE_WIND_SMOOTH_MS.
+// Without a (recent) reading, or without a direction, clouds drift gently to the right as before.
+// 0 = no wind effect: gentle drift to the right, rain and snow fall straight.
+#define SCENE_WIND_ENABLED 1
+#define SCENE_WIND_MAX_KMH 60.0f          // at / above this the wind looks as strong as it gets
+#define SCENE_WIND_CLOUD_CALM_PXS 4.0f    // cloud speed in calm air, px/s on the 128 px display
+#define SCENE_WIND_CLOUD_PXS_PER_KMH 0.7f // ... plus this much per km/h (up to SCENE_WIND_MAX_KMH)
+#define SCENE_WIND_RAIN_MAX_SLANT 1.0f    // rain at maximum wind: sideways px per px fallen (1.0 = 45 deg)
+#define SCENE_WIND_SNOW_MAX_SLANT 2.0f    // snow is lighter, so it is blown further sideways
+#define SCENE_WIND_SMOOTH_MS 3000         // a change of wind is blended in over about this long
+#define SCENE_WIND_FALLBACK_KMH 10.0f     // drift speed while no wind is known
+
 // ---- Real sun (sunrise / sunset) ----
 // Sunrise and sunset are computed on the chip from the saved latitude / longitude,
 // today's date and the timezone (NOAA formulas, no internet). They drive:

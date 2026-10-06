@@ -184,6 +184,15 @@ void display_tick()
         scn.weatherKnown = wv && ageSince(now, wMs) <= SCENE_WEATHER_MAX_AGE_MS;
         scn.code = wc;
         scn.tempC = wt;
+        scn.windKmh = -1.0f;
+        scn.windDirDeg = -1;
+        if (scn.weatherKnown)
+        {
+            WeatherDetail wd;
+            readWeatherDetail(wd);
+            scn.windKmh = wd.windKmh;
+            scn.windDirDeg = wd.windDirDeg;
+        }
     }
     bool offline = wifiDownSinceMs != 0 && (now - wifiDownSinceMs) >= REACT_OFFLINE_DELAY_MS;
     Reaction reaction = alarm ? Reaction::NONE : pickReaction(scn, offline, sleepy);

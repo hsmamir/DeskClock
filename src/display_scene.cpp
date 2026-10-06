@@ -115,13 +115,108 @@ namespace disp
         g.drawPixel(hx, hy, dimColor(C_WHITE, v));
     }
 
+    // ---- Real wind ----
+    // One smoothed wind state shared by clouds, fog, rain and snow. The scene is drawn without
+    // per-object state, so the things that must keep their place when the wind changes (clouds, fog)
+    // keep a position that is advanced every frame by the current wind speed instead of being
+    // derived from the clock; a change of wind then only changes their speed, they never jump.
+    static const uint8_t WIND_CLOUDS = 4;
+    static const float CLOUD_SPEED_MULT[WIND_CLOUDS] = {1.0f, 0.8f, 0.65f, 0.55f}; // a little parallax
+    static const float FOG_SPEED_MULT = 0.7f;
+
+    struct WindView
+    {
+        bool init = false;
+        uint32_t lastMs = 0;
+        float kmh = 0.0f;   // smoothed wind speed
+        float vx = 1.0f;    // smoothed sideways part of where the wind blows to: +1 right (east) .. -1 left (west)
+        float slant = 0.0f; // same, but 0 when the direction is unknown (rain / snow then fall straight)
+        float cloudPos[WIND_CLOUDS] = {};
+        float fogPos = 0.0f;
+    };
+    static WindView wind;
+
+    static int16_t cloudRadius(uint8_t i) { return u(9 + (i % 2) * 3); }
+    static int16_t fogWidth() { return u(70); }
+
+    static float wrapPos(float v, float span)
+    {
+        v = fmodf(v, span);
+        return v < 0.0f ? v + span : v;
+    }
+
+    static int16_t wrapX(int v)
+    {
+        v %= W;
+        return (int16_t)(v < 0 ? v + W : v);
+    }
+
+    // Blend the wind of the weather reading into the smoothed state and move clouds / fog on.
+    static void windStep(uint32_t now, const SceneInfo &scn)
+    {
+        // target: what the weather reading says; gentle drift to the right while it is unknown
+        float kmh = SCENE_WIND_FALLBACK_KMH, vx = 1.0f, slant = 0.0f;
+#if SCENE_WIND_ENABLED
+        if (scn.weatherKnown && scn.windKmh >= 0.0f)
+        {
+            kmh = scn.windKmh;
+            if (scn.windDirDeg >= 0 && kmh >= 1.0f) // a direction means nothing in calm air
+            {
+                // windDirDeg is where the wind comes FROM; clouds go the opposite way. 0 = north,
+                // clockwise, so the sideways part is sin(direction it blows to): east = right.
+                vx = sinf((float)(scn.windDirDeg + 180) * (float)M_PI / 180.0f);
+                slant = vx;
+            }
+        }
+#else
+        (void)scn;
+#endif
+        uint32_t dt = now - wind.lastMs;
+        wind.lastMs = now;
+        if (!wind.init)
+        {
+            wind.init = true;
+            wind.kmh = kmh;
+            wind.vx = vx;
+            wind.slant = slant;
+            dt = 0;
+        }
+        else
+        {
+            if (dt > 250) // the scene was not drawn for a while (diagnostics page): carry on from here
+                dt = 33;
+            float a = clamp01((float)dt / (float)SCENE_WIND_SMOOTH_MS);
+            wind.kmh += (kmh - wind.kmh) * a;
+            wind.vx += (vx - wind.vx) * a;
+            wind.slant += (slant - wind.slant) * a;
+        }
+
+        // cloud speed in px/s. A north / south wind has no sideways part, so a small floor in the
+        // direction of the (smoothed) sign keeps the sky from freezing.
+        float spd = (SCENE_WIND_CLOUD_CALM_PXS + SCENE_WIND_CLOUD_PXS_PER_KMH * fminf(wind.kmh, SCENE_WIND_MAX_KMH)) * sc;
+        float dir = wind.vx + 0.15f * fmaxf(-1.0f, fminf(1.0f, wind.vx * 10.0f));
+        dir = fmaxf(-1.0f, fminf(1.0f, dir));
+        float dx = spd * dir * (float)dt / 1000.0f;
+
+        for (uint8_t i = 0; i < WIND_CLOUDS; i++)
+            wind.cloudPos[i] = wrapPos(wind.cloudPos[i] + dx * CLOUD_SPEED_MULT[i], (float)(W + 4 * cloudRadius(i)));
+        wind.fogPos = wrapPos(wind.fogPos + dx * FOG_SPEED_MULT, (float)(W + fogWidth()));
+    }
+
+    // Sideways pixels per pixel fallen for rain / snow: 0 = straight down, > 0 = blown to the right.
+    static float windSlant(float maxSlant)
+    {
+        return wind.slant * clamp01(wind.kmh / SCENE_WIND_MAX_KMH) * maxSlant;
+    }
+
     static void drawDriftClouds(TFT_eSPI &g, uint32_t now, uint8_t count, uint16_t color)
     {
-        for (uint8_t i = 0; i < count; i++)
+        (void)now;
+        for (uint8_t i = 0; i < count && i < WIND_CLOUDS; i++)
         {
-            int16_t r = u(9 + (i % 2) * 3);
-            int16_t span = W + 4 * r;
-            int16_t cx = (int16_t)(((now / (70u + i * 25u)) + (uint32_t)i * (span / count)) % span) - 2 * r;
+            int16_t r = cloudRadius(i);
+            float span = (float)(W + 4 * r);
+            int16_t cx = (int16_t)wrapPos(wind.cloudPos[i] + i * (span / count), span) - 2 * r;
             drawCloud(g, cx, u(10 + i * 11), r, color);
         }
     }
@@ -129,21 +224,28 @@ namespace disp
     static void drawRainBg(TFT_eSPI &g, uint32_t now, uint8_t n)
     {
         uint16_t c = rgb(70, 140, 225);
+        float k = windSlant(SCENE_WIND_RAIN_MAX_SLANT);
+        int16_t len = imax(2, u(5));
+        int16_t dxLine = (int16_t)lroundf(k * len);
         for (uint8_t i = 0; i < n; i++)
         {
-            int16_t x = (i * 37 + 11) % W;
             int16_t y = (int16_t)(((now / (4u + i % 3)) + i * 53u) % (uint32_t)(faceH + 12)) - 6;
-            g.drawLine(x, y, x - 1, y + imax(2, u(5)), c);
+            // a drop falls along the slanted line; centred on mid-height and wrapped at the sides,
+            // so the rain stays evenly spread over the whole width however hard the wind blows
+            int16_t x = wrapX((i * 37 + 11) % W + (int)lroundf(k * (y - faceH / 2)));
+            g.drawLine(x, y, x + dxLine, y + len, c);
         }
     }
 
     static void drawSnowBg(TFT_eSPI &g, uint32_t now, uint8_t n)
     {
         uint16_t c = dimColor(C_WHITE, 230);
+        float k = windSlant(SCENE_WIND_SNOW_MAX_SLANT);
         for (uint8_t i = 0; i < n; i++)
         {
-            int16_t x = (i * 41 + 7) % W + (int16_t)(sinf(now / 700.0f + i) * u(3));
             int16_t y = (int16_t)(((now / (24u + (i % 3) * 8u)) + i * 29u) % (uint32_t)faceH);
+            int16_t x = wrapX((i * 41 + 7) % W + (int)lroundf(sinf(now / 700.0f + i) * u(3)) +
+                              (int)lroundf(k * (y - faceH / 2)));
             if (i % 3 == 0)
                 g.fillCircle(x, y, imax(1, u(1.2f)), c);
             else
@@ -154,10 +256,11 @@ namespace disp
     static void drawFogBg(TFT_eSPI &g, uint32_t now)
     {
         uint16_t c = tint(rgb(165, 180, 215), 0.33f);
-        int16_t bw = u(70);
+        int16_t bw = fogWidth();
+        (void)now;
         for (uint8_t i = 0; i < 4; i++)
         {
-            int16_t x = (int16_t)(((now / 45u) + i * 47u) % (uint32_t)(W + bw)) - bw;
+            int16_t x = (int16_t)wrapPos(wind.fogPos + i * 47.0f, (float)(W + bw)) - bw;
             int16_t y = (int16_t)(faceH * (0.18f + 0.20f * i));
             g.fillRoundRect(x, y, bw, imax(3, u(7)), imax(2, u(3)), c);
         }
@@ -227,6 +330,7 @@ namespace disp
 
     void drawSceneBackground(TFT_eSPI &g, uint32_t now, const SceneInfo &scn)
     {
+        windStep(now, scn);
         int code = scn.weatherKnown ? scn.code : -1;
         bool partly = (code == 1 || code == 2);
         bool clearish = !scn.weatherKnown || code == 0 || partly; // sky is (mostly) visible
