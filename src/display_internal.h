@@ -128,6 +128,45 @@ namespace disp
         BROW_SAD = 2
     };
 
+    // ---- Parametric eye (display_eyes.cpp) ----
+    // An eye is a set of numbers, every expression is just a preset of them. Each number
+    // is driven by its own spring, so changing the expression morphs smoothly.
+    struct EyeShape
+    {
+        float w, h;   // size in px (base: w = 2R, h = 2.25R)
+        float radius; // corner radius in px
+        float lidTop; // 0..1  how far the upper lid has come down
+        float slant;  // -1..+1  positive = inner corner low (angry), negative = outer corner low (sad)
+        float lidBot; // 0..1  how far the lower lid has come up (happy "^ ^")
+        float x, y;   // gaze offset in px
+    };
+
+    struct Spring
+    {
+        float x = 0, v = 0, target = 0;
+    };
+    // k = stiffness, c = damping. k=220, c=18 -> damping ratio ~0.6, ~10 % overshoot (feels alive).
+    inline void springStep(Spring &s, float dt, float k = 220.f, float c = 18.f)
+    {
+        s.v += (k * (s.target - s.x) - c * s.v) * dt;
+        s.x += s.v * dt;
+    }
+
+    // Presets (rows of the table in display_eyes.cpp). A new expression = a new row here + a new row there.
+    enum class EyeMood : uint8_t
+    {
+        NEUTRAL,
+        HAPPY,
+        ANGRY,
+        SAD, // also: worried
+        TIRED,
+        SURPRISED,
+        SUSPICIOUS, // left eye half shut, right eye open
+        HOT,        // heavy lids
+        COLD,       // slightly lowered lids
+        COUNT
+    };
+
     // What the face background should show (filled in by display_tick).
     struct SceneInfo
     {
@@ -176,6 +215,16 @@ namespace disp
                  float openness, float lid, uint8_t brow, int8_t side,
                  uint16_t cTop, uint16_t cBot, bool shine);
     void drawHappyEye(TFT_eSPI &g, int16_t cx, int16_t cy, int16_t R);
+    // Parametric eye: openness 0..1 is the blink (scales the height), side = -1 left eye / +1 right eye.
+    void drawEyeShape(TFT_eSPI &g, int16_t cx, int16_t cy, const EyeShape &s, float openness, int8_t side,
+                      uint16_t cTop, uint16_t cBot, bool shine);
+    EyeMood pickEyeMood(bool sleepy, Reaction reaction, Expr ex);
+    // Preset -> spring targets. scale multiplies w/h/radius (1.25 = flinch, 0 = eyes shrink away for a decoration).
+    void eyesSetTargets(EyeMood left, EyeMood right, float scale, float lookPxX, float lookPxY, int16_t R);
+    void eyesSetDecor(bool on);        // a decorative pet face (heart, spiral ...) wants to take over from the eyes
+    float eyesDecorPop();              // 0..1 (slightly more while overshooting): how far that decoration has grown
+    void eyesStep(uint32_t now);       // advance all springs by the real frame time (max 0.05 s)
+    EyeShape eyeShapeNow(uint8_t eye); // 0 = left, 1 = right
     Reaction pickReaction(const SceneInfo &scn, bool offline, bool sleepy);
     float updateExpression(uint32_t now, bool can, bool sleepy);
     void drawStars(TFT_eSPI &g, uint32_t now);
