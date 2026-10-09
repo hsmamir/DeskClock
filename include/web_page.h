@@ -274,7 +274,7 @@ async function bootLog(){
 async function petStats(){
  try{
   const j=await (await fetch('/api/pet')).json();
-  $('petStats').textContent=j.name+' — انرژی: '+j.energy+' — محبت: '+j.bond+' — حوصله: '+j.bored+' | امروز: '+j.today+' — بیشترین پشت‌سرهم: '+j.bestStreak+' — کل: '+j.total;
+  $('petStats').textContent='امروز: '+j.today+' — بیشترین پشت‌سرهم: '+j.bestStreak+' — کل: '+j.total;
  }catch(e){$('petStats').textContent='ارتباط با ساعت برقرار نشد';}
 }
 setInterval(()=>{if(!document.hidden)alarmState();},2000);

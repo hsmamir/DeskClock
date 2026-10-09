@@ -13,6 +13,7 @@
 #include "settings.h"
 #include "sun.h"
 #include "pet.h"
+#include "display_fonts.h" // smooth (VLW) fonts, see tools/make_vlw.py
 
 namespace disp
 {
@@ -47,6 +48,30 @@ namespace disp
     inline int16_t u(float v) { return (int16_t)(v * sc + 0.5f); }
     inline int16_t imax(int16_t a, int16_t b) { return a > b ? a : b; }
     inline int16_t imin(int16_t a, int16_t b) { return a < b ? a : b; }
+
+    // ---- Smooth (VLW) text ----
+    // Draws s with one of the ClockSmNN fonts: loadFont -> drawString -> unloadFont, so the font only
+    // occupies RAM (a few hundred bytes of glyph metrics) while it is being used and the built-in fonts
+    // keep working everywhere else. The text sits on a baseline, with the digits / capitals centred on cy
+    // (a plain MC_DATUM would centre the whole line box, descender space included, a few px too high).
+    // datum: L_BASELINE / C_BASELINE / R_BASELINE. A smooth font anti-aliases toward bg, so pass the colour
+    // the text really sits on (the themed panel colour C_BG). Works on a sprite and on tft.
+    inline void smoothText(TFT_eSPI &g, const uint8_t *font, int16_t capH, const char *s,
+                           int16_t x, int16_t cy, uint8_t datum, uint16_t fg, uint16_t bg)
+    {
+        g.loadFont(font);
+        g.setTextColor(fg, bg);
+        g.setTextDatum(datum);
+        g.drawString(s, x, cy + capH / 2);
+        g.unloadFont();
+    }
+    inline int16_t smoothWidth(TFT_eSPI &g, const uint8_t *font, const char *s)
+    {
+        g.loadFont(font);
+        int16_t w = g.textWidth(s, 1); // the font number is ignored while a smooth font is loaded
+        g.unloadFont();
+        return w;
+    }
 
     // ---- Colour helpers ----
     uint16_t dimColor(uint16_t c, uint8_t v);
@@ -164,7 +189,6 @@ namespace disp
         SUSPICIOUS, // left eye half shut, right eye open
         HOT,        // heavy lids
         COLD,       // slightly lowered lids
-        SULK,       // sulking: lowered lids, a faint frown (the first tap after a long absence)
         COUNT
     };
 
@@ -199,8 +223,7 @@ namespace disp
         NONE,
         WINK,
         YAWN,
-        SURPRISE,
-        SIGH // bored: lids sink, a small puff of breath
+        SURPRISE
     };
     extern Expr exprCur;
     extern float lookX, lookY;
@@ -244,12 +267,7 @@ namespace disp
     void eyesSetMouth(MouthKind want); // fades the old one out, then the new one in
     void drawMouth(TFT_eSPI &g, int16_t cx, int16_t my);
     float eyesMouthAlpha();         // current fade 0..1
-    void eyesSetAffection(float a); // 0..1: faint permanent cheeks (pet bond, see eyesSetPersonality)
-    // The pet's inner life (pet.cpp): offsets on the NEUTRAL preset, slower blinks, more yawns / glances / sighs.
-    void eyesSetPersonality(const PetLook &p);
-    // Signature moves: two blinks after waking up, and a little star glint on the eye highlights now and then.
-    void eyesWakeUp();                              // call when the pet wakes up (night -> day)
-    void eyesGlintUpdate(uint32_t now, bool allowed); // advances the glint timer; allowed = idle eyes are on screen
+    void eyesSetAffection(float a); // 0..1: faint permanent cheeks (hook, not wired to anything yet)
     // Three concentric ellipses (tint 0.12 / 0.20 / 0.30 x strength).
     void drawCheek(TFT_eSPI &g, int16_t cx, int16_t cy, int16_t rx, int16_t ry, float strength);
     constexpr uint16_t ANTICIPATE_MS = 80;

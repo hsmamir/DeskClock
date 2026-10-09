@@ -141,18 +141,6 @@ void display_tick()
     bool night = haveTime && sun_is_night(ti);
     bool sleepy = night && !alarm;
 
-    // inner life: energy / bond / boredom -> small offsets on the eyes (see pet_look())
-    eyesSetPersonality(pet_look());
-    {
-        static bool wasNight = false; // signature move: waking up (night -> day) = two blinks
-        if (haveTime)
-        {
-            if (wasNight && !night && !alarm)
-                eyesWakeUp();
-            wasNight = night;
-        }
-    }
-
     // Dim at night; an alarm always gets full brightness, immediately.
     backlightUpdate(night && !alarm, alarm);
 

@@ -67,9 +67,7 @@ void drawOtaScreen(int pct)
     snprintf(txt, sizeof(txt), "%d%%", pct);
     int16_t py = (int16_t)(H * 0.62f);
     tft.fillRect(0, py - u(10), W, u(20), C_BG);
-    tft.setTextDatum(MC_DATUM);
-    tft.setTextColor(C_ACCENT);
-    tft.drawString(txt, W / 2, py, 2);
+    smoothText(tft, ClockSm18, CLOCKSM18_CAPH, txt, W / 2, py, C_BASELINE, C_ACCENT, C_BG);
 }
 
 // =====================================================================

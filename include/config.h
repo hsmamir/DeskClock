@@ -254,42 +254,6 @@ static_assert(WEATHER_BARS >= 2 && WEATHER_BARS <= 8, "WEATHER_BARS must be 2-8"
 #define PET_RARE_PERCENT 5         // chance (%) of a rare reaction instead of the usual one
 #define PET_SAVE_INTERVAL_MS 60000 // pet statistics are written to flash at most this often
 
-// ---- Pet identity + inner life (pet.cpp: three meters, display_eyes.cpp: what they do to the eyes) ----
-// Name:   Tika (تیکا)
-// Traits: curious (boredom meter), early-to-bed (energy meter), sulky-but-soft (bond meter)
-// The three meters are 0..100 and live in NVS next to the pet statistics.
-#define PET_NAME_FA "تیکا"
-// Energy: its target follows the day theme (night / dawn / day / dusk) and the real value follows
-// the target slowly. Long tap streaks tire it out.
-#define PET_ENERGY_NIGHT 20
-#define PET_ENERGY_DAWN 40
-#define PET_ENERGY_DAY 90
-#define PET_ENERGY_DUSK 60
-#define PET_ENERGY_TAU_S 2700    // time constant of the smooth follow (45 min)
-#define PET_ENERGY_STREAK_MIN 12 // a streak this long ...
-#define PET_ENERGY_STREAK_COST 5 // ... costs this much energy (once per streak)
-#define PET_ENERGY_LOW 30        // below this: heavy lids, slow blinks, 3x yawns
-// Bond (affection): taps raise it (anti-spam), absence lowers it.
-#define PET_BOND_TAP_GAIN 1       // every tap
-#define PET_BOND_FIRST_TAP_GAIN 3 // the first tap of every hour
-#define PET_BOND_MAX_PER_HOUR 5   // at most this much from taps per hour
-#define PET_BOND_ABSENT_FROM_H 6  // after this many hours without a tap ...
-#define PET_BOND_ABSENT_STEP_H 2  // ... minus 1 for every further 2 hours ...
-#define PET_BOND_FLOOR 10         // ... but never below this
-#define PET_BOND_FOND 70          // above: faint smile + blush
-#define PET_SULK_BOND_BELOW 20    // low bond + a long absence: the first tap is met with a sulk
-#define PET_SULK_AWAY_H 24
-#define PET_SULK_MS 800 // the sulk melts into a smile after this long
-// Boredom / curiosity: +PET_BORED_PER_MIN per idle minute by day, any interaction resets it to 0.
-#define PET_BORED_PER_MIN 0.5f
-#define PET_BORED_HIGH 60   // from here more glances + sighs (full effect at +30)
-#define PET_FIDGET_MIN_S 90 // very bored: a tiny servo noise every MIN..MAX seconds
-#define PET_FIDGET_MAX_S 240
-// Signature move: a little four-point star (✦) glints on the eye highlight about this often.
-#define PET_GLINT_EVERY_MS 600000
-#define PET_GLINT_FIRST_MS 60000 // the first one after boot
-#define PET_GLINT_MS 900
-
 // ---- Night mode ----
 // Between NIGHT_START_HOUR (inclusive) and NIGHT_END_HOUR (exclusive), local
 // time, the backlight is dimmed and the pet sound is muted. The alarm

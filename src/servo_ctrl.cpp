@@ -3,7 +3,6 @@
 #include "pins.h"
 #include "config.h"
 #include "state.h"
-#include "pet.h"
 
 static Servo servo;
 
@@ -16,8 +15,6 @@ enum class ServoAnim
     PET_WIGGLE_OUT,
     PET_WIGGLE_BACK,
     PET_PURR, // gentle tremble around the rest angle while the Pet button is held
-    FIDGET_A, // a very bored pet makes a tiny noise: nudge one way ...
-    FIDGET_B, // ... and the other way, then back to rest
     ALARM_SWEEP
 };
 static ServoAnim animState = ServoAnim::REST;
@@ -26,8 +23,6 @@ static bool sweepAtAlertAngle = false;
 
 static const uint16_t WIGGLE_LEG_MS = 180; // time for each half of the pet wiggle
 static const uint16_t SWEEP_LEG_MS = 220;  // time for each half of the alarm sweep
-static const uint16_t FIDGET_LEG_MS = 110; // one nudge of the boredom fidget
-static const uint8_t FIDGET_DEG = 5;       // ... and how far it moves from rest
 static const uint16_t PURR_LEG_MS = 70;    // one tremble step while purring
 static bool purrUp = false;
 
@@ -105,8 +100,7 @@ void servo_tick()
 
     if (mood == Mood::PET_HAPPY)
     {
-        if (animState == ServoAnim::REST || animState == ServoAnim::PET_PURR || animState == ServoAnim::FIDGET_A ||
-            animState == ServoAnim::FIDGET_B)
+        if (animState == ServoAnim::REST || animState == ServoAnim::PET_PURR)
         {
             animState = ServoAnim::PET_WIGGLE_OUT;
             animStepStartMs = now;
@@ -167,26 +161,7 @@ void servo_tick()
     }
     else
     {
-        if (animState == ServoAnim::FIDGET_A && (now - animStepStartMs) > FIDGET_LEG_MS)
-        {
-            animState = ServoAnim::FIDGET_B;
-            animStepStartMs = now;
-            servoMove(SERVO_REST_ANGLE - FIDGET_DEG);
-        }
-        else if (animState == ServoAnim::FIDGET_B && (now - animStepStartMs) > FIDGET_LEG_MS)
-        {
-            animState = ServoAnim::REST;
-            servoMove(SERVO_REST_ANGLE);
-            servoReleaseSoon(now);
-        }
-        else if (animState == ServoAnim::REST && pet_take_fidget())
-        {
-            // only here (idle, resting): it never interrupts a pet wiggle, purr or alarm
-            animState = ServoAnim::FIDGET_A;
-            animStepStartMs = now;
-            servoMove(SERVO_REST_ANGLE + FIDGET_DEG);
-        }
-        else if (animState != ServoAnim::REST && animState != ServoAnim::FIDGET_A && animState != ServoAnim::FIDGET_B)
+        if (animState != ServoAnim::REST)
         {
             animState = ServoAnim::REST;
             servoMove(SERVO_REST_ANGLE);

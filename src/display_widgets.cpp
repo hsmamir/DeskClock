@@ -80,10 +80,10 @@ namespace disp
         // Left of the page dots: the alarm time, as it always was (short, never reaches the dots).
         char buf[8];
         snprintf(buf, sizeof(buf), "%02d:%02d", alarmCfgHour, alarmCfgMin);
-        uint8_t font = sc >= 1.5f ? 2 : 1;
-        g.setTextDatum(ML_DATUM);
-        g.setTextColor(textC);
-        g.drawString(buf, cx + r + u(4), cy + 1, font);
+        const bool big = sc >= 1.5f; // 12 px smooth font on the 128 px display, 18 px on bigger ones
+        const uint8_t *sf = big ? ClockSm18 : ClockSm12;
+        const int16_t sfCap = big ? CLOCKSM18_CAPH : CLOCKSM12_CAPH;
+        smoothText(g, sf, sfCap, buf, cx + r + u(4), cy + 1, L_BASELINE, textC, C_BG);
 
         // Right of the page dots, right-aligned: when it rings NEXT. Under 24 h it is the time
         // left ("6h12", "42m"), otherwise "Tmrw" or the weekday ("Sat"). Not while it rings.
@@ -104,12 +104,8 @@ namespace disp
             }
             int16_t rightX = W - u(5);
             int16_t dotsRight = W / 2 + (int16_t)(((MODE_COUNT - 1) / 2.0f) * u(10)) + imax(2, u(2.5f));
-            if (tail[0] && rightX - g.textWidth(tail, font) > dotsRight + u(3))
-            {
-                g.setTextDatum(MR_DATUM);
-                g.setTextColor(tint(C_SOFT, 0.7f)); // dimmer than the alarm time
-                g.drawString(tail, rightX, cy + 1, font);
-            }
+            if (tail[0] && rightX - smoothWidth(g, sf, tail) > dotsRight + u(3))
+                smoothText(g, sf, sfCap, tail, rightX, cy + 1, R_BASELINE, tint(C_SOFT, 0.7f), C_BG); // dimmer than the alarm time
         }
     }
 #endif
@@ -202,8 +198,7 @@ namespace disp
         int16_t dwT = (int16_t)(dw * 0.85f);
         int16_t dhT = (int16_t)(dh * 0.95f);
         int16_t numW = n * dwT + (n - 1) * gap;
-        g.setTextDatum(ML_DATUM);
-        int16_t wC = g.textWidth("C", 4);
+        int16_t wC = smoothWidth(g, ClockSm26, "C");
         int16_t ring = imax(2, u(2.5f));
         int16_t total = numW + gap + ring * 2 + gap + wC;
         int16_t x0 = (int16_t)(W * 0.50f) + ((int16_t)(W * 0.48f) - total) / 2;
@@ -229,8 +224,7 @@ namespace disp
         int16_t rx = x0 + numW + gap + ring;
         g.drawCircle(rx, y0 + ring, ring, accent);
         g.drawCircle(rx, y0 + ring, imax(1, ring - 1), accent);
-        g.setTextColor(accent);
-        g.drawString("C", x0 + numW + gap * 2 + ring * 2, y0 + dhT / 2, 4);
+        smoothText(g, ClockSm26, CLOCKSM26_CAPH, "C", x0 + numW + gap * 2 + ring * 2, y0 + dhT / 2, L_BASELINE, accent, C_BG);
     }
 
     // ---- Weather "details" view: Hi / Lo, humidity, wind and small hourly bars ----

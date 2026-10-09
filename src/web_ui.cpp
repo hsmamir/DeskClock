@@ -272,11 +272,6 @@ static void handleGetPet()
     d["bestStreak"] = ps.bestStreak;
     d["streak"] = ps.streak;
     d["total"] = ps.total;
-    PetMeters pm = pet_meters();
-    d["name"] = PET_NAME_FA;
-    d["energy"] = pm.energy;
-    d["bond"] = pm.bond;
-    d["bored"] = pm.bored;
     sendJson(200, d);
 }
 

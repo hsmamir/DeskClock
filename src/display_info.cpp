@@ -167,6 +167,7 @@ namespace disp
         int16_t dy = (int16_t)(infoH * 0.10f);
         int16_t capY = (int16_t)(infoH * 0.68f);
         char cap[24] = "";
+        bool capSmooth = false; // cap only holds glyphs of the smooth fonts (date, weekday)
 
         if (shown == DisplayMode::CLOCK)
         {
@@ -191,6 +192,7 @@ namespace disp
                 }
                 drawColonGlow(g, x0 + 2 * dw + gap + gap + cw / 2, dy, dh, imax(2, dw / 4), on, colonLevel);
                 strftime(cap, sizeof(cap), "%a %d %b", &ti);
+                capSmooth = true;
 
                 // seconds progress bar
                 int16_t bx = u(12), bw = W - 2 * u(12), bh = imax(2, u(2.5f));
@@ -227,10 +229,9 @@ namespace disp
                 for (char *p = mon; *p; p++)
                     if (*p >= 'a' && *p <= 'z')
                         *p -= 32;
-                g.setTextDatum(MC_DATUM);
-                g.setTextColor(C_AMBER);
-                g.drawString(mon, divX + (W - divX) / 2, dy + dh / 2, 4);
+                smoothText(g, ClockSm26, CLOCKSM26_CAPH, mon, divX + (W - divX) / 2, dy + dh / 2, C_BASELINE, C_AMBER, C_BG);
                 strftime(cap, sizeof(cap), "%A", &ti);
+                capSmooth = true;
             }
             else
             {
@@ -282,9 +283,18 @@ namespace disp
 
         if (cap[0])
         {
-            g.setTextDatum(MC_DATUM);
-            g.setTextColor(C_SOFT);
-            g.drawString(cap, W / 2, capY, 2);
+            if (capSmooth)
+            {
+                bool big = sc >= 1.5f; // 12 px font on the 128 px display, 18 px on bigger ones
+                smoothText(g, big ? ClockSm18 : ClockSm12, big ? CLOCKSM18_CAPH : CLOCKSM12_CAPH, cap, W / 2, capY,
+                           C_BASELINE, C_SOFT, C_BG);
+            }
+            else
+            {
+                g.setTextDatum(MC_DATUM);
+                g.setTextColor(C_SOFT);
+                g.drawString(cap, W / 2, capY, 2);
+            }
         }
         drawModeDots(g, shown, accent, infoH - u(5));
         if (twoViews)
