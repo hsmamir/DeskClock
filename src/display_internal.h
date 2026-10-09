@@ -230,6 +230,21 @@ namespace disp
     void eyesSetBreath(float f);            // eye height factor (breathing), ~0.98..1.02
     void eyeCloseLid(EyeShape &s, float k); // bring the upper lid down by k (0..1)
     bool exprAnticipating(uint32_t now);
+
+    // Mouth: hidden while idle (eyes only); reactions / one-off expressions fade it in.
+    enum class MouthKind : uint8_t
+    {
+        NONE,
+        SMILE,  // arc
+        OPEN_O, // surprise "o"
+        CUTE    // "w" of two small bowls
+    };
+    void eyesSetMouth(MouthKind want); // fades the old one out, then the new one in
+    void drawMouth(TFT_eSPI &g, int16_t cx, int16_t my);
+    float eyesMouthAlpha();         // current fade 0..1
+    void eyesSetAffection(float a); // 0..1: faint permanent cheeks (hook, not wired to anything yet)
+    // Three concentric ellipses (tint 0.12 / 0.20 / 0.30 x strength).
+    void drawCheek(TFT_eSPI &g, int16_t cx, int16_t cy, int16_t rx, int16_t ry, float strength);
     constexpr uint16_t ANTICIPATE_MS = 80;
     void eyesSetDecor(bool on);        // a decorative pet face (heart, spiral ...) wants to take over from the eyes
     float eyesDecorPop();              // 0..1 (slightly more while overshooting): how far that decoration has grown

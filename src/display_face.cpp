@@ -59,7 +59,7 @@ namespace disp
             int16_t y = baseY + (int16_t)(ry * sinf(t));
             g.fillCircle(x, y, th, mixColor(C_EYE_TOP, C_EYE_BOT, 0.35f + 0.4f * sinf(t)));
         }
-        g.fillEllipse(cx, cy + R + u(2), R / 2 + u(1), imax(2, R / 5), C_CHEEK);
+        drawCheek(g, cx, cy + R + u(2), R / 2 + u(1), imax(2, R / 5), 1.0f);
     }
 
     // Heart used as an eye: pulsing, with a glow and a highlight.
@@ -242,9 +242,14 @@ namespace disp
 
         case PetKind::RARE_WINK:
             drawEye(g, lcx, cy, eyeW, eyeH, 1.0f, 0, BROW_NONE, -1, C_EYE_TOP, C_EYE_BOT, true);
-            drawHappyEye(g, rcx, cy, Re);                                             // winking eye
-            g.fillRoundRect(W / 2 - u(5), cy + R + u(6), u(10), u(9), u(4), C_CHEEK); // tongue
-            g.drawFastVLine(W / 2, cy + R + u(6), u(6), dimColor(C_CHEEK, 160));
+            drawHappyEye(g, rcx, cy, Re); // winking eye
+            {
+                // tongue hangs from the smile (drawn before the mouth arc, which then covers its top edge)
+                int16_t my = cy + eyeH / 2 + u(10);
+                uint16_t tc = tint(C_CHEEK, eyesMouthAlpha());
+                g.fillRoundRect(W / 2 - u(3), my + u(1), u(6), u(7), u(3), tc);
+                g.drawFastVLine(W / 2, my + u(2), u(4), dimColor(tc, 160));
+            }
             drawRisingHearts(g, age, cy, R, 2, 250, 1100, u(4));
             break;
 
@@ -315,6 +320,35 @@ namespace disp
         }
     }
 
+    // Which mouth belongs to a pet reaction at this moment (age = ms since the tap).
+    static MouthKind petMouth(bool purr, uint32_t age)
+    {
+        if (purr)
+            return MouthKind::CUTE;
+        switch (petEv.kind)
+        {
+        case PetKind::SLEEPY:
+            return MouthKind::CUTE;
+        case PetKind::HEART_EYES:
+            return age >= ANTICIPATE_MS ? MouthKind::SMILE : MouthKind::NONE;
+        case PetKind::RAISED_BROW:
+            return age >= 1100 ? MouthKind::SMILE : MouthKind::NONE;
+        case PetKind::MISSED_YOU:
+            return age >= 700 ? MouthKind::SMILE : MouthKind::NONE;
+        case PetKind::MORNING:
+            return age >= 1500 ? MouthKind::SMILE : MouthKind::NONE; // the yawn draws its own mouth
+        case PetKind::RARE_SURPRISE:
+            if (age < ANTICIPATE_MS)
+                return MouthKind::NONE;
+            return age < 800 ? MouthKind::OPEN_O : MouthKind::SMILE;
+        case PetKind::DIZZY:
+        case PetKind::ANNOYED:
+            return MouthKind::NONE;
+        default: // HAPPY, RARE_WINK, HOT, COLD
+            return MouthKind::SMILE;
+        }
+    }
+
     // Both eyes from the spring rig. squeeze 0..1 = extra lid closing (yawn), dx = shiver offset.
     static void drawRigEyes(TFT_eSPI &g, int16_t lcx, int16_t rcx, int16_t cy, float squeeze, int16_t dx)
     {
@@ -372,6 +406,19 @@ namespace disp
         // breathing: +-2 % eye height, 4 s period (6 s at night)
         uint32_t period = sleepy ? 6000 : 4000;
         eyesSetBreath(1.0f + 0.02f * sinf(6.2831853f * (float)(now % period) / (float)period));
+        // mouth: only in reactions / one-off expressions, idle = eyes only
+        MouthKind wantMouth = MouthKind::NONE;
+        if (!alarm)
+        {
+            if (happy)
+                wantMouth = petMouth(purr, now - happyStartMs);
+            else if (!antic && ex == Expr::SURPRISE)
+                wantMouth = MouthKind::OPEN_O;
+            else if (ex == Expr::WINK)
+                wantMouth = MouthKind::SMILE;
+        }
+        eyesSetMouth(wantMouth);
+        int16_t mouthY = cy + eyeH / 2 + u(10); // ~y 76 on the 128x88 face
         eyesSetFast(antic);
         eyesSetDecor(decor);
         eyesSetTargets(mood, moodR, scale, lookX * u(5) + lookTremX, lookY * u(4) + lookTremY, lookX, R);
@@ -399,12 +446,14 @@ namespace disp
             if (antic) // the squash before the hearts burst out
             {
                 drawRigEyes(g, lcx, rcx, cy, 0, 0);
+                drawMouth(g, W / 2, mouthY);
                 return;
             }
             // Cross-fade: the (shrinking) eyes stay underneath until they are gone, the glyphs grow on top.
             if (decor)
                 drawRigEyes(g, lcx, rcx, cy, 0, 0);
             drawPetFace(g, now, purr, sleepy, cy, lcx, rcx, R, eyeW, eyeH, decor ? eyesDecorPop() : 1.0f);
+            drawMouth(g, W / 2, mouthY);
             return;
         }
 
@@ -462,6 +511,8 @@ namespace disp
             if (rx > 3 && ry > 3)
                 g.fillEllipse(W / 2, my, rx - 2, ry - 2, rgb(40, 6, 22));
         }
+
+        drawMouth(g, W / 2, mouthY);
 
         if (sleepy)
             drawSleepZ(g, now, cy, R);

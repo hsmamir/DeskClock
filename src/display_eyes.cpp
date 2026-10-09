@@ -217,6 +217,170 @@ namespace disp
         return nullptr;
     }
 
+    // =====================================================================
+    //  Cheeks and mouth (only in reactions / one-off expressions; idle = eyes only)
+    // =====================================================================
+
+    static float affection = 0;                   // 0..1: how fond the pet is of you -> faint permanent cheeks
+    static MouthKind mouthKind = MouthKind::NONE; // what is drawn right now
+    static MouthKind mouthWant = MouthKind::NONE; // what the situation asks for
+    static float mouthA = 0;                      // fade 0..1
+
+    void eyesSetAffection(float a) { affection = clamp01(a); }
+    void eyesSetMouth(MouthKind want) { mouthWant = want; }
+    static float smooth01(float a)
+    {
+        a = clamp01(a);
+        return a * a * (3.0f - 2.0f * a);
+    }
+    float eyesMouthAlpha() { return smooth01(mouthA); }
+    // cheeks follow a smiling mouth: fade in / out with it
+    static float smileCheek()
+    {
+        return (mouthKind == MouthKind::SMILE || mouthKind == MouthKind::CUTE) ? smooth01(mouthA) : 0.0f;
+    }
+
+    // Translucent filled ellipse: every pixel is blended with what is already there.
+    static void blendEllipse(TFT_eSPI &g, TFT_eSprite *rd, int16_t cx, int16_t cy, int16_t rx, int16_t ry, uint16_t col,
+                             float alpha)
+    {
+        for (int16_t dy = -ry; dy <= ry; dy++)
+        {
+            float q = 1.0f - (float)(dy * dy) / (float)(ry * ry);
+            if (q < 0)
+                continue;
+            int16_t hw = (int16_t)(rx * sqrtf(q) + 0.5f);
+            for (int16_t dx = -hw; dx <= hw; dx++)
+                g.drawPixel(cx + dx, cy + dy, mixColor(rd->readPixel(cx + dx, cy + dy), col, alpha));
+        }
+    }
+
+    // Cheek = three concentric ellipses (outer -> inner), tint 0.12 / 0.20 / 0.30, times strength 0..1.
+    // On the face sprite they are translucent pink over the real background (the layers are chained so the
+    // centre ends up at exactly 0.30); in the viewport fallback they are opaque tints of the background colour.
+    void drawCheek(TFT_eSPI &g, int16_t cx, int16_t cy, int16_t rx, int16_t ry, float strength)
+    {
+        if (strength < 0.03f)
+            return;
+        strength = clamp01(strength);
+        static const float kr[3] = {1.0f, 0.72f, 0.45f};
+        static const float kt[3] = {0.12f, 0.20f, 0.30f}; // cumulative coverage wanted at each ring
+        TFT_eSprite *rd = readableSprite(g);
+        float prev = 0;
+        for (uint8_t i = 0; i < 3; i++)
+        {
+            int16_t erx = imax(1, (int16_t)(rx * kr[i])), ery = imax(1, (int16_t)(ry * kr[i]));
+            float want = kt[i] * strength;
+            if (rd)
+            {
+                float a = prev < 0.999f ? 1.0f - (1.0f - want) / (1.0f - prev) : 0.0f; // alpha of this layer
+                if (a > 0.005f)
+                    blendEllipse(g, rd, cx, cy, erx, ery, C_CHEEK, a);
+            }
+            else
+                g.fillEllipse(cx, cy, erx, ery, tint(C_CHEEK, want));
+            prev = want;
+        }
+    }
+
+    struct Pt
+    {
+        float x, y;
+    };
+
+    static float distSeg(float px, float py, Pt a, Pt b)
+    {
+        float dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy;
+        float t = l2 > 0 ? clamp01(((px - a.x) * dx + (py - a.y) * dy) / l2) : 0.0f;
+        float qx = a.x + t * dx - px, qy = a.y + t * dy - py;
+        return sqrtf(qx * qx + qy * qy);
+    }
+
+    // Anti-aliased stroke of width wd along a polyline; alpha fades the whole stroke into the real background.
+    static void strokePath(TFT_eSPI &g, TFT_eSprite *rd, const Pt *p, uint8_t n, bool closed, float wd, uint16_t col,
+                           float alpha)
+    {
+        uint8_t segs = closed ? n : n - 1;
+        float minx = p[0].x, maxx = p[0].x, miny = p[0].y, maxy = p[0].y;
+        for (uint8_t i = 1; i < n; i++)
+        {
+            minx = fminf(minx, p[i].x);
+            maxx = fmaxf(maxx, p[i].x);
+            miny = fminf(miny, p[i].y);
+            maxy = fmaxf(maxy, p[i].y);
+        }
+        int16_t x0 = (int16_t)floorf(minx - wd * 0.5f - 1), x1 = (int16_t)ceilf(maxx + wd * 0.5f + 1);
+        int16_t y0 = (int16_t)floorf(miny - wd * 0.5f - 1), y1 = (int16_t)ceilf(maxy + wd * 0.5f + 1);
+        for (int16_t y = y0; y <= y1; y++)
+            for (int16_t x = x0; x <= x1; x++)
+            {
+                float dm = 1e9f;
+                for (uint8_t i = 0; i < segs; i++)
+                    dm = fminf(dm, distSeg(x + 0.5f, y + 0.5f, p[i], p[(i + 1) % n]));
+                float cov = clamp01(wd * 0.5f + 0.5f - dm) * alpha;
+                if (cov < 0.04f)
+                    continue;
+                if (rd)
+                    g.drawPixel(x, y, mixColor(rd->readPixel(x, y), col, cov));
+                else if (cov > 0.12f)
+                    g.drawPixel(x, y, mixColor(C_BG, col, cov));
+            }
+    }
+
+    // The mouth, centred at (cx, my), faded by the current fade value. Nothing when there is no mouth.
+    void drawMouth(TFT_eSPI &g, int16_t cx, int16_t my)
+    {
+        float a = smooth01(mouthA);
+        if (mouthKind == MouthKind::NONE || a < 0.04f)
+            return;
+        TFT_eSprite *rd = readableSprite(g);
+        uint16_t col = mixColor(C_EYE_TOP, C_EYE_BOT, 0.25f);
+        float wd = fmaxf(1.6f, (float)u(1.8f));
+        Pt p[13];
+        switch (mouthKind)
+        {
+        case MouthKind::SMILE: // an arc, ~11 px wide
+        {
+            float hw = u(5.5f), d = u(3.5f);
+            for (uint8_t i = 0; i < 9; i++)
+            {
+                float sx = (i / 4.0f) - 1.0f;
+                p[i] = {cx + hw * sx, my - d * 0.5f + d * (1.0f - sx * sx)};
+            }
+            strokePath(g, rd, p, 9, false, wd, col, a);
+            break;
+        }
+        case MouthKind::OPEN_O: // small "o"
+        {
+            float rx = u(2.6f), ry = u(3.4f);
+            for (uint8_t i = 0; i < 12; i++)
+            {
+                float t = i * 6.2831853f / 12.0f;
+                p[i] = {cx + rx * cosf(t), my + 1.0f + ry * sinf(t)};
+            }
+            strokePath(g, rd, p, 12, true, wd, col, a);
+            break;
+        }
+        case MouthKind::CUTE: // "w" turned: two small bowls meeting in the middle
+        {
+            float hw = u(5.5f), d = u(2.8f);
+            for (uint8_t side = 0; side < 2; side++)
+            {
+                for (uint8_t i = 0; i < 7; i++)
+                {
+                    float t = i / 6.0f;
+                    float x = side == 0 ? cx - hw + hw * t : cx + hw * t;
+                    p[i] = {x, my - d * 0.5f + d * sinf(t * 3.14159265f)};
+                }
+                strokePath(g, rd, p, 7, false, wd, col, a);
+            }
+            break;
+        }
+        default:
+            break;
+        }
+    }
+
     // One glowing LED-style eye, described by an EyeShape (see display_internal.h).
     //  openness: 0..1 scales the height (used by the old-style drawEye callers; the rig blinks with the lid)
     //  side:     -1 left eye / +1 right eye (decides which corner is the "inner" one)
@@ -265,10 +429,10 @@ namespace disp
         float lt = clamp01(s.lidTop), lb = clamp01(s.lidBot);
         float dIn = clamp01(lt + s.slant * 0.5f), dOut = clamp01(lt - s.slant * 0.5f);
 
-        // blush under the eye, fades in with the smile
-        if (lb > 0.2f)
-            g.fillEllipse((int16_t)lroundf(cxf), (int16_t)lroundf(topf + h) + u(3), (int16_t)(w / 4) + u(1),
-                          imax(2, (int16_t)(w / 8)), tint(C_CHEEK, clamp01((lb - 0.2f) * 3.3f)));
+        // cheeks under the eye: a faint permanent hint (affection), more with a smile / happy lids
+        float cheekS = fmaxf(affection * 0.45f, fmaxf(clamp01((lb - 0.2f) * 3.3f), smileCheek()));
+        drawCheek(g, (int16_t)lroundf(cxf), (int16_t)lroundf(topf + h) + u(3), (int16_t)(w / 4) + u(1),
+                  imax(2, (int16_t)(w / 8)), cheekS);
 
         // glossy highlights, inside the part that is still visible; they sit 1..2 px AGAINST the gaze
         // (the eye "body" moves with the gaze, the reflection stays behind: a bit of depth)
@@ -406,6 +570,18 @@ namespace disp
                     springStep(eyeSp[i][q], h, k, c);
             springStep(decorSp, h);
         }
+        // mouth fade: out 0.12 s, then (if something new is wanted) in 0.18 s
+        if (mouthWant != mouthKind)
+        {
+            mouthA -= dt / 0.12f;
+            if (mouthA <= 0)
+            {
+                mouthA = 0;
+                mouthKind = mouthWant;
+            }
+        }
+        else if (mouthKind != MouthKind::NONE)
+            mouthA = fminf(1.0f, mouthA + dt / 0.18f);
         // the blink lid is much stiffer: sub-steps of <= 2 ms
         uint8_t nb = (uint8_t)(dt / 0.002f) + 1;
         float hb = dt / nb;
@@ -479,7 +655,7 @@ namespace disp
             int16_t y = baseY - (int16_t)(ry * sinf(t));
             g.fillCircle(x, y, th, mixColor(C_EYE_TOP, C_EYE_BOT, 0.35f + 0.4f * (1.0f - sinf(t))));
         }
-        g.fillEllipse(cx, cy + R + u(2), R / 2 + u(1), imax(2, R / 5), C_CHEEK);
+        drawCheek(g, cx, cy + R + u(2), R / 2 + u(1), imax(2, R / 5), 1.0f);
     }
 
     // =====================================================================
