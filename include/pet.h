@@ -18,7 +18,8 @@ enum class PetKind : uint8_t
     RARE_WINK,     // rare: wink with tongue
     RARE_SURPRISE, // rare: surprise, then a big heart pops up
     HOT,           // hot weather: happy + sweat drop
-    COLD           // cold weather: happy + shivering + snowflakes
+    COLD,          // cold weather: happy + shivering + snowflakes
+    SULK           // low bond + long absence: sulky eyes looking away, then melts into a smile
 };
 
 struct PetEvent
@@ -55,3 +56,33 @@ PetStats pet_stats();
 // Call regularly (touch task): writes changed statistics to flash, at most once per
 // PET_SAVE_INTERVAL_MS.
 void pet_tick(uint32_t nowMs);
+
+
+// ---- Inner life: three meters 0..100 (energy / bond / boredom), see config.h "Pet identity" ----
+struct PetMeters
+{
+    uint8_t energy; // follows the day theme, long streaks tire it
+    uint8_t bond;   // taps raise it, long absence lowers it (the value right now, absence included)
+    uint8_t bored;  // curiosity: +1 per idle minute by day, any interaction resets it
+};
+
+// What the meters do to the eyes: offsets on the base (NEUTRAL) preset + behaviour switches.
+// Everything is already smoothed / ramped here; the display just applies it.
+struct PetLook
+{
+    float lidTop;    // >= 0: upper lid offset            (energy < 30: ~0.25)
+    float lidBot;    // >= 0: lower lid offset            (bond > 70: ~0.12 = a very faint smile)
+    float cheek;     // 0..1: faint permanent blush       (bond > 70)
+    float bored;     // 0..1: more glances, sighs         (boredom >= 60)
+    float yawnMul;   // 1 normally, 3 when tired
+    bool slowBlink;  // tired: slow, heavy blinks
+};
+
+PetMeters pet_meters();
+PetLook pet_look();
+
+// Any interaction other than the Pet button (Mode / Alarm button): resets boredom.
+void pet_note_interaction();
+
+// True once when a very bored pet wants to make a tiny servo noise (servo task polls this).
+bool pet_take_fidget();

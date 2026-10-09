@@ -23,6 +23,13 @@ namespace disp
     static Spring blinkSp;
     static float blinkOmega = 60.0f;
     static bool blinkInit = false;
+    static uint8_t wakeBlinksLeft = 2; // signature move: after waking up the eyes always blink twice (2 = also at boot)
+
+    // The pet's inner life (set every frame by display_tick through eyesSetPersonality)
+    static PetLook pers = {0, 0, 0, 0, 1.0f, false};
+    // Signature move: a four-point star (star glint) on the eye highlight
+    static float glintK = 0;       // 0..1..0 over PET_GLINT_MS, read by drawEyeShape
+    static uint32_t nextGlintAtMs = 0, glintStartMs = 0;
 
     // ---- Look-around / glance state ----
     float lookX = 0, lookY = 0;          // current gaze, -1..1 (follows the saccade curve)
@@ -227,6 +234,30 @@ namespace disp
     static float mouthA = 0;                      // fade 0..1
 
     void eyesSetAffection(float a) { affection = clamp01(a); }
+    void eyesSetPersonality(const PetLook &p)
+    {
+        pers = p;
+        eyesSetAffection(p.cheek);
+    }
+    void eyesWakeUp()
+    {
+        wakeBlinksLeft = 1; // the next blink + the one right behind it
+        nextBlinkAtMs = millis() + 300;
+    }
+    void eyesGlintUpdate(uint32_t now, bool allowed)
+    {
+        if (nextGlintAtMs == 0)
+            nextGlintAtMs = now + PET_GLINT_FIRST_MS;
+        if (glintStartMs != 0 && now - glintStartMs >= PET_GLINT_MS)
+            glintStartMs = 0;
+        if (glintStartMs == 0 && allowed && (int32_t)(now - nextGlintAtMs) >= 0)
+        {
+            glintStartMs = now;
+            // about every PET_GLINT_EVERY_MS, +-20 %
+            nextGlintAtMs = now + PET_GLINT_EVERY_MS - PET_GLINT_EVERY_MS / 5 + random(0, PET_GLINT_EVERY_MS / 5 * 2);
+        }
+        glintK = (glintStartMs != 0 && allowed) ? sinf((float)M_PI * (now - glintStartMs) / (float)PET_GLINT_MS) : 0.0f;
+    }
     void eyesSetMouth(MouthKind want) { mouthWant = want; }
     static float smooth01(float a)
     {
@@ -448,6 +479,16 @@ namespace disp
             if (lb < 0.15f)
                 g.fillCircle((int16_t)lroundf(cxf + w / 5) + hx, (int16_t)lroundf(topf + h - h / 5) + hy,
                              imax(1, sr / 2), mixColor(C_EYE_TOP, C_WHITE, 0.6f));
+            if (glintK > 0.03f) // signature move: a four-point star (✦) grows out of the highlight and fades back
+            {
+                int16_t gx = (int16_t)lroundf(cxf - w / 4) + hx;
+                int16_t gy = (int16_t)lroundf(visTop + visH / 4) + sr / 2 + hy;
+                int16_t L = imax(2, (int16_t)(sr * 2.2f * glintK)), t = imax(1, L / 5);
+                g.fillTriangle(gx, gy - L, gx - t, gy, gx + t, gy, C_WHITE);
+                g.fillTriangle(gx, gy + L, gx - t, gy, gx + t, gy, C_WHITE);
+                g.fillTriangle(gx - L, gy, gx, gy - t, gx, gy + t, C_WHITE);
+                g.fillTriangle(gx + L, gy, gx, gy - t, gx, gy + t, C_WHITE);
+            }
         }
     }
 
@@ -495,6 +536,7 @@ namespace disp
         /* SUSPICIOUS       */ {{2.0f, 2.25f, 0.72f, 0.50f, 0.0f, 0.0f}, {2.0f, 2.25f, 0.72f, 0.00f, 0.0f, 0.0f}},
         /* HOT              */ SYM(2.0000f, 2.2500f, 0.72f, 0.28f, 0.0f, 0.0f),
         /* COLD             */ SYM(2.0000f, 2.2500f, 0.72f, 0.15f, 0.0f, 0.0f),
+        /* SULK             */ SYM(2.0000f, 2.1250f, 0.72f, 0.22f, +0.2f, 0.0f),
     };
 
     enum EyeParam : uint8_t
@@ -529,9 +571,15 @@ namespace disp
             sp[P_W].target = p.w * R * scale;
             sp[P_H].target = p.h * R * scale;
             sp[P_RADIUS].target = p.radius * R * scale;
-            sp[P_LID_TOP].target = p.lidTop;
+            float lidTop = p.lidTop, lidBot = p.lidBot;
+            if (mood[i] == EyeMood::NEUTRAL) // inner life: a small offset on the plain resting eyes only
+            {
+                lidTop = fmaxf(lidTop, pers.lidTop); // tired: heavy lids
+                lidBot += pers.lidBot;               // fond: the faintest smile
+            }
+            sp[P_LID_TOP].target = lidTop;
             sp[P_SLANT].target = p.slant;
-            sp[P_LID_BOT].target = p.lidBot;
+            sp[P_LID_BOT].target = lidBot;
             // the gaze is not sprung: the saccade curve in updateLook() already is the motion
             sp[P_X].x = sp[P_X].target = lookPxX;
             sp[P_Y].x = sp[P_Y].target = lookPxY;
@@ -710,12 +758,21 @@ namespace disp
         if (now >= nextExprAtMs)
         {
             long r = random(0, 100);
-            if (sleepy)
-                exprCur = r < 80 ? Expr::YAWN : Expr::WINK;
+            // yawn share: 80 % at night, 30 % by day; tired (energy < 30) = three times as many yawns (max 92 %)
+            long yawnP = (long)fminf(92.0f, (sleepy ? 80.0f : 30.0f) * pers.yawnMul);
+            if (!sleepy && pers.bored > 0.05f && random(0, 100) < (long)(pers.bored * 40))
+                exprCur = Expr::SIGH; // bored: a sigh now and then
+            else if (r < yawnP)
+                exprCur = Expr::YAWN;
+            else if (sleepy)
+                exprCur = Expr::WINK;
             else
-                exprCur = r < 50 ? Expr::WINK : (r < 70 ? Expr::SURPRISE : Expr::YAWN);
+            {
+                // the rest keeps its old 50 : 20 split
+                exprCur = random(0, 70) < 50 ? Expr::WINK : Expr::SURPRISE;
+            }
             exprStartMs = now;
-            exprDurMs = exprCur == Expr::WINK ? 450 : (exprCur == Expr::YAWN ? 2200 : 900);
+            exprDurMs = exprCur == Expr::WINK ? 450 : (exprCur == Expr::YAWN ? 2200 : (exprCur == Expr::SIGH ? 1800 : 900));
         }
         return 0;
     }
@@ -761,7 +818,8 @@ namespace disp
             blinkSp.x = BLINK_MAX; // eyes wake up: start closed
             blinkSp.target = 0;
         }
-        const uint16_t closeMs = sleepy ? 160 : 70, closedMs = 40, openMs = sleepy ? 250 : 130;
+        bool slow = sleepy || pers.slowBlink; // sleepy at night, or just tired (energy < 30)
+        const uint16_t closeMs = slow ? 160 : 70, closedMs = 40, openMs = slow ? 250 : 130;
         uint32_t el = now - blinkPhaseStartMs;
         switch (blinkPhase)
         {
@@ -796,7 +854,13 @@ namespace disp
             if (el >= openMs)
             {
                 blinkPhase = BlinkPhase::OPEN;
-                if (!blinkWasDouble && random(0, 100) < 15)
+                if (wakeBlinksLeft > 0) // signature move: after waking up two blinks, the second right behind the first
+                {
+                    nextBlinkAtMs = now + (wakeBlinksLeft == 2 ? 300 : 110);
+                    wakeBlinksLeft--;
+                    blinkWasDouble = false;
+                }
+                else if (!blinkWasDouble && random(0, 100) < 15)
                 {
                     blinkWasDouble = true;
                     nextBlinkAtMs = now + 110; // second blink right behind the first
@@ -865,9 +929,11 @@ namespace disp
         }
         else if (now >= nextLookAtMs)
         {
-            nextLookAtMs = now + random(1400, 4200);
+            nextLookAtMs = now + (uint32_t)(random(1400, 4200) * (1.0f - 0.55f * pers.bored)); // bored: looks around more
             idlePick = true;
             long r = random(0, 10);
+            if (pers.bored > 0 && random(0, 100) < (long)(pers.bored * 45))
+                r = random(4, 9); // ... and rarely stares straight ahead
             lookTX = 0;
             lookTY = 0;
             if (r == 4)

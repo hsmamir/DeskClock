@@ -272,5 +272,7 @@ void touch_tick()
     pet_tick(millis());
     activity |= handleModeButton();
     activity |= handleAlarmButton();
+    if (activity)
+        pet_note_interaction(); // any button = interaction: boredom back to 0
     autoReturnToClock(activity);
 }

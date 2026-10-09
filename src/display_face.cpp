@@ -311,6 +311,14 @@ namespace disp
             break;
         }
 
+        case PetKind::SULK:
+            if (age < PET_SULK_MS) // the rig draws the sulking eyes (see drawFace); nothing extra
+                break;
+            drawHappyEye(g, lcx, cy, Re); // ... then it melts: the arches grow while the sulky eyes shrink away
+            drawHappyEye(g, rcx, cy, Re);
+            drawRisingHearts(g, age - PET_SULK_MS, cy, R, 3, 240, 1100, u(4));
+            break;
+
         case PetKind::HAPPY:
         default:
             drawHappyEye(g, lcx, cy, Re);
@@ -337,6 +345,8 @@ namespace disp
             return age >= 700 ? MouthKind::SMILE : MouthKind::NONE;
         case PetKind::MORNING:
             return age >= 1500 ? MouthKind::SMILE : MouthKind::NONE; // the yawn draws its own mouth
+        case PetKind::SULK:
+            return age >= PET_SULK_MS ? MouthKind::SMILE : MouthKind::NONE;
         case PetKind::RARE_SURPRISE:
             if (age < ANTICIPATE_MS)
                 return MouthKind::NONE;
@@ -390,9 +400,12 @@ namespace disp
             antic = true;
         if (!alarm && !happy && exprAnticipating(now))
             antic = true;
-        bool decor = !alarm && !antic && happy && (purr || !petEyesFirst(petEv.kind)); // heart / spiral / arches take over
-        EyeMood mood = pickEyeMood(sleepy, reaction, ex);
-        EyeMood moodR = (ex == Expr::WINK) ? EyeMood::HAPPY : mood; // a wink is just one eye's preset
+        // sulk: the first PET_SULK_MS the sulky preset (eyes looking away) is drawn by the rig, then the arches take over
+        bool sulkEyes = !alarm && happy && !purr && petEv.kind == PetKind::SULK && now - happyStartMs < PET_SULK_MS;
+        bool eyesFirst = petEyesFirst(petEv.kind) || (petEv.kind == PetKind::SULK && sulkEyes);
+        bool decor = !alarm && !antic && happy && (purr || !eyesFirst); // heart / spiral / arches take over
+        EyeMood mood = sulkEyes ? EyeMood::SULK : pickEyeMood(sleepy, reaction, ex);
+        EyeMood moodR = (ex == Expr::WINK && !sulkEyes) ? EyeMood::HAPPY : mood; // a wink is just one eye's preset
         float scale = 1.0f;
         if (reaction == Reaction::STORM && lightningActive(now))
             scale = 1.25f; // flinch at every flash
@@ -421,8 +434,16 @@ namespace disp
         int16_t mouthY = cy + eyeH / 2 + u(10); // ~y 76 on the 128x88 face
         eyesSetFast(antic);
         eyesSetDecor(decor);
-        eyesSetTargets(mood, moodR, scale, lookX * u(5) + lookTremX, lookY * u(4) + lookTremY, lookX, R);
+        float gazeX = lookX * u(5) + lookTremX, gazeY = lookY * u(4) + lookTremY, gazeN = lookX;
+        if (sulkEyes) // sulking: looks away to the side
+        {
+            gazeX = -u(6);
+            gazeY = u(1);
+            gazeN = -1.0f;
+        }
+        eyesSetTargets(mood, moodR, scale, gazeX, gazeY, gazeN, R);
         eyesStep(now);
+        eyesGlintUpdate(now, !alarm && !happy); // signature move: the star glint on the highlights
 
         if (alarm)
         {
@@ -450,7 +471,7 @@ namespace disp
                 return;
             }
             // Cross-fade: the (shrinking) eyes stay underneath until they are gone, the glyphs grow on top.
-            if (decor)
+            if (decor || sulkEyes)
                 drawRigEyes(g, lcx, rcx, cy, 0, 0);
             drawPetFace(g, now, purr, sleepy, cy, lcx, rcx, R, eyeW, eyeH, decor ? eyesDecorPop() : 1.0f);
             drawMouth(g, W / 2, mouthY);
@@ -470,6 +491,13 @@ namespace disp
             if (edge > 1.0f)
                 edge = 1.0f;
             squeeze = 0.92f * edge; // eyes squeeze shut mid-yawn
+        }
+        else if (ex == Expr::SIGH)
+        {
+            float edge = (exprP < 1.0f - exprP ? exprP : 1.0f - exprP) / 0.3f; // slow ease in / out
+            if (edge > 1.0f)
+                edge = 1.0f;
+            squeeze = 0.55f * edge; // the lids sink for a moment
         }
 
         drawRigEyes(g, lcx, rcx, cy, squeeze, shiver);
@@ -511,6 +539,17 @@ namespace disp
             if (rx > 3 && ry > 3)
                 g.fillEllipse(W / 2, my, rx - 2, ry - 2, rgb(40, 6, 22));
         }
+
+        if (ex == Expr::SIGH && exprP > 0.15f) // a small puff of breath, drifting out and fading
+            for (uint8_t k = 0; k < 3; k++)
+            {
+                float pk = clamp01((exprP - 0.15f) * 1.5f - k * 0.2f);
+                if (pk <= 0.0f || pk >= 1.0f)
+                    continue;
+                int16_t px = W / 2 + (int16_t)(pk * u(16)) + k * u(3);
+                int16_t py = mouthY + (int16_t)(pk * u(5)) - k * u(1);
+                g.fillCircle(px, py, imax(1, (int16_t)(u(2) + pk * u(3))), tint(C_ICE, (1.0f - pk) * 0.55f));
+            }
 
         drawMouth(g, W / 2, mouthY);
 

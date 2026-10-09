@@ -164,6 +164,7 @@ namespace disp
         SUSPICIOUS, // left eye half shut, right eye open
         HOT,        // heavy lids
         COLD,       // slightly lowered lids
+        SULK,       // sulking: lowered lids, a faint frown (the first tap after a long absence)
         COUNT
     };
 
@@ -198,7 +199,8 @@ namespace disp
         NONE,
         WINK,
         YAWN,
-        SURPRISE
+        SURPRISE,
+        SIGH // bored: lids sink, a small puff of breath
     };
     extern Expr exprCur;
     extern float lookX, lookY;
@@ -242,7 +244,12 @@ namespace disp
     void eyesSetMouth(MouthKind want); // fades the old one out, then the new one in
     void drawMouth(TFT_eSPI &g, int16_t cx, int16_t my);
     float eyesMouthAlpha();         // current fade 0..1
-    void eyesSetAffection(float a); // 0..1: faint permanent cheeks (hook, not wired to anything yet)
+    void eyesSetAffection(float a); // 0..1: faint permanent cheeks (pet bond, see eyesSetPersonality)
+    // The pet's inner life (pet.cpp): offsets on the NEUTRAL preset, slower blinks, more yawns / glances / sighs.
+    void eyesSetPersonality(const PetLook &p);
+    // Signature moves: two blinks after waking up, and a little star glint on the eye highlights now and then.
+    void eyesWakeUp();                              // call when the pet wakes up (night -> day)
+    void eyesGlintUpdate(uint32_t now, bool allowed); // advances the glint timer; allowed = idle eyes are on screen
     // Three concentric ellipses (tint 0.12 / 0.20 / 0.30 x strength).
     void drawCheek(TFT_eSPI &g, int16_t cx, int16_t cy, int16_t rx, int16_t ry, float strength);
     constexpr uint16_t ANTICIPATE_MS = 80;
