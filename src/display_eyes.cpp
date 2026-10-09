@@ -37,42 +37,179 @@ namespace disp
         g.fillTriangle(x - 2 * r, y + r / 2, x + 2 * r, y + r / 2, x, y + 3 * r, c);
     }
 
-    // Eye body: vertical gradient with rounded corners, drawn row by row.
-    static void drawGradientEye(TFT_eSPI &g, int16_t cx, int16_t cy, int16_t w, int16_t h,
-                                int16_t corner, uint16_t cTop, uint16_t cBot)
+    // =====================================================================
+    //  Eye geometry: one function says where the eye is on every row
+    // =====================================================================
+
+    // Horizontal shrink of a rounded-rect outline at height y (relative to the eye centre).
+    // h / radius are those of the outline (already grown for the halo layers).
+    static float cornerInset(float y, float h, float radius)
     {
-        if (h < 2)
-            h = 2;
-        if (corner > h / 2)
-            corner = h / 2;
-        if (corner > w / 2)
-            corner = w / 2;
-        if (corner < 1)
-            corner = 1;
+        if (radius < 0.5f)
+            return 0;
+        float r = y + h * 0.5f; // distance from the top edge
+        float d;
+        if (r < radius)
+            d = radius - r;
+        else if (r > h - radius)
+            d = r - (h - radius);
+        else
+            return 0;
+        if (d > radius)
+            d = radius;
+        return radius - sqrtf(radius * radius - d * d);
+    }
+
+    // Where is the eye on the row at height y (px, relative to the eye centre, s.h = height as drawn)?
+    //   xa..xb : the visible interval (relative to the centre, fractional px)
+    //   hole   : > 0 when the lower lid removes the middle |x| < hole of the row (draw [xa,-hole] and [hole,xb])
+    //   grow   : widens the outline by this many px (halo layers); the lids still cut it
+    //   side   : -1 left eye / +1 right eye (the inner corner is the one facing the face centre)
+    // Returns false when nothing of the eye is on this row.
+    bool eyeSpan(const EyeShape &s, int8_t side, float y, float grow, float &xa, float &xb, float &hole)
+    {
+        hole = 0;
+        float hh = s.h * 0.5f + grow;
+        if (y < -hh || y > hh)
+            return false;
+        float rad = fminf(s.radius, fminf(s.w, s.h) * 0.5f) + grow;
+        float hw = s.w * 0.5f + grow - cornerInset(y, s.h + 2 * grow, rad);
+        xa = -hw;
+        xb = hw;
+
+        // upper lid: the eye is only there where y >= y0 + m*x
+        float lt = clamp01(s.lidTop), lb = clamp01(s.lidBot);
+        float dIn = clamp01(lt + s.slant * 0.5f);  // lid depth at the inner edge (fraction of h)
+        float dOut = clamp01(lt - s.slant * 0.5f); // ... at the outer edge
+        if (dIn > 0.01f || dOut > 0.01f)
+        {
+            float yo = -s.h * 0.5f + dOut * s.h; // lid line at the outer edge x = side*w/2
+            float yi = -s.h * 0.5f + dIn * s.h;  // ... at the inner edge x = -side*w/2
+            float m = (yi - yo) / (-side * s.w);
+            float y0 = yo - m * (side * s.w * 0.5f);
+            if (fabsf(m) < 1e-3f)
+            {
+                if (y < y0)
+                    return false;
+            }
+            else if (m > 0)
+                xb = fminf(xb, (y - y0) / m);
+            else
+                xa = fmaxf(xa, (y - y0) / m);
+        }
+
+        // lower lid: upper half of an ellipse centred on the bottom edge eats the middle of the row
+        // (below the bottom edge it keeps eating, so the halo does not leave a slab under the smile)
+        if (lb > 0.01f)
+        {
+            float ry = lb * s.h;
+            float dyb = s.h * 0.5f - y; // height above the bottom edge
+            if (dyb < ry)
+            {
+                float q = (dyb > 0 ? dyb : 0.0f) / ry;
+                hole = (s.w * 0.5f + u(3)) * sqrtf(fmaxf(0.0f, 1.0f - q * q));
+            }
+        }
+
+        if (xb <= xa)
+            return false;
+        if (hole > 0 && xa >= -hole && xb <= hole)
+            return false;
+        return true;
+    }
+
+    // One horizontal run [xa, xb] (px relative to cx, fractional) on row y.
+    // rd != nullptr: the two edge pixels are blended with what is already there by their coverage.
+    // edgeCov < 1 (first / last row of the eye): everything is blended, i.e. a fainter row.
+    static void drawSpanRow(TFT_eSPI &g, TFT_eSprite *rd, int16_t cx, int16_t y, float xa, float xb,
+                            uint16_t col, float edgeCov)
+    {
+        float A = cx + xa, B = cx + xb;
+        if (B - A <= 0.02f)
+            return;
+        int16_t ia = (int16_t)ceilf(A), ib = (int16_t)floorf(B); // fully covered pixels: [ia, ib)
+        if (ib < ia)                                             // both ends inside one pixel
+        {
+            int16_t px = (int16_t)floorf(A);
+            float cov = (B - A) * edgeCov;
+            if (rd)
+                g.drawPixel(px, y, mixColor(rd->readPixel(px, y), col, cov));
+            else if (cov > 0.5f)
+                g.drawPixel(px, y, col);
+            return;
+        }
+        if (ib > ia)
+        {
+            if (edgeCov >= 0.999f)
+                g.drawFastHLine(ia, y, ib - ia, col);
+            else if (rd)
+                for (int16_t x = ia; x < ib; x++)
+                    g.drawPixel(x, y, mixColor(rd->readPixel(x, y), col, edgeCov));
+            else
+                g.drawFastHLine(ia, y, ib - ia, mixColor(C_BG, col, edgeCov));
+        }
+        float cl = (ia - A) * edgeCov, cr = (B - ib) * edgeCov; // partial pixels left / right
+        if (cl > 0.02f)
+        {
+            if (rd)
+                g.drawPixel(ia - 1, y, mixColor(rd->readPixel(ia - 1, y), col, cl));
+            else if (cl > 0.5f)
+                g.drawPixel(ia - 1, y, col);
+        }
+        if (cr > 0.02f)
+        {
+            if (rd)
+                g.drawPixel(ib, y, mixColor(rd->readPixel(ib, y), col, cr));
+            else if (cr > 0.5f)
+                g.drawPixel(ib, y, col);
+        }
+    }
+
+    // A row of the eye as returned by eyeSpan(): split around the lower-lid hole when there is one.
+    static void drawEyeRow(TFT_eSPI &g, TFT_eSprite *rd, int16_t cx, int16_t y, float xa, float xb, float hole,
+                           uint16_t col, float edgeCov)
+    {
+        if (hole <= 0)
+        {
+            drawSpanRow(g, rd, cx, y, xa, xb, col, edgeCov);
+            return;
+        }
+        if (-hole > xa)
+            drawSpanRow(g, rd, cx, y, xa, fminf(xb, -hole), col, edgeCov);
+        if (hole < xb)
+            drawSpanRow(g, rd, cx, y, fmaxf(xa, hole), xb, col, edgeCov);
+    }
+
+    // Eye body: vertical gradient, drawn row by row; the shape of every row comes from eyeSpan().
+    // `top` = y of the first row, d = the shape as drawn (d.h = height after the blink).
+    static void drawGradientEye(TFT_eSPI &g, TFT_eSprite *rd, int16_t cx, int16_t top, const EyeShape &d,
+                                int8_t side, uint16_t cTop, uint16_t cBot)
+    {
+        int16_t h = (int16_t)d.h;
         for (int16_t r = 0; r < h; r++)
         {
             float t = h > 1 ? (float)r / (float)(h - 1) : 0.0f;
-            float inset = 0;
-            if (r < corner)
-            {
-                float d = corner - r - 0.5f;
-                inset = corner - sqrtf((float)corner * corner - d * d);
-            }
-            else if (r >= h - corner)
-            {
-                float d = r - (h - corner) + 0.5f;
-                inset = corner - sqrtf((float)corner * corner - d * d);
-            }
-            int16_t ins = (int16_t)(inset + 0.5f);
-            g.drawFastHLine(cx - w / 2 + ins, cy - h / 2 + r, w - 2 * ins, mixColor(cTop, cBot, t));
+            float xa, xb, hole;
+            if (!eyeSpan(d, side, r + 0.5f - h * 0.5f, 0, xa, xb, hole))
+                continue;
+            drawEyeRow(g, rd, cx, top + r, xa, xb, hole, mixColor(cTop, cBot, t), (r == 0 || r == h - 1) ? 0.6f : 1.0f);
         }
+    }
+
+    // Is g the face sprite? Then readPixel() works and edges can be anti-aliased against the real background.
+    // (In the viewport fallback the pixels live in the display and cannot be read back.)
+    static TFT_eSprite *readableSprite(TFT_eSPI &g)
+    {
+        if (faceCv.ok && &g == static_cast<TFT_eSPI *>(&faceCv.spr))
+            return &faceCv.spr;
+        return nullptr;
     }
 
     // One glowing LED-style eye, described by an EyeShape (see display_internal.h).
     //  openness: 0..1 blink (scales the height around the eye centre)
     //  side:     -1 left eye / +1 right eye (decides which corner is the "inner" one)
-    // Upper lid: a straight cut, depth at the inner edge = lidTop + slant/2, at the outer edge = lidTop - slant/2.
-    // Lower lid: a rounded cut rising from the bottom edge (happy "^ ^"), with a blush underneath.
+    // Lids are NOT painted over the eye: eyeSpan() shortens every row instead, so the
+    // real background (sky, clouds) stays untouched.
     void drawEyeShape(TFT_eSPI &g, int16_t cx, int16_t cy, const EyeShape &s, float openness, int8_t side,
                       uint16_t cTop, uint16_t cBot, bool shine)
     {
@@ -86,69 +223,58 @@ namespace disp
         int16_t h = (int16_t)(fullH * openness);
         if (h < 3)
             h = 3;
-        int16_t corner = (int16_t)(s.radius + 0.5f);
         int16_t top = cy - h / 2;
+        float cyf = top + h * 0.5f;
+
+        EyeShape d = s; // the shape as it is drawn now
+        d.w = w;
+        d.h = h;
+        d.radius = fminf(s.radius, fminf((float)w, (float)h) * 0.5f);
+        TFT_eSprite *rd = readableSprite(g);
+
+        // soft glow: 4 growing layers (outer -> inner), cut by the same lids as the body
+        if (h > w / 2)
+        {
+            static const float growPx[4] = {6, 4, 2, 1};
+            static const float tintK[4] = {0.05f, 0.09f, 0.15f, 0.25f};
+            for (uint8_t l = 0; l < 4; l++)
+            {
+                float gr = (float)u(growPx[l]);
+                if (gr < 1)
+                    gr = 1;
+                uint16_t col = tint(cTop, tintK[l]);
+                int16_t gi = (int16_t)ceilf(gr);
+                for (int16_t y = top - gi; y < top + h + gi; y++)
+                {
+                    float xa, xb, hole;
+                    if (eyeSpan(d, side, y + 0.5f - cyf, gr, xa, xb, hole))
+                        drawEyeRow(g, nullptr, cx, y, xa, xb, hole, col, 1.0f);
+                }
+            }
+        }
+
+        drawGradientEye(g, rd, cx, top, d, side, cTop, cBot);
 
         float lt = clamp01(s.lidTop), lb = clamp01(s.lidBot);
-        float dIn = clamp01(lt + s.slant * 0.5f);  // lid depth at the inner edge (fraction of h)
-        float dOut = clamp01(lt - s.slant * 0.5f); // ... at the outer edge
+        float dIn = clamp01(lt + s.slant * 0.5f), dOut = clamp01(lt - s.slant * 0.5f);
 
-        // soft glow halo (two dim rounded rects behind the eye); shorter when the lower lid is up
-        int16_t haloH = h - (int16_t)(h * lb * 0.6f);
-        if (haloH > w / 2)
-        {
-            g.fillRoundRect(cx - w / 2 - u(4), top - u(4), w + u(8), haloH + u(8), corner + u(4), tint(cTop, 0.10f));
-            g.fillRoundRect(cx - w / 2 - u(2), top - u(2), w + u(4), haloH + u(4), corner + u(2), tint(cTop, 0.22f));
-        }
+        // blush under the eye, fades in with the smile
+        if (lb > 0.2f)
+            g.fillEllipse(cx, top + h + u(3), w / 4 + u(1), imax(2, w / 8), tint(C_CHEEK, clamp01((lb - 0.2f) * 3.3f)));
 
-        drawGradientEye(g, cx, cy, w, h, corner, cTop, cBot);
-
-        // upper lid: slanted cut painted in the background colour (covers part of the eye + halo)
-        if (dIn > 0.01f || dOut > 0.01f)
-        {
-            float m = (float)u(5); // reach a bit beyond the eye so the halo is covered too
-            float xo = cx + side * (w / 2.0f), xi = cx - side * (w / 2.0f);
-            float yo = top + dOut * h, yi = top + dIn * h;
-            float slope = (yi - yo) / (xi - xo);
-            float x1 = xo + side * m, y1 = yo + slope * (x1 - xo);
-            float x2 = xi - side * m, y2 = yi + slope * (x2 - xi);
-            float y0 = fminf(fminf(y1, y2), (float)top) - u(5); // halo reaches u(4) above the eye
-            g.fillTriangle((int16_t)x1, (int16_t)y0, (int16_t)x2, (int16_t)y0, (int16_t)x2, (int16_t)y2, C_BG);
-            g.fillTriangle((int16_t)x1, (int16_t)y0, (int16_t)x2, (int16_t)y2, (int16_t)x1, (int16_t)y1, C_BG);
-        }
-
-        // lower lid: an upward bulging cut (upper half of an ellipse centred on the bottom edge)
-        if (lb > 0.01f)
-        {
-            int16_t yb = top + h;
-            int16_t ry = (int16_t)(lb * h);
-            float rx = w / 2.0f + u(3);
-            int16_t lim = w / 2 + u(4);
-            for (int16_t dy = 1; dy <= ry; dy++)
-            {
-                float q = (dy - 0.5f) / (float)ry;
-                float hw = rx * sqrtf(fmaxf(0.0f, 1.0f - q * q));
-                int16_t ihw = (int16_t)(hw + 0.5f);
-                if (ihw > lim)
-                    ihw = lim;
-                if (ihw < 1)
-                    continue;
-                g.drawFastHLine(cx - ihw, yb - dy, 2 * ihw + 1, C_BG);
-            }
-            if (lb > 0.2f) // blush, fades in with the smile
-                g.fillEllipse(cx, yb + u(3), w / 4 + u(1), imax(2, w / 8), tint(C_CHEEK, clamp01((lb - 0.2f) * 3.3f)));
-        }
-
-        // glossy highlights (kept inside the part that is still visible)
+        // glossy highlights, inside the part that is still visible; they sit 1..2 px AGAINST the gaze
+        // (the eye "body" moves with the gaze, the reflection stays behind: a bit of depth)
+        int16_t hx = (int16_t)lroundf(-fmaxf(-2.0f, fminf(2.0f, s.x * 0.4f)));
+        int16_t hy = (int16_t)lroundf(-fmaxf(-2.0f, fminf(2.0f, s.y * 0.5f)));
         int16_t visTop = top + (int16_t)(h * fmaxf(dIn, dOut));
         int16_t visBot = top + h - (int16_t)(h * lb);
         int16_t visH = visBot - visTop;
         if (shine && visH > w / 3)
         {
             int16_t sr = imax(2, w / 6);
-            g.fillCircle(cx - w / 4, visTop + visH / 4 + sr / 2, sr, C_WHITE);
+            g.fillCircle(cx - w / 4 + hx, visTop + visH / 4 + sr / 2 + hy, sr, C_WHITE);
             if (lb < 0.15f)
-                g.fillCircle(cx + w / 5, top + h - h / 5, imax(1, sr / 2), mixColor(C_EYE_TOP, C_WHITE, 0.6f));
+                g.fillCircle(cx + w / 5 + hx, top + h - h / 5 + hy, imax(1, sr / 2), mixColor(C_EYE_TOP, C_WHITE, 0.6f));
         }
     }
 

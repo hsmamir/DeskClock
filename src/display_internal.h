@@ -215,6 +215,9 @@ namespace disp
                  float openness, float lid, uint8_t brow, int8_t side,
                  uint16_t cTop, uint16_t cBot, bool shine);
     void drawHappyEye(TFT_eSPI &g, int16_t cx, int16_t cy, int16_t R);
+    // Where the eye is on the row at height y (px from the eye centre): visible interval [xa, xb], plus the
+    // middle |x| < hole that the lower lid removes. grow widens the outline (halo layers).
+    bool eyeSpan(const EyeShape &s, int8_t side, float y, float grow, float &xa, float &xb, float &hole);
     // Parametric eye: openness 0..1 is the blink (scales the height), side = -1 left eye / +1 right eye.
     void drawEyeShape(TFT_eSPI &g, int16_t cx, int16_t cy, const EyeShape &s, float openness, int8_t side,
                       uint16_t cTop, uint16_t cBot, bool shine);
