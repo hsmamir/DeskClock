@@ -16,12 +16,18 @@ namespace disp
     static BlinkPhase blinkPhase = BlinkPhase::OPENING; // eyes "wake up" at boot
     uint32_t blinkPhaseStartMs = 0;                     // display_init() starts it
     static uint32_t nextBlinkAtMs = 0;
-    static const uint16_t BLINK_TRANSITION_MS = 80;
-    static const uint16_t BLINK_CLOSED_MS = 100;
+    static bool blinkWasDouble = false;
+    // The upper lid is a spring (0 = open .. BLINK_MAX = closed). The phase timers below only flip its
+    // target; closing is stiff (ease-in: it accelerates from rest), opening is softer (ease-out).
+    static const float BLINK_MAX = 0.95f; // a thin sliver stays visible when closed
+    static Spring blinkSp;
+    static float blinkOmega = 60.0f;
+    static bool blinkInit = false;
 
     // ---- Look-around / glance state ----
-    float lookX = 0, lookY = 0;
-    static float lookTX = 0, lookTY = 0;
+    float lookX = 0, lookY = 0;          // current gaze, -1..1 (follows the saccade curve)
+    float lookTremX = 0, lookTremY = 0;  // micro-tremor in px, added by the caller
+    static float lookTX = 0, lookTY = 0; // what the state machine below wants to look at
     static uint32_t nextLookAtMs = 0;
     uint32_t glanceUntilMs = 0; // display_tick() glances down when the page changes
 
@@ -121,7 +127,7 @@ namespace disp
     // One horizontal run [xa, xb] (px relative to cx, fractional) on row y.
     // rd != nullptr: the two edge pixels are blended with what is already there by their coverage.
     // edgeCov < 1 (first / last row of the eye): everything is blended, i.e. a fainter row.
-    static void drawSpanRow(TFT_eSPI &g, TFT_eSprite *rd, int16_t cx, int16_t y, float xa, float xb,
+    static void drawSpanRow(TFT_eSPI &g, TFT_eSprite *rd, float cx, int16_t y, float xa, float xb,
                             uint16_t col, float edgeCov)
     {
         float A = cx + xa, B = cx + xb;
@@ -166,7 +172,7 @@ namespace disp
     }
 
     // A row of the eye as returned by eyeSpan(): split around the lower-lid hole when there is one.
-    static void drawEyeRow(TFT_eSPI &g, TFT_eSprite *rd, int16_t cx, int16_t y, float xa, float xb, float hole,
+    static void drawEyeRow(TFT_eSPI &g, TFT_eSprite *rd, float cx, int16_t y, float xa, float xb, float hole,
                            uint16_t col, float edgeCov)
     {
         if (hole <= 0)
@@ -181,18 +187,24 @@ namespace disp
     }
 
     // Eye body: vertical gradient, drawn row by row; the shape of every row comes from eyeSpan().
-    // `top` = y of the first row, d = the shape as drawn (d.h = height after the blink).
-    static void drawGradientEye(TFT_eSPI &g, TFT_eSprite *rd, int16_t cx, int16_t top, const EyeShape &d,
+    // Geometry is fractional: a row that is only partly covered by the eye (fractional height / position)
+    // is blended by that coverage, so breathing (+-2 % height) and tiny gaze tremors move smoothly.
+    static void drawGradientEye(TFT_eSPI &g, TFT_eSprite *rd, float cxf, float cyf, float topf, const EyeShape &d,
                                 int8_t side, uint16_t cTop, uint16_t cBot)
     {
-        int16_t h = (int16_t)d.h;
-        for (int16_t r = 0; r < h; r++)
+        float botf = topf + d.h;
+        int16_t y0 = (int16_t)floorf(topf), y1 = (int16_t)ceilf(botf);
+        for (int16_t y = y0; y < y1; y++)
         {
-            float t = h > 1 ? (float)r / (float)(h - 1) : 0.0f;
-            float xa, xb, hole;
-            if (!eyeSpan(d, side, r + 0.5f - h * 0.5f, 0, xa, xb, hole))
+            float lo = fmaxf((float)y, topf), hi = fminf((float)y + 1.0f, botf);
+            float ov = hi - lo; // how much of this pixel row the eye covers
+            if (ov < 0.04f)
                 continue;
-            drawEyeRow(g, rd, cx, top + r, xa, xb, hole, mixColor(cTop, cBot, t), (r == 0 || r == h - 1) ? 0.6f : 1.0f);
+            float ym = (lo + hi) * 0.5f;
+            float xa, xb, hole;
+            if (!eyeSpan(d, side, ym - cyf, 0, xa, xb, hole))
+                continue;
+            drawEyeRow(g, rd, cxf, y, xa, xb, hole, mixColor(cTop, cBot, clamp01((ym - topf) / d.h)), ov);
         }
     }
 
@@ -206,34 +218,29 @@ namespace disp
     }
 
     // One glowing LED-style eye, described by an EyeShape (see display_internal.h).
-    //  openness: 0..1 blink (scales the height around the eye centre)
+    //  openness: 0..1 scales the height (used by the old-style drawEye callers; the rig blinks with the lid)
     //  side:     -1 left eye / +1 right eye (decides which corner is the "inner" one)
     // Lids are NOT painted over the eye: eyeSpan() shortens every row instead, so the
     // real background (sky, clouds) stays untouched.
     void drawEyeShape(TFT_eSPI &g, int16_t cx, int16_t cy, const EyeShape &s, float openness, int8_t side,
                       uint16_t cTop, uint16_t cBot, bool shine)
     {
-        int16_t w = (int16_t)(s.w + 0.5f);
-        int16_t fullH = (int16_t)(s.h + 0.5f);
-        if (w < 3 || fullH < 3) // shrunk away (cross-fade to a decoration)
+        if (s.w < 3 || s.h < 3) // shrunk away (cross-fade to a decoration)
             return;
-        cx += (int16_t)lroundf(s.x);
-        cy += (int16_t)lroundf(s.y);
-
-        int16_t h = (int16_t)(fullH * openness);
-        if (h < 3)
-            h = 3;
-        int16_t top = cy - h / 2;
-        float cyf = top + h * 0.5f;
+        float w = s.w;
+        float h = fmaxf(3.0f, s.h * openness);
+        float cxf = cx + s.x; // fractional centre
+        float cyf = cy + s.y;
+        float topf = cyf - h * 0.5f;
 
         EyeShape d = s; // the shape as it is drawn now
         d.w = w;
         d.h = h;
-        d.radius = fminf(s.radius, fminf((float)w, (float)h) * 0.5f);
+        d.radius = fminf(s.radius, fminf(w, h) * 0.5f);
         TFT_eSprite *rd = readableSprite(g);
 
         // soft glow: 4 growing layers (outer -> inner), cut by the same lids as the body
-        if (h > w / 2)
+        if (h > w * 0.5f)
         {
             static const float growPx[4] = {6, 4, 2, 1};
             static const float tintK[4] = {0.05f, 0.09f, 0.15f, 0.25f};
@@ -243,38 +250,40 @@ namespace disp
                 if (gr < 1)
                     gr = 1;
                 uint16_t col = tint(cTop, tintK[l]);
-                int16_t gi = (int16_t)ceilf(gr);
-                for (int16_t y = top - gi; y < top + h + gi; y++)
+                int16_t y0 = (int16_t)floorf(topf - gr), y1 = (int16_t)ceilf(topf + h + gr);
+                for (int16_t y = y0; y < y1; y++)
                 {
                     float xa, xb, hole;
                     if (eyeSpan(d, side, y + 0.5f - cyf, gr, xa, xb, hole))
-                        drawEyeRow(g, nullptr, cx, y, xa, xb, hole, col, 1.0f);
+                        drawEyeRow(g, nullptr, cxf, y, xa, xb, hole, col, 1.0f);
                 }
             }
         }
 
-        drawGradientEye(g, rd, cx, top, d, side, cTop, cBot);
+        drawGradientEye(g, rd, cxf, cyf, topf, d, side, cTop, cBot);
 
         float lt = clamp01(s.lidTop), lb = clamp01(s.lidBot);
         float dIn = clamp01(lt + s.slant * 0.5f), dOut = clamp01(lt - s.slant * 0.5f);
 
         // blush under the eye, fades in with the smile
         if (lb > 0.2f)
-            g.fillEllipse(cx, top + h + u(3), w / 4 + u(1), imax(2, w / 8), tint(C_CHEEK, clamp01((lb - 0.2f) * 3.3f)));
+            g.fillEllipse((int16_t)lroundf(cxf), (int16_t)lroundf(topf + h) + u(3), (int16_t)(w / 4) + u(1),
+                          imax(2, (int16_t)(w / 8)), tint(C_CHEEK, clamp01((lb - 0.2f) * 3.3f)));
 
         // glossy highlights, inside the part that is still visible; they sit 1..2 px AGAINST the gaze
         // (the eye "body" moves with the gaze, the reflection stays behind: a bit of depth)
         int16_t hx = (int16_t)lroundf(-fmaxf(-2.0f, fminf(2.0f, s.x * 0.4f)));
         int16_t hy = (int16_t)lroundf(-fmaxf(-2.0f, fminf(2.0f, s.y * 0.5f)));
-        int16_t visTop = top + (int16_t)(h * fmaxf(dIn, dOut));
-        int16_t visBot = top + h - (int16_t)(h * lb);
-        int16_t visH = visBot - visTop;
+        float visTop = topf + h * fmaxf(dIn, dOut);
+        float visBot = topf + h - h * lb;
+        float visH = visBot - visTop;
         if (shine && visH > w / 3)
         {
-            int16_t sr = imax(2, w / 6);
-            g.fillCircle(cx - w / 4 + hx, visTop + visH / 4 + sr / 2 + hy, sr, C_WHITE);
+            int16_t sr = imax(2, (int16_t)(w / 6));
+            g.fillCircle((int16_t)lroundf(cxf - w / 4) + hx, (int16_t)lroundf(visTop + visH / 4) + sr / 2 + hy, sr, C_WHITE);
             if (lb < 0.15f)
-                g.fillCircle(cx + w / 5 + hx, top + h - h / 5 + hy, imax(1, sr / 2), mixColor(C_EYE_TOP, C_WHITE, 0.6f));
+                g.fillCircle((int16_t)lroundf(cxf + w / 5) + hx, (int16_t)lroundf(topf + h - h / 5) + hy,
+                             imax(1, sr / 2), mixColor(C_EYE_TOP, C_WHITE, 0.6f));
         }
     }
 
@@ -341,10 +350,14 @@ namespace disp
     static Spring decorSp; // 0 = eyes, 1 = a decorative pet face (heart / spiral ...) fully grown
     static bool rigInit = false;
     static uint32_t rigLastMs = 0;
+    static bool rigFast = false; // anticipation: the eyes squash in ~80 ms instead of ~250 ms
+    static float gazeNorm = 0;   // -1 left .. +1 right, for the parallax
+    static float breathF = 1.0f; // height factor of the breathing
 
-    void eyesSetTargets(EyeMood left, EyeMood right, float scale, float lookPxX, float lookPxY, int16_t R)
+    void eyesSetTargets(EyeMood left, EyeMood right, float scale, float lookPxX, float lookPxY, float gazeN, int16_t R)
     {
         const EyeMood mood[2] = {left, right};
+        gazeNorm = gazeN < -1 ? -1 : (gazeN > 1 ? 1 : gazeN);
         for (uint8_t i = 0; i < 2; i++)
         {
             const EyePreset &p = PRESETS[(uint8_t)mood[i]][i];
@@ -355,8 +368,10 @@ namespace disp
             sp[P_LID_TOP].target = p.lidTop;
             sp[P_SLANT].target = p.slant;
             sp[P_LID_BOT].target = p.lidBot;
-            sp[P_X].target = lookPxX;
-            sp[P_Y].target = lookPxY;
+            // the gaze is not sprung: the saccade curve in updateLook() already is the motion
+            sp[P_X].x = sp[P_X].target = lookPxX;
+            sp[P_Y].x = sp[P_Y].target = lookPxY;
+            sp[P_X].v = sp[P_Y].v = 0;
             if (!rigInit) // first frame: start in the pose, no grow-in from zero
                 for (uint8_t k = 0; k < P_COUNT; k++)
                 {
@@ -368,6 +383,8 @@ namespace disp
     }
 
     void eyesSetDecor(bool on) { decorSp.target = on ? 1.0f : 0.0f; }
+    void eyesSetFast(bool on) { rigFast = on; }
+    void eyesSetBreath(float f) { breathF = f; }
 
     float eyesDecorPop() { return decorSp.x < 0 ? 0 : decorSp.x; }
 
@@ -381,13 +398,28 @@ namespace disp
         // (one big Euler step per 33 ms frame would damp it down to ~3 %).
         uint8_t n = (uint8_t)(dt / 0.008f) + 1;
         float h = dt / n;
+        float k = rigFast ? 1000.0f : 220.0f, c = rigFast ? 64.0f : 18.0f;
         for (uint8_t j = 0; j < n; j++)
         {
             for (uint8_t i = 0; i < 2; i++)
-                for (uint8_t k = 0; k < P_COUNT; k++)
-                    springStep(eyeSp[i][k], h);
+                for (uint8_t q = 0; q < P_COUNT; q++)
+                    springStep(eyeSp[i][q], h, k, c);
             springStep(decorSp, h);
         }
+        // the blink lid is much stiffer: sub-steps of <= 2 ms
+        uint8_t nb = (uint8_t)(dt / 0.002f) + 1;
+        float hb = dt / nb;
+        for (uint8_t j = 0; j < nb; j++)
+            springStep(blinkSp, hb, blinkOmega * blinkOmega, 2.0f * blinkOmega);
+    }
+
+    // Brings the upper lid down by k (0..1): lidTop -> 1 and the slant fades out (a closed eye is flat).
+    void eyeCloseLid(EyeShape &s, float k)
+    {
+        k = clamp01(k);
+        float lt = clamp01(s.lidTop);
+        s.lidTop = lt + k * (1.0f - lt);
+        s.slant *= (1.0f - k);
     }
 
     EyeShape eyeShapeNow(uint8_t eye)
@@ -395,13 +427,21 @@ namespace disp
         const Spring *sp = eyeSp[eye & 1];
         EyeShape s;
         s.w = fmaxf(0.0f, sp[P_W].x); // springs overshoot: keep sizes non-negative
-        s.h = fmaxf(0.0f, sp[P_H].x);
+        s.h = fmaxf(0.0f, sp[P_H].x) * breathF;
         s.radius = fmaxf(0.0f, sp[P_RADIUS].x);
         s.lidTop = clamp01(sp[P_LID_TOP].x);
         s.slant = sp[P_SLANT].x < -1 ? -1 : (sp[P_SLANT].x > 1 ? 1 : sp[P_SLANT].x);
         s.lidBot = clamp01(sp[P_LID_BOT].x);
         s.x = sp[P_X].x;
         s.y = sp[P_Y].x;
+        // parallax: looking right -> the right (far) eye 8 % narrower, the left (near) eye 4 % wider; mirrored for left
+        float g = gazeNorm, f;
+        if (g >= 0)
+            f = (eye & 1) ? 1.0f - 0.08f * g : 1.0f + 0.04f * g;
+        else
+            f = (eye & 1) ? 1.0f - 0.04f * g : 1.0f + 0.08f * g;
+        s.w *= f;
+        eyeCloseLid(s, blinkSp.x);
         return s;
     }
 
@@ -504,6 +544,12 @@ namespace disp
         return 0;
     }
 
+    // The first ANTICIPATE_MS of a surprise: the eyes squash a little before they pop (see drawFace).
+    bool exprAnticipating(uint32_t now)
+    {
+        return exprCur == Expr::SURPRISE && now - exprStartMs < ANTICIPATE_MS;
+    }
+
     // True around the two lightning flashes of drawLightningBg (same 6.5 s cycle).
 
     // twinkling stars
@@ -528,56 +574,94 @@ namespace disp
         }
     }
 
-    float updateBlink(uint32_t now)
+    // Blink: closing 70 ms (ease-in), closed 40 ms, opening 130 ms (ease-out); sleepy eyes 160 / 250 ms.
+    // Next blink after a random 2.5..7 s, 15 % of them are followed by a second one right away.
+    // The timers only flip the lid spring's target; the spring (eyesStep) makes the motion.
+    void updateBlink(uint32_t now, bool sleepy)
     {
-        float openness = 1.0f;
+        if (!blinkInit)
+        {
+            blinkInit = true;
+            blinkSp.x = BLINK_MAX; // eyes wake up: start closed
+            blinkSp.target = 0;
+        }
+        const uint16_t closeMs = sleepy ? 160 : 70, closedMs = 40, openMs = sleepy ? 250 : 130;
+        uint32_t el = now - blinkPhaseStartMs;
         switch (blinkPhase)
         {
         case BlinkPhase::OPEN:
             if (nextBlinkAtMs == 0)
-                nextBlinkAtMs = now + random(3000, 6000);
+                nextBlinkAtMs = now + random(2500, 7000);
             if (now >= nextBlinkAtMs)
             {
                 blinkPhase = BlinkPhase::CLOSING;
                 blinkPhaseStartMs = now;
+                blinkSp.target = BLINK_MAX;
+                blinkOmega = 4.9f / (closeMs / 1000.0f); // critically damped: ~95 % closed after closeMs
             }
             break;
         case BlinkPhase::CLOSING:
-        {
-            float t = (now - blinkPhaseStartMs) / (float)BLINK_TRANSITION_MS;
-            openness = 1.0f - (t < 1.0f ? t : 1.0f);
-            if (t >= 1.0f)
+            if (el >= closeMs)
             {
                 blinkPhase = BlinkPhase::CLOSED;
                 blinkPhaseStartMs = now;
             }
             break;
-        }
         case BlinkPhase::CLOSED:
-            openness = 0.05f;
-            if (now - blinkPhaseStartMs > BLINK_CLOSED_MS)
+            if (el >= closedMs)
             {
                 blinkPhase = BlinkPhase::OPENING;
                 blinkPhaseStartMs = now;
+                blinkSp.target = 0;
+                blinkOmega = 4.55f / (openMs / 1000.0f); // slower: opening feels more natural
             }
             break;
         case BlinkPhase::OPENING:
-        {
-            float t = (now - blinkPhaseStartMs) / (float)BLINK_TRANSITION_MS;
-            openness = (t < 1.0f ? t : 1.0f);
-            if (t >= 1.0f)
+            if (el >= openMs)
             {
                 blinkPhase = BlinkPhase::OPEN;
-                nextBlinkAtMs = 0;
+                if (!blinkWasDouble && random(0, 100) < 15)
+                {
+                    blinkWasDouble = true;
+                    nextBlinkAtMs = now + 110; // second blink right behind the first
+                }
+                else
+                {
+                    blinkWasDouble = false;
+                    nextBlinkAtMs = now + random(2500, 7000);
+                }
             }
             break;
         }
-        }
-        return openness;
+    }
+
+    // ---- Saccades: the gaze JUMPS to a new point (90 ms, ease-out), then holds still with a tiny tremor ----
+    static const uint16_t SACCADE_MS = 90;
+    static float sacFromX = 0, sacFromY = 0, sacToX = 0, sacToY = 0;
+    static uint32_t sacStartMs = 0;
+    static bool sacActive = false;
+    static float tgtX = 0, tgtY = 0; // where the gaze is heading
+    static bool pend = false;        // a big idle look waits for the next blink
+    static float pendX = 0, pendY = 0;
+    static uint32_t pendSince = 0;
+    static uint32_t nextTremorAtMs = 0;
+
+    static void startSaccade(uint32_t now, float tx, float ty)
+    {
+        sacFromX = lookX;
+        sacFromY = lookY;
+        sacToX = tgtX = tx;
+        sacToY = tgtY = ty;
+        sacStartMs = now;
+        sacActive = true;
+        pend = false;
+        lookTremX = lookTremY = 0;
+        nextTremorAtMs = now + SACCADE_MS + random(300, 900);
     }
 
     void updateLook(uint32_t now, bool alarm, bool sleepy, Reaction reaction)
     {
+        bool idlePick = false; // a random idle look was chosen this frame
         if (sleepy)
         {
             lookTX = 0;
@@ -606,6 +690,7 @@ namespace disp
         else if (now >= nextLookAtMs)
         {
             nextLookAtMs = now + random(1400, 4200);
+            idlePick = true;
             long r = random(0, 10);
             lookTX = 0;
             lookTY = 0;
@@ -626,9 +711,44 @@ namespace disp
             else if (r == 8)
                 lookTY = -1;
         }
-        // no smoothing here any more: the x/y springs of the eyes do it (and add a little overshoot)
-        lookX = lookTX;
-        lookY = lookTY;
+
+        // new target? idle looks that are big wait for a blink (people move their eyes while the lids are down);
+        // everything else (alarm, page glance, worry ...) reacts at once
+        float refX = pend ? pendX : tgtX, refY = pend ? pendY : tgtY;
+        if (lookTX != refX || lookTY != refY)
+        {
+            bool big = fabsf(lookTX - refX) + fabsf(lookTY - refY) > 0.5f;
+            if (idlePick && big)
+            {
+                pend = true;
+                pendX = lookTX;
+                pendY = lookTY;
+                pendSince = now;
+            }
+            else
+                startSaccade(now, lookTX, lookTY);
+        }
+        if (pend && (blinkPhase == BlinkPhase::CLOSING || blinkPhase == BlinkPhase::CLOSED || now - pendSince > 1200))
+            startSaccade(now, pendX, pendY); // mid-blink (or the blink took too long)
+
+        if (sacActive)
+        {
+            float t = (now - sacStartMs) / (float)SACCADE_MS;
+            if (t >= 1.0f)
+            {
+                t = 1.0f;
+                sacActive = false;
+            }
+            float e = 1.0f - (1.0f - t) * (1.0f - t) * (1.0f - t); // ease-out
+            lookX = sacFromX + (sacToX - sacFromX) * e;
+            lookY = sacFromY + (sacToY - sacFromY) * e;
+        }
+        else if (now >= nextTremorAtMs) // holding still: a +-0.4 px twitch every 300..900 ms
+        {
+            lookTremX = random(-4, 5) * 0.1f;
+            lookTremY = random(-4, 5) * 0.1f;
+            nextTremorAtMs = now + random(300, 900);
+        }
     }
 
     void drawDrop(TFT_eSPI &g, int16_t x, int16_t y, int16_t r, uint16_t c)

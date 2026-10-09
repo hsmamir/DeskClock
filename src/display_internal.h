@@ -202,6 +202,7 @@ namespace disp
     };
     extern Expr exprCur;
     extern float lookX, lookY;
+    extern float lookTremX, lookTremY; // px, micro-tremor while the gaze holds still
     extern uint32_t glanceUntilMs;
     extern uint32_t blinkPhaseStartMs;
     extern PetEvent petEv;
@@ -223,7 +224,13 @@ namespace disp
                       uint16_t cTop, uint16_t cBot, bool shine);
     EyeMood pickEyeMood(bool sleepy, Reaction reaction, Expr ex);
     // Preset -> spring targets. scale multiplies w/h/radius (1.25 = flinch, 0 = eyes shrink away for a decoration).
-    void eyesSetTargets(EyeMood left, EyeMood right, float scale, float lookPxX, float lookPxY, int16_t R);
+    // gazeN = -1..1 gaze direction (for the parallax); lookPx = gaze offset in px (not sprung).
+    void eyesSetTargets(EyeMood left, EyeMood right, float scale, float lookPxX, float lookPxY, float gazeN, int16_t R);
+    void eyesSetFast(bool on);              // anticipation: much stiffer springs for a moment
+    void eyesSetBreath(float f);            // eye height factor (breathing), ~0.98..1.02
+    void eyeCloseLid(EyeShape &s, float k); // bring the upper lid down by k (0..1)
+    bool exprAnticipating(uint32_t now);
+    constexpr uint16_t ANTICIPATE_MS = 80;
     void eyesSetDecor(bool on);        // a decorative pet face (heart, spiral ...) wants to take over from the eyes
     float eyesDecorPop();              // 0..1 (slightly more while overshooting): how far that decoration has grown
     void eyesStep(uint32_t now);       // advance all springs by the real frame time (max 0.05 s)
@@ -231,11 +238,11 @@ namespace disp
     Reaction pickReaction(const SceneInfo &scn, bool offline, bool sleepy);
     float updateExpression(uint32_t now, bool can, bool sleepy);
     void drawStars(TFT_eSPI &g, uint32_t now);
-    float updateBlink(uint32_t now);
+    void updateBlink(uint32_t now, bool sleepy);
     void updateLook(uint32_t now, bool alarm, bool sleepy, Reaction reaction);
     void drawDrop(TFT_eSPI &g, int16_t x, int16_t y, int16_t r, uint16_t c);
     void drawSleepZ(TFT_eSPI &g, uint32_t now, int16_t cy, int16_t R);
-    void drawFace(TFT_eSPI &g, uint32_t now, bool alarm, bool happy, bool purr, bool sleepy, float blinkOpen,
+    void drawFace(TFT_eSPI &g, uint32_t now, bool alarm, bool happy, bool purr, bool sleepy,
                   const SceneInfo &scn, Reaction reaction, float exprP);
 
     // ---- Time-of-day theme ----

@@ -38,6 +38,14 @@ namespace disp
         drawHeart(g, cx, cyc - imax(1, s / 2), s, c);
     }
 
+    // Overshooting ease-out (t 0..1): reaches 1 with a ~10 % overshoot on the way.
+    static float easeOutBack(float t)
+    {
+        const float c1 = 1.70158f, c3 = c1 + 1.0f;
+        float q = t - 1.0f;
+        return 1.0f + c3 * q * q * q + c1 * q * q;
+    }
+
     // Closed, contented eye "‿" (sleepy pet, purring): a thin arch curving downwards + blush.
     static void drawContentEye(TFT_eSPI &g, int16_t cx, int16_t cy, int16_t R)
     {
@@ -243,13 +251,24 @@ namespace disp
         case PetKind::RARE_SURPRISE:
             if (age < 800)
             {
-                float s = 1.0f + 0.3f * clamp01(age / 200.0f);
+                float s, lid = 0;
+                if (age < ANTICIPATE_MS) // anticipation: the eyes squint a little first ...
+                {
+                    float p = age / (float)ANTICIPATE_MS;
+                    s = 1.0f - 0.15f * p;
+                    lid = 0.15f * p;
+                }
+                else // ... then pop wide open with an overshoot
+                    s = 0.85f + 0.45f * easeOutBack(clamp01((age - ANTICIPATE_MS) / 220.0f));
                 int16_t ew = (int16_t)(eyeW * s), eh = (int16_t)(eyeH * s);
-                drawEye(g, lcx, cy, ew, eh, 1.0f, 0, BROW_NONE, -1, C_EYE_TOP, C_EYE_BOT, true);
-                drawEye(g, rcx, cy, ew, eh, 1.0f, 0, BROW_NONE, 1, C_EYE_TOP, C_EYE_BOT, true);
-                g.setTextDatum(MC_DATUM);
-                g.setTextColor(C_AMBER);
-                g.drawString("!", W / 2, cy - u(2), 4);
+                drawEye(g, lcx, cy, ew, eh, 1.0f, lid, BROW_NONE, -1, C_EYE_TOP, C_EYE_BOT, true);
+                drawEye(g, rcx, cy, ew, eh, 1.0f, lid, BROW_NONE, 1, C_EYE_TOP, C_EYE_BOT, true);
+                if (age >= ANTICIPATE_MS)
+                {
+                    g.setTextDatum(MC_DATUM);
+                    g.setTextColor(C_AMBER);
+                    g.drawString("!", W / 2, cy - u(2), 4);
+                }
             }
             else // a big heart pops up between the happy eyes
             {
@@ -296,14 +315,20 @@ namespace disp
         }
     }
 
-    // Both eyes from the spring rig (blink = openness, dx = shiver offset).
-    static void drawRigEyes(TFT_eSPI &g, int16_t lcx, int16_t rcx, int16_t cy, float open, int16_t dx)
+    // Both eyes from the spring rig. squeeze 0..1 = extra lid closing (yawn), dx = shiver offset.
+    static void drawRigEyes(TFT_eSPI &g, int16_t lcx, int16_t rcx, int16_t cy, float squeeze, int16_t dx)
     {
-        drawEyeShape(g, lcx + dx, cy, eyeShapeNow(0), open, -1, C_EYE_TOP, C_EYE_BOT, true);
-        drawEyeShape(g, rcx + dx, cy, eyeShapeNow(1), open, 1, C_EYE_TOP, C_EYE_BOT, true);
+        EyeShape sl = eyeShapeNow(0), sr = eyeShapeNow(1);
+        if (squeeze > 0)
+        {
+            eyeCloseLid(sl, squeeze);
+            eyeCloseLid(sr, squeeze);
+        }
+        drawEyeShape(g, lcx + dx, cy, sl, 1.0f, -1, C_EYE_TOP, C_EYE_BOT, true);
+        drawEyeShape(g, rcx + dx, cy, sr, 1.0f, 1, C_EYE_TOP, C_EYE_BOT, true);
     }
 
-    void drawFace(TFT_eSPI &g, uint32_t now, bool alarm, bool happy, bool purr, bool sleepy, float blinkOpen,
+    void drawFace(TFT_eSPI &g, uint32_t now, bool alarm, bool happy, bool purr, bool sleepy,
                   const SceneInfo &scn, Reaction reaction, float exprP)
     {
         g.fillRect(0, 0, W, faceH, C_BG);
@@ -318,23 +343,38 @@ namespace disp
         int16_t R = W / 8; // same base size as before
         int16_t eyeW = R * 2;
         int16_t eyeH = (int16_t)(R * 2.25f);
-        int16_t cy = (int16_t)(faceH * 0.55f) + (int16_t)(sinf(now / 850.0f) * u(1.5f)); // gentle "breathing"
+        int16_t cy = (int16_t)(faceH * 0.55f); // breathing is the eye height now (eyesSetBreath), not the position
         int16_t lcx = W / 2 - R * 2;
         int16_t rcx = W / 2 + R * 2;
 
         // ---- Eye pose: situation -> presets -> spring targets. The springs run every frame, also
         // while the alarm / a pet reaction is drawn, so the eyes never jump when they come back. ----
-        bool decor = !alarm && happy && (purr || !petEyesFirst(petEv.kind)); // heart / spiral / arches take over
         Expr ex = exprCur;
+        // anticipation: before a big reaction (hearts, surprise) the eyes squash for ANTICIPATE_MS, then burst
+        bool antic = false;
+        if (!alarm && happy && !purr && petEv.kind == PetKind::HEART_EYES && now - happyStartMs < ANTICIPATE_MS)
+            antic = true;
+        if (!alarm && !happy && exprAnticipating(now))
+            antic = true;
+        bool decor = !alarm && !antic && happy && (purr || !petEyesFirst(petEv.kind)); // heart / spiral / arches take over
         EyeMood mood = pickEyeMood(sleepy, reaction, ex);
         EyeMood moodR = (ex == Expr::WINK) ? EyeMood::HAPPY : mood; // a wink is just one eye's preset
         float scale = 1.0f;
         if (reaction == Reaction::STORM && lightningActive(now))
             scale = 1.25f; // flinch at every flash
+        if (antic)
+        {
+            mood = moodR = EyeMood::COLD; // lid 0.15
+            scale = 0.85f;
+        }
         if (decor)
             scale = 0.0f; // eyes shrink away while the decoration grows
+        // breathing: +-2 % eye height, 4 s period (6 s at night)
+        uint32_t period = sleepy ? 6000 : 4000;
+        eyesSetBreath(1.0f + 0.02f * sinf(6.2831853f * (float)(now % period) / (float)period));
+        eyesSetFast(antic);
         eyesSetDecor(decor);
-        eyesSetTargets(mood, moodR, scale, lookX * u(5), lookY * u(4), R);
+        eyesSetTargets(mood, moodR, scale, lookX * u(5) + lookTremX, lookY * u(4) + lookTremY, lookX, R);
         eyesStep(now);
 
         if (alarm)
@@ -356,29 +396,34 @@ namespace disp
 
         if (happy)
         {
+            if (antic) // the squash before the hearts burst out
+            {
+                drawRigEyes(g, lcx, rcx, cy, 0, 0);
+                return;
+            }
             // Cross-fade: the (shrinking) eyes stay underneath until they are gone, the glyphs grow on top.
             if (decor)
-                drawRigEyes(g, lcx, rcx, cy, 1.0f, 0);
+                drawRigEyes(g, lcx, rcx, cy, 0, 0);
             drawPetFace(g, now, purr, sleepy, cy, lcx, rcx, R, eyeW, eyeH, decor ? eyesDecorPop() : 1.0f);
             return;
         }
 
-        // normal / sleepy eyes
-        float open = blinkOpen; // sleepy eyes still blink, slowly
+        // normal / sleepy eyes (the blink is the lid spring inside the rig)
         int16_t shiver = 0;
         if (reaction == Reaction::COLD)
             shiver = (((now / 40) & 1) ? 1 : -1) * u(1);
 
         // one-off idle expressions
+        float squeeze = 0;
         if (ex == Expr::YAWN)
         {
             float edge = (exprP < 1.0f - exprP ? exprP : 1.0f - exprP) / 0.15f; // ease in/out
             if (edge > 1.0f)
                 edge = 1.0f;
-            open *= 1.0f - 0.92f * edge; // eyes squeeze shut mid-yawn
+            squeeze = 0.92f * edge; // eyes squeeze shut mid-yawn
         }
 
-        drawRigEyes(g, lcx, rcx, cy, open, shiver);
+        drawRigEyes(g, lcx, rcx, cy, squeeze, shiver);
 
         // extras
         uint16_t dropCol = rgb(120, 200, 255);
@@ -402,7 +447,7 @@ namespace disp
                 drawDrop(g, tx, ty, imax(2, u(2.5f)), tint(dropCol, (255 - q * 150) / 255.0f));
             }
         }
-        if (ex == Expr::SURPRISE)
+        if (ex == Expr::SURPRISE && !antic)
         {
             g.setTextDatum(MC_DATUM);
             g.setTextColor(C_AMBER);

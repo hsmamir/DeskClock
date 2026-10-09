@@ -198,7 +198,7 @@ void display_tick()
     Reaction reaction = alarm ? Reaction::NONE : pickReaction(scn, offline, sleepy);
 
     updateLook(now, alarm, sleepy, reaction);
-    float blinkOpen = updateBlink(now);
+    updateBlink(now, sleepy);
     float exprP = updateExpression(now, !alarm && !happy && reaction != Reaction::WORRIED, sleepy);
 
     // Diagnostics page: full screen, replaces face + info panel. An alarm
@@ -217,7 +217,7 @@ void display_tick()
     diagShown = false;
 
     TFT_eSPI &g = faceCv.begin();
-    drawFace(g, now, alarm, happy, purr, sleepy, blinkOpen, scn, reaction, exprP);
+    drawFace(g, now, alarm, happy, purr, sleepy, scn, reaction, exprP);
     drawStatusIcons(g, now);
     drawHoldRing(g);
     faceCv.end();
