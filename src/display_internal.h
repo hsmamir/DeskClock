@@ -25,11 +25,14 @@ namespace disp
     }
 
     // The five colours below follow the time of day (display_theme.cpp updates them).
-    extern uint16_t C_BG;      // background
-    extern uint16_t C_ACCENT;  // clock digits, accent lines, bars
-    extern uint16_t C_EYE_TOP; // eye gradient, top
-    extern uint16_t C_EYE_BOT; // eye gradient, bottom
-    extern uint16_t C_GHOST;   // unlit 7-seg segments, empty bars
+    extern uint16_t C_BG;           // background
+    extern uint16_t C_ACCENT;       // clock digits, accent lines, bars
+    extern uint16_t C_EYE_TOP;      // eye gradient, top    (what is drawn: the time-of-day colour mixed with the feeling)
+    extern uint16_t C_EYE_BOT;      // eye gradient, bottom
+    extern uint16_t C_EYE_TOP_BASE; // the time-of-day eye colours alone (display_theme.cpp),
+    extern uint16_t C_EYE_BOT_BASE; // emoUpdate() mixes them with the emotion into C_EYE_TOP/BOT
+    extern uint16_t C_FRAME;        // darker frame around / between the two cards (display_core.cpp)
+    extern uint16_t C_GHOST;        // unlit 7-seg segments, empty bars
     constexpr uint16_t C_WHITE = 0xFFFF;
     constexpr uint16_t C_ALARM_TOP = rgb(255, 130, 100);
     constexpr uint16_t C_ALARM_BOT = rgb(210, 15, 25);
@@ -41,9 +44,12 @@ namespace disp
     constexpr uint16_t C_ICE = rgb(170, 200, 255);
 
     // ---- Core objects / layout (defined in display_core.cpp) ----
+    // W = width of a CARD (all face / info drawing uses it), SW = width of the screen, H = height of the
+    // screen. faceH / infoH = card heights; faceY / infoY = screen y of the cards' top edges.
     extern TFT_eSPI tft;
-    extern int16_t W, H, faceH, infoH;
-    extern float sc; // scale relative to the 128 px wide real display
+    extern int16_t W, SW, H, faceH, infoH;
+    extern int16_t cardX, cardGap, cardR, faceY, infoY;
+    extern float sc; // scale relative to the 128 px wide real display (from SW, not W)
 
     inline int16_t u(float v) { return (int16_t)(v * sc + 0.5f); }
     inline int16_t imax(int16_t a, int16_t b) { return a > b ? a : b; }
@@ -86,10 +92,11 @@ namespace disp
     {
         TFT_eSprite spr;
         bool ok = false;
-        int16_t y0 = 0, w = 0, h = 0;
+        int16_t x0 = 0, y0 = 0, w = 0, h = 0; // screen position / size of the card
         Canvas() : spr(&tft) {}
-        bool init(int16_t y, int16_t width, int16_t height)
+        bool init(int16_t x, int16_t y, int16_t width, int16_t height)
         {
+            x0 = x;
             y0 = y;
             w = width;
             h = height;
@@ -101,24 +108,23 @@ namespace disp
         {
             if (ok)
                 return spr;
-            tft.setViewport(0, y0, w, h, true);
+            tft.setViewport(x0, y0, w, h, true);
             return tft;
         }
         void end() { endAt(0); }
-        // Push with a horizontal offset (page slide-in). The sprite is clipped at
-        // the right screen edge; the part left of x keeps the old picture. The
-        // viewport fallback cannot offset, so it just draws in place.
-        void endAt(int16_t x)
-        {
-            if (ok)
-                spr.pushSprite(x, y0);
-            else
-                tft.resetViewport();
-        }
+        // Push with a horizontal offset dx (page slide-in): the sprite is clipped to the card, the part left
+        // of dx keeps the old picture. The viewport fallback cannot offset, so it just draws in place.
+        // Afterwards the card corners are cut with the frame colour (see display_core.cpp).
+        void endAt(int16_t dx);
     };
     extern Canvas faceCv, infoCv;
     extern TFT_eSprite digSpr; // clock-digit animation sprite (display_digits.cpp)
     extern bool alarmFlashOn;
+
+    // ---- Cards / frame (display_core.cpp) ----
+    void cardsInit();       // computes the layout from the screen size, the corner table, C_FRAME
+    void frameUpdate();     // keeps the frame colour in step with the theme; repaints it when needed
+    extern bool frameDirty; // a full-screen page (OTA, portal) overwrote the frame: repaint it
 
     // ---- State readers (display_core.cpp) ----
     struct WeatherDetail
@@ -284,6 +290,24 @@ namespace disp
     void drawSleepZ(TFT_eSPI &g, uint32_t now, int16_t cy, int16_t R);
     void drawFace(TFT_eSPI &g, uint32_t now, bool alarm, bool happy, bool purr, bool sleepy,
                   const SceneInfo &scn, Reaction reaction, float exprP);
+
+    // ---- Emotional eye colour (display_emotion.cpp) ----
+    enum class Emo : uint8_t
+    {
+        NONE,
+        LOVE,   // pink #FF5C93
+        ANGER,  // toward red
+        SLEEPY, // washed-out and dark
+        COLD    // icy blue
+    };
+    Emo emoPick(bool alarm, bool happy, bool purr, bool sleepy, Reaction reaction);
+    // Every frame: moves the emoTint spring toward `want` and writes C_EYE_TOP/BOT (= base colours mixed with the feeling).
+    void emoUpdate(uint32_t now, Emo want);
+
+    // ---- Ambient FX (display_ambient.cpp) ----
+    void ambientUpdate(const SceneInfo &scn, uint32_t now); // every frame: spots the sunrise
+    float ambientSunriseFlash(uint32_t now);                // 0..1 strength of the warm flash (0 = none running)
+    void drawNightMotes(TFT_eSPI &g, uint32_t now);         // a few faint specks rising slowly
 
     // ---- Time-of-day theme ----
     extern uint32_t themeStamp;

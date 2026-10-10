@@ -114,6 +114,17 @@ static_assert(WEATHER_BARS >= 2 && WEATHER_BARS <= 8, "WEATHER_BARS must be 2-8"
                             // Not used yet - assign a file number here when you add it:
                             // #define SOUND_INDEX_CLICK 1  // mode-switch click
 
+// ---- Extra sound clips (0 = not on the module yet, stays silent) ----
+// Upload the clips after the 5 above (so the alarm tone list is not shifted) and put their numbers here.
+//   PET_B / PET_C: two more versions of the touch chirp, so it does not repeat (0 = only SOUND_INDEX_PET)
+//   YAWN: every yawn          CHIME: the "ding" at the top of the hour          BOOT: short sound after waking up
+// All of them go through audio_play_gentle(): at night they follow AUDIO_NIGHT_PET_VOLUME (silent by default).
+#define SOUND_INDEX_PET_B 0
+#define SOUND_INDEX_PET_C 0
+#define SOUND_INDEX_YAWN 0
+#define SOUND_INDEX_CHIME 0
+#define SOUND_INDEX_BOOT 0
+
 // ---- Alarm ----
 // Default alarm time (changeable from the settings page), local time of the
 // configured timezone.
@@ -206,6 +217,70 @@ static_assert(WEATHER_BARS >= 2 && WEATHER_BARS <= 8, "WEATHER_BARS must be 2-8"
 // diagnostics page switches instantly). 0 = instant swap.
 #define TRANSITION_ENABLED 1
 #define TRANSITION_MS 220
+
+// ---- Cards ----
+// The face and the info panel are two rounded cards on a darker frame instead of one hard
+// 55/45 split. Sizes are in px on the 128 px wide display and scale with the screen like
+// everything else (u()).
+//   CARD_MARGIN       frame around the cards (left / right / top / bottom)
+//   CARD_GAP          frame between the two cards
+//   CARD_RADIUS       corner radius (the corners are cut with a small mask after each push)
+//   CARD_FACE_FRAC    share of the height left after margins and gap that goes to the face card
+//   CARD_FRAME_DARKEN frame colour = the card background darkened by this much (1 = black)
+#define CARD_MARGIN 4
+#define CARD_GAP 3
+#define CARD_RADIUS 8
+#define CARD_FACE_FRAC 0.55f
+#define CARD_FRAME_DARKEN 0.78f
+
+// ---- Emotional eye colour ----
+// The eyes' time-of-day colour is mixed with the colour of the current feeling through a
+// spring (emoTint): love = pink #FF5C93, anger = red, sleepy = washed-out and dark,
+// cold = icy blue. 0 = eyes follow only the time of day, as before.
+#define EMO_TINT_ENABLED 1
+
+// ---- Ambient FX (kept sparse on purpose, more would look busy) ----
+// AMBIENT_MOTES: tiny specks that slowly rise through the face card at night (3-5).
+//   AMBIENT_MOTE_TINT is how far a speck is pulled toward the accent colour (0.15 = faint).
+// AMBIENT_SUNRISE_FLASH: when the sun comes up (night -> day, seen live), the horizon glow
+//   flashes warm for AMBIENT_SUNRISE_FLASH_MS; PEAK is the strongest mix (0..1).
+// 0 = no ambient FX at all.
+#define AMBIENT_FX 1
+#define AMBIENT_MOTES 4
+#define AMBIENT_MOTE_TINT 0.15f
+#define AMBIENT_SUNRISE_FLASH_MS 2400
+#define AMBIENT_SUNRISE_PEAK 0.55f
+static_assert(AMBIENT_MOTES >= 3 && AMBIENT_MOTES <= 5, "AMBIENT_MOTES must be 3-5");
+
+// ---- Behaviours (display_persona.cpp) ----
+// BOOT: ~1.9 s wake-up (black, a thin line grows, the lids open, left / right / centre, blink).
+// SLEEP: when night falls the lids sink over SLEEP_RAMP_MS, two yawns, then closed eyes + Zs; every
+//   SLEEP_DREAM_MIN_S..MAX_S a lid twitch or a small dream bubble. A touch wakes him: eyes open,
+//   SLEEP_FROWN_MS of frown, then the smile; he stays up SLEEP_STAY_AWAKE_S before dozing off again.
+// CHIME: at the top of the hour the eyes look at the digits (CHIME_LOOK_Y: +1 = down, where the clock card is),
+//   widen once, and the digits flash. Silent at night.
+// PRE_ALARM: the last PRE_ALARM_S seconds before the alarm: quick glances at the bell, a slight shiver.
+// SULK: after the "that's enough!" face he turns away for SULK_MS; the first touch afterwards gets a small apology.
+// MICRO: peek-a-boo, bored eye roll, squint in bright light - one every MICRO_MIN_S..MICRO_MAX_S while idle.
+// SKY_LOOK_PERCENT: share of random idle looks that go to the sun / moon.
+#define SLEEP_RAMP_MS 20000
+#define SLEEP_FROWN_MS 800
+#define SLEEP_STAY_AWAKE_S 180
+#define SLEEP_DREAM_MIN_S 40
+#define SLEEP_DREAM_MAX_S 90
+#define CHIME_LOOK_Y 1.0f
+#define PRE_ALARM_S 60
+#define SULK_MS 120000UL
+#define MICRO_MIN_S 60
+#define MICRO_MAX_S 150
+#define SKY_LOOK_PERCENT 10
+
+// ---- Servo motion ----
+// Visible movements are eased in SERVO_STEP_MS steps instead of jumping, and start SERVO_FOLLOW_DELAY_MS after
+// the eyes reacted (the head follows the eyes). SERVO_TILT_DEG: head tilt for the raised-eyebrow / sorry faces.
+#define SERVO_STEP_MS 20
+#define SERVO_FOLLOW_DELAY_MS 120
+#define SERVO_TILT_DEG 10
 
 // ---- Clock digit effects ----
 // DIGIT_ANIM: when a clock digit changes, the old one slides up and fades out while

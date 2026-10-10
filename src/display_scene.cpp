@@ -287,7 +287,7 @@ namespace disp
     // Drawn in horizontal bands; the band colours are cached and only recomputed when the themed
     // colours / glow change (about once a second at most), so a frame costs the same as the
     // flat fill it replaces.
-    static void drawSkyGradient(TFT_eSPI &g, float glow)
+    static void drawSkyGradient(TFT_eSPI &g, float glow, float flash)
     {
         const int MAXB = 64;
         static uint16_t col[MAXB];
@@ -323,8 +323,15 @@ namespace disp
         {
             int16_t y = (int16_t)(i * band);
             int16_t h = imin(band, (int16_t)(faceH - y));
-            if (h > 0)
-                g.fillRect(0, y, W, h, col[i]);
+            if (h <= 0)
+                continue;
+            uint16_t c = col[i];
+            if (flash > 0.01f) // sunrise: warm flash, strongest at the horizon (bottom)
+            {
+                float t = ((i + 0.5f) * band) / (float)faceH;
+                c = mixColor(c, rgb(255, 196, 120), flash * AMBIENT_SUNRISE_PEAK * (0.15f + 0.85f * t * t));
+            }
+            g.fillRect(0, y, W, h, c);
         }
     }
 
@@ -344,8 +351,9 @@ namespace disp
         uint16_t darkCloud = tint(rgb(120, 130, 170), 0.59f);
 
         // sky gradient first (everything else is drawn over it); clouds / rain / fog hide the horizon glow
+        float skyVis = clearish ? 1.0f : (fog ? 0.6f : 0.35f);
         if (SCENE_SKY_GRADIENT)
-            drawSkyGradient(g, themeGlow * SCENE_SKY_GLOW_SCALE * (clearish ? 1.0f : (fog ? 0.6f : 0.35f)));
+            drawSkyGradient(g, themeGlow * SCENE_SKY_GLOW_SCALE * skyVis, ambientSunriseFlash(now) * skyVis);
 
         if (storm)
             drawLightningBg(g, now);
@@ -353,6 +361,8 @@ namespace disp
         // sky: stars at night when it's clear enough to see them (also: no time yet = boot look)
         if (!scn.day && clearish)
             drawStars(g, now);
+        if (!scn.day && scn.timeKnown && clearish)
+            drawNightMotes(g, now); // a few faint specks drifting up
 
         // sun / moon, only once the time is known. With SCENE_SUN_ARC they travel along an arc
         // (left = rise, top = middle of the day / night, right = set); near the horizon the sun is

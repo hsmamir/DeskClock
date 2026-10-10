@@ -147,8 +147,9 @@ namespace disp
         C_ACCENT = accent;
         if (THEME_EYES)
         {
-            C_EYE_TOP = rgb(c.eyeTop[0], c.eyeTop[1], c.eyeTop[2]);
-            C_EYE_BOT = rgb(c.eyeBot[0], c.eyeBot[1], c.eyeBot[2]);
+            // base colours only: emoUpdate() mixes in the feeling every frame and writes C_EYE_TOP/BOT
+            C_EYE_TOP_BASE = rgb(c.eyeTop[0], c.eyeTop[1], c.eyeTop[2]);
+            C_EYE_BOT_BASE = rgb(c.eyeBot[0], c.eyeBot[1], c.eyeBot[2]);
         }
     }
 

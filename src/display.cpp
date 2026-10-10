@@ -64,16 +64,12 @@ void display_init()
 
     tft.init();
     tft.setRotation(0);
-    tft.fillScreen(C_BG);
 
-    W = tft.width();
-    H = tft.height();
-    sc = W / 128.0f;
-    faceH = (int16_t)(H * 0.55f);
-    infoH = H - faceH;
+    // two rounded cards (face on top, info panel below) on a darker frame: sizes, corner table, frame fill
+    cardsInit();
 
-    bool f = faceCv.init(0, W, faceH);
-    bool i = infoCv.init(faceH, W, infoH);
+    bool f = faceCv.init(cardX, faceY, W, faceH);
+    bool i = infoCv.init(cardX, infoY, W, infoH);
 
     // small sprite for the clock-digit slide animation (needs the info panel to be a sprite too)
     if (CLOCK_DIGIT_ANIM && i)
@@ -110,6 +106,7 @@ void display_tick()
     {
         // update failed (on success the clock reboots): back to normal
         tft.fillScreen(C_BG);
+        frameDirty = true;
         otaScreenShown = false;
         otaDrawnPct = -1;
         lastInfoSig = 0xFFFFFFFFu;
@@ -129,6 +126,7 @@ void display_tick()
     if (portalScreenShown)
     {
         tft.fillScreen(C_BG);
+        frameDirty = true;
         portalScreenShown = false;
         lastInfoSig = 0xFFFFFFFFu;
     }
@@ -136,6 +134,7 @@ void display_tick()
     struct tm ti;
     bool haveTime = timeSynced && getLocalTime(&ti, 0);
     themeUpdate(haveTime, ti, now); // background / accent follow the time of day
+    frameUpdate();                  // the frame around the cards follows the card background
 
     bool alarm = (mood == Mood::ALARM_ALERT);
     bool night = haveTime && sun_is_night(ti);
@@ -194,8 +193,10 @@ void display_tick()
             scn.windDirDeg = wd.windDirDeg;
         }
     }
+    ambientUpdate(scn, now); // spots the sunrise for the warm flash
     bool offline = wifiDownSinceMs != 0 && (now - wifiDownSinceMs) >= REACT_OFFLINE_DELAY_MS;
     Reaction reaction = alarm ? Reaction::NONE : pickReaction(scn, offline, sleepy);
+    emoUpdate(now, emoPick(alarm, happy, purr, sleepy, reaction)); // eye colour follows the feeling
 
     updateLook(now, alarm, sleepy, reaction);
     updateBlink(now, sleepy);
