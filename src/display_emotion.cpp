@@ -79,6 +79,7 @@ namespace disp
                 return Emo::COLD;
             case PetKind::DIZZY:
             case PetKind::RAISED_BROW:
+            case PetKind::SORRY:
                 break; // no feeling colour for these, fall through to the situation below
             default:
                 return Emo::LOVE; // happy, hearts, missed you, morning, wink, surprise, hot

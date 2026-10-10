@@ -3,6 +3,7 @@
 #include "pins.h"
 #include "config.h"
 #include "state.h"
+#include "pet.h"
 
 static Servo servo;
 
@@ -15,7 +16,9 @@ enum class ServoAnim
     PET_WIGGLE_OUT,
     PET_WIGGLE_BACK,
     PET_PURR, // gentle tremble around the rest angle while the Pet button is held
-    ALARM_SWEEP
+    ALARM_SWEEP,
+    PET_WAIT, // the head follows the eyes: wait SERVO_FOLLOW_DELAY_MS before moving
+    PET_HOLD  // holding the tilt / stretch
 };
 static ServoAnim animState = ServoAnim::REST;
 static uint32_t animStepStartMs = 0;
@@ -25,6 +28,24 @@ static const uint16_t WIGGLE_LEG_MS = 180; // time for each half of the pet wigg
 static const uint16_t SWEEP_LEG_MS = 220;  // time for each half of the alarm sweep
 static const uint16_t PURR_LEG_MS = 70;    // one tremble step while purring
 static bool purrUp = false;
+
+// ---- Eased movement ----
+// Visible movements are not one jump: every SERVO_STEP_MS the angle moves along a smoothstep curve from
+// where it is to the target, taking `durMs` in total.
+static float curAngle = SERVO_REST_ANGLE;
+static float moveFrom = SERVO_REST_ANGLE;
+static int moveTo = SERVO_REST_ANGLE;
+static uint32_t moveStartMs = 0, moveLastStepMs = 0;
+static uint16_t moveDurMs = 0;
+static bool moveActive = false;
+
+// What the current pet reaction does with the head (chosen when it starts).
+struct PetMotion
+{
+    int outAngle;
+    uint16_t outMs, holdMs, backMs;
+};
+static PetMotion petMotion = {SERVO_PET_ANGLE, WIGGLE_LEG_MS, 0, WIGGLE_LEG_MS};
 
 // The servo is only powered (attached) while it moves. After a movement it
 // gets SERVO_SETTLE_MS to arrive, then it is detached: no holding current,
@@ -65,7 +86,38 @@ static void servoMove(int angle)
         servo.attach(SERVO_PIN, 500, 2400);
     }
     servo.write(angle);
+    curAngle = angle;
     releasePending = false;
+}
+
+static void moveStart(int to, uint16_t durMs, uint32_t now)
+{
+    moveFrom = curAngle;
+    moveTo = to;
+    moveStartMs = now;
+    moveLastStepMs = 0;
+    moveDurMs = durMs ? durMs : 1;
+    moveActive = true;
+}
+
+// Call every tick; writes a new angle at most every SERVO_STEP_MS. Returns true while still moving.
+static bool moveStep(uint32_t now)
+{
+    if (!moveActive)
+        return false;
+    if (moveLastStepMs != 0 && (now - moveLastStepMs) < SERVO_STEP_MS)
+        return true;
+    moveLastStepMs = now ? now : 1;
+    float t = (float)(now - moveStartMs) / (float)moveDurMs;
+    if (t >= 1.0f)
+    {
+        servoMove(moveTo);
+        moveActive = false;
+        return false;
+    }
+    float e = t * t * (3.0f - 2.0f * t);
+    servoMove((int)lroundf(moveFrom + (moveTo - moveFrom) * e));
+    return true;
 }
 
 // Call right after the last move of a sequence: detach after the settle time.
@@ -102,27 +154,60 @@ void servo_tick()
     {
         if (animState == ServoAnim::REST || animState == ServoAnim::PET_PURR)
         {
+            // pick the head movement for this reaction; it starts a moment AFTER the eyes reacted
+            switch (pet_get_event().kind)
+            {
+            case PetKind::RAISED_BROW:
+            case PetKind::SORRY: // a slight tilt of the head, held while the face does its thing
+                petMotion = {SERVO_REST_ANGLE + SERVO_TILT_DEG, 260, 900, 320};
+                break;
+            case PetKind::MORNING: // stretch: slowly up, hold, slowly back
+                petMotion = {SERVO_PET_ANGLE, 700, 300, 700};
+                break;
+            default: // the classic wiggle
+                petMotion = {SERVO_PET_ANGLE, WIGGLE_LEG_MS, 0, WIGGLE_LEG_MS};
+                break;
+            }
+            animState = ServoAnim::PET_WAIT;
+            animStepStartMs = now;
+        }
+        else if (animState == ServoAnim::PET_WAIT && (now - animStepStartMs) >= SERVO_FOLLOW_DELAY_MS)
+        {
             animState = ServoAnim::PET_WIGGLE_OUT;
             animStepStartMs = now;
-            servoMove(SERVO_PET_ANGLE);
+            moveStart(petMotion.outAngle, petMotion.outMs, now);
         }
-        else if (animState == ServoAnim::PET_WIGGLE_OUT && (now - animStepStartMs) > WIGGLE_LEG_MS)
+        else if (animState == ServoAnim::PET_WIGGLE_OUT)
+        {
+            moveStep(now);
+            if (!moveActive && (now - animStepStartMs) >= petMotion.outMs)
+            {
+                animState = ServoAnim::PET_HOLD;
+                animStepStartMs = now;
+            }
+        }
+        else if (animState == ServoAnim::PET_HOLD && (now - animStepStartMs) >= petMotion.holdMs)
         {
             animState = ServoAnim::PET_WIGGLE_BACK;
             animStepStartMs = now;
-            servoMove(SERVO_REST_ANGLE);
+            moveStart(SERVO_REST_ANGLE, petMotion.backMs, now);
         }
-        else if (animState == ServoAnim::PET_WIGGLE_BACK && (now - animStepStartMs) > WIGGLE_LEG_MS)
+        else if (animState == ServoAnim::PET_WIGGLE_BACK)
         {
-            animState = ServoAnim::REST;
-            servoReleaseSoon(now);
-            setMood(Mood::IDLE_BLINK); // wiggle's done — hand control back to idle
+            moveStep(now);
+            if (!moveActive && (now - animStepStartMs) >= petMotion.backMs)
+            {
+                animState = ServoAnim::REST;
+                servoReleaseSoon(now);
+                setMood(Mood::IDLE_BLINK); // the movement is done: hand control back to idle
+            }
         }
     }
     else if (mood == Mood::PET_PURR)
     {
         if (animState != ServoAnim::PET_PURR)
         {
+            moveActive = false;
             animState = ServoAnim::PET_PURR;
             animStepStartMs = now;
             purrUp = true;
@@ -142,18 +227,20 @@ void servo_tick()
             animState = ServoAnim::ALARM_SWEEP;
             animStepStartMs = now;
             sweepAtAlertAngle = true;
-            servoMove(SERVO_ALERT_ANGLE);
+            moveStart(SERVO_ALERT_ANGLE, SWEEP_LEG_MS, now);
         }
         else if ((now - animStepStartMs) > SWEEP_LEG_MS)
         {
             animStepStartMs = now;
             sweepAtAlertAngle = !sweepAtAlertAngle;
-            servoMove(sweepAtAlertAngle ? SERVO_ALERT_ANGLE : SERVO_REST_ANGLE);
+            moveStart(sweepAtAlertAngle ? SERVO_ALERT_ANGLE : SERVO_REST_ANGLE, SWEEP_LEG_MS, now);
         }
+        moveStep(now);
 
         if (!readAlarmActive())
         {
             animState = ServoAnim::REST;
+            moveActive = false;
             servoMove(SERVO_REST_ANGLE);
             servoReleaseSoon(now);
             setMood(Mood::IDLE_BLINK);
@@ -164,6 +251,7 @@ void servo_tick()
         if (animState != ServoAnim::REST)
         {
             animState = ServoAnim::REST;
+            moveActive = false;
             servoMove(SERVO_REST_ANGLE);
             servoReleaseSoon(now);
         }

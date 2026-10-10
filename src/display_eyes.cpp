@@ -1,6 +1,7 @@
 // display_eyes.cpp - eye drawing primitives, idle blink / look-around / expression state machines
 // and the reaction picker (what the weather / WiFi make the eyes do).
 #include "display_internal.h"
+#include "audio.h"
 
 namespace disp
 {
@@ -23,6 +24,7 @@ namespace disp
     static Spring blinkSp;
     static float blinkOmega = 60.0f;
     static bool blinkInit = false;
+    static bool blinkHeld = false; // boot: the lids stay shut until blinkOpenSlow()
 
     // ---- Look-around / glance state ----
     float lookX = 0, lookY = 0;          // current gaze, -1..1 (follows the saccade curve)
@@ -517,6 +519,9 @@ namespace disp
     static bool rigFast = false; // anticipation: the eyes squash in ~80 ms instead of ~250 ms
     static float gazeNorm = 0;   // -1 left .. +1 right, for the parallax
     static float breathF = 1.0f; // height factor of the breathing
+    static float lidBiasV = 0;   // extra upper-lid closing on top of the preset (persona: drowsy, sulk, squint ...)
+
+    void eyesSetLidBias(float v) { lidBiasV = clamp01(v); }
 
     void eyesSetTargets(EyeMood left, EyeMood right, float scale, float lookPxX, float lookPxY, float gazeN, int16_t R)
     {
@@ -529,7 +534,7 @@ namespace disp
             sp[P_W].target = p.w * R * scale;
             sp[P_H].target = p.h * R * scale;
             sp[P_RADIUS].target = p.radius * R * scale;
-            sp[P_LID_TOP].target = p.lidTop;
+            sp[P_LID_TOP].target = p.lidTop + lidBiasV * (1.0f - p.lidTop);
             sp[P_SLANT].target = p.slant;
             sp[P_LID_BOT].target = p.lidBot;
             // the gaze is not sprung: the saccade curve in updateLook() already is the motion
@@ -716,8 +721,20 @@ namespace disp
                 exprCur = r < 50 ? Expr::WINK : (r < 70 ? Expr::SURPRISE : Expr::YAWN);
             exprStartMs = now;
             exprDurMs = exprCur == Expr::WINK ? 450 : (exprCur == Expr::YAWN ? 2200 : 900);
+            if (exprCur == Expr::YAWN)
+                audio_play_async(SOUND_INDEX_YAWN);
         }
         return 0;
+    }
+
+    // The persona starts an expression itself (the two yawns before sleep, "oh!" at the first rain).
+    void exprForce(Expr e, uint32_t now, uint32_t durMs)
+    {
+        exprCur = e;
+        exprStartMs = now;
+        exprDurMs = durMs;
+        if (e == Expr::YAWN)
+            audio_play_async(SOUND_INDEX_YAWN);
     }
 
     // The first ANTICIPATE_MS of a surprise: the eyes squash a little before they pop (see drawFace).
@@ -760,6 +777,15 @@ namespace disp
             blinkInit = true;
             blinkSp.x = BLINK_MAX; // eyes wake up: start closed
             blinkSp.target = 0;
+        }
+        if (blinkHeld)
+        {
+            blinkSp.x = BLINK_MAX;
+            blinkSp.v = 0;
+            blinkSp.target = BLINK_MAX;
+            blinkPhase = BlinkPhase::CLOSED;
+            blinkPhaseStartMs = now;
+            return;
         }
         const uint16_t closeMs = sleepy ? 160 : 70, closedMs = 40, openMs = sleepy ? 250 : 130;
         uint32_t el = now - blinkPhaseStartMs;
@@ -811,6 +837,29 @@ namespace disp
         }
     }
 
+    void blinkHold(bool on) { blinkHeld = on; }
+
+    // Releases the held lids: the spring opens them over about `ms`; the next idle blink waits a while.
+    void blinkOpenSlow(uint32_t now, uint16_t ms)
+    {
+        blinkHeld = false;
+        blinkPhase = BlinkPhase::OPENING;
+        blinkPhaseStartMs = now;
+        blinkSp.target = 0;
+        blinkOmega = 4.55f / (ms / 1000.0f);
+        nextBlinkAtMs = now + 1500;
+    }
+
+    void blinkTrigger(uint32_t now)
+    {
+        if (blinkPhase != BlinkPhase::OPEN)
+            return;
+        blinkPhase = BlinkPhase::CLOSING;
+        blinkPhaseStartMs = now;
+        blinkSp.target = BLINK_MAX;
+        blinkOmega = 4.9f / 0.07f;
+    }
+
     // ---- Saccades: the gaze JUMPS to a new point (90 ms, ease-out), then holds still with a tiny tremor ----
     static const uint16_t SACCADE_MS = 90;
     static float sacFromX = 0, sacFromY = 0, sacToX = 0, sacToY = 0;
@@ -838,7 +887,31 @@ namespace disp
     void updateLook(uint32_t now, bool alarm, bool sleepy, Reaction reaction)
     {
         bool idlePick = false; // a random idle look was chosen this frame
-        if (sleepy)
+
+        // The persona (roll, peek-a-boo) sets the gaze itself; every other persona look is only a new target.
+        static bool wasPersona = false;
+        if (persona.gazeOn && persona.gazeDirect)
+        {
+            lookX = tgtX = lookTX = persona.gazeX;
+            lookY = tgtY = lookTY = persona.gazeY;
+            sacActive = false;
+            pend = false;
+            lookTremX = lookTremY = 0;
+            wasPersona = true;
+            return;
+        }
+        if (wasPersona)
+        {
+            wasPersona = false;
+            nextLookAtMs = now + 300; // back to the usual idle looks soon
+        }
+        if (persona.gazeOn)
+        {
+            lookTX = persona.gazeX;
+            lookTY = persona.gazeY;
+            wasPersona = true;
+        }
+        else if (sleepy)
         {
             lookTX = 0;
             lookTY = 0.6f;
@@ -886,6 +959,11 @@ namespace disp
             }
             else if (r == 8)
                 lookTY = -1;
+            if (persona.celestOk && random(0, 100) < SKY_LOOK_PERCENT) // now and then: a look at the sun / moon
+            {
+                lookTX = persona.celestX;
+                lookTY = persona.celestY;
+            }
         }
 
         // new target? idle looks that are big wait for a blink (people move their eyes while the lids are down);

@@ -179,6 +179,7 @@ static void alarmTask(void *pvParameters)
     for (;;)
     {
         alarm_tick();
+        audio_tick(); // yawn / chime / boot sounds queued by the display (gentle, muted at night)
 #if TASK_WDT_SELFTEST
         // Pretend this task hung: stop reporting in. The watchdog must reset the chip
         // TASK_WDT_TIMEOUT_S seconds later ("Reset reason: TASK_WDT" on the next boot).
@@ -236,7 +237,7 @@ void setup()
     startTask(displayTask, "display", 8192, 2, 1);
     startTask(touchTask, "touch", 4096, 3, 1);
     startTask(servoTask, "servo", 3072, 2, 1);
-    startTask(alarmTask, "alarm", 4096, 2, 1);
+    startTask(alarmTask, "alarm", 5120, 2, 1); // audio_tick() reaches audio -> sun -> Serial.printf like the touch task
     startTask(timeTask, "time", 8192, 1, 0);
     startTask(weatherTask, "weather", 10240, 1, 0);
     startTask(webTask, "web", 8192, 1, 0);

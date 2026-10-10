@@ -87,6 +87,40 @@ static bool isNightNow()
 
 // ---- Public API ----
 
+static QueueHandle_t s_audioQueue = nullptr;
+
+void audio_play_async(uint16_t fileIndex)
+{
+    if (fileIndex == 0 || !s_audioQueue)
+        return;
+    xQueueSend(s_audioQueue, &fileIndex, 0); // full queue: the sound is simply dropped
+}
+
+void audio_tick()
+{
+    uint16_t idx;
+    while (s_audioQueue && xQueueReceive(s_audioQueue, &idx, 0) == pdTRUE)
+        audio_play_gentle(idx);
+}
+
+uint16_t audio_next_pet_chirp()
+{
+    static const uint16_t all[3] = {SOUND_INDEX_PET, SOUND_INDEX_PET_B, SOUND_INDEX_PET_C};
+    uint16_t v[3];
+    uint8_t n = 0;
+    for (uint8_t i = 0; i < 3; i++)
+        if (all[i] != 0)
+            v[n++] = all[i];
+    if (n == 0)
+        return SOUND_INDEX_PET;
+    static int8_t last = -1;
+    int8_t pick = (int8_t)(random(0, n));
+    if (n > 1 && pick == last)
+        pick = (int8_t)((pick + 1 + random(0, n - 1)) % n); // not the same chirp twice in a row
+    last = pick;
+    return v[pick];
+}
+
 void audio_set_volume(uint8_t volume)
 {
     AudioLock lock;
@@ -151,6 +185,7 @@ void audio_stop()
 void audio_init()
 {
     s_audioMutex = xSemaphoreCreateMutex();
+    s_audioQueue = xQueueCreate(4, sizeof(uint16_t));
 
     Serial2.begin(AUDIO_BAUD, SERIAL_8N1, JQ6500_RX_PIN, JQ6500_TX_PIN);
     delay(300); // let the module finish booting before the first command

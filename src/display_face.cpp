@@ -48,8 +48,8 @@ namespace disp
     // "!" of total height h centred on (cx, cyc): a rounded bar and a dot.
     static void drawBang(TFT_eSPI &g, int16_t cx, int16_t cyc, int16_t h, uint16_t c)
     {
-        int16_t bw = imax(3, (int16_t)(h * 0.26f + 0.5f));         // bar width
-        int16_t dotR = imax(2, (int16_t)((bw + 1) / 2));           // dot radius
+        int16_t bw = imax(3, (int16_t)(h * 0.26f + 0.5f)); // bar width
+        int16_t dotR = imax(2, (int16_t)((bw + 1) / 2));   // dot radius
         int16_t barH = imax((int16_t)(bw + 1), (int16_t)(h * 0.55f + 0.5f));
         int16_t top = cyc - h / 2;
         uint32_t bg = aaBgPerPixel();
@@ -61,9 +61,9 @@ namespace disp
     // bending away from the middle. drawSmoothArc angles: 0 = 6 o'clock, clockwise (90 = 9, 180 = 12, 270 = 3).
     static void drawAngerMark(TFT_eSPI &g, int16_t cx, int16_t cy, uint16_t c)
     {
-        int16_t d = u(3);                // corner centres sit at (+-d, +-d) from the middle
-        int16_t R = imax(3, u(4.5f));    // outer radius
-        int16_t ir = imax(1, R - 2);     // inner radius (stroke = R - ir + 1 px)
+        int16_t d = u(3);             // corner centres sit at (+-d, +-d) from the middle
+        int16_t R = imax(3, u(4.5f)); // outer radius
+        int16_t ir = imax(1, R - 2);  // inner radius (stroke = R - ir + 1 px)
         uint32_t bg = aaBgAt(g, cx, cy);
         g.drawSmoothArc(cx - d, cy - d, R, ir, 90, 180, c, bg);  // top-left
         g.drawSmoothArc(cx + d, cy - d, R, ir, 180, 270, c, bg); // top-right
@@ -80,7 +80,7 @@ namespace disp
     }
 
     // Closed, contented eye "‿" (sleepy pet, purring): a thin arch curving downwards + blush.
-    static void drawContentEye(TFT_eSPI &g, int16_t cx, int16_t cy, int16_t R)
+    void drawContentEye(TFT_eSPI &g, int16_t cx, int16_t cy, int16_t R)
     {
         float rx = R * 0.9f, ry = R * 0.5f;
         int16_t th = imax(2, (int16_t)(R * 0.22f));
@@ -147,6 +147,7 @@ namespace disp
         case PetKind::MORNING:
         case PetKind::RARE_WINK:
         case PetKind::RARE_SURPRISE:
+        case PetKind::SORRY:
             return true;
         default:
             return false;
@@ -247,6 +248,23 @@ namespace disp
                 drawHappyEye(g, lcx, cy + dy, Re);
                 drawHappyEye(g, rcx, cy + dy, Re);
                 drawRisingHearts(g, age - 700, cy, R, 5, 170, 1100, u(4));
+            }
+            break;
+
+        case PetKind::SORRY:
+            if (age < 1600) // a small apology: sad eyes, a sweat drop
+            {
+                drawEye(g, lcx, cy, eyeW, eyeH, 1.0f, 0, BROW_SAD, -1, C_EYE_TOP, C_EYE_BOT, true);
+                drawEye(g, rcx, cy, eyeW, eyeH, 1.0f, 0, BROW_SAD, 1, C_EYE_TOP, C_EYE_BOT, true);
+                float pd = (age % 1400) / 1400.0f;
+                drawDrop(g, lcx - eyeW / 2 - u(9), (int16_t)(cy - R + pd * R * 2.2f), imax(2, u(3)),
+                         tint(dropCol, (255 - pd * 140) / 255.0f));
+            }
+            else // ... forgiven: a shy smile and one small heart
+            {
+                drawHappyEye(g, lcx, cy, Re);
+                drawHappyEye(g, rcx, cy, Re);
+                drawRisingHearts(g, age - 1600, cy, R, 1, 0, 1100, u(3));
             }
             break;
 
@@ -364,6 +382,8 @@ namespace disp
             return age >= 1100 ? MouthKind::SMILE : MouthKind::NONE;
         case PetKind::MISSED_YOU:
             return age >= 700 ? MouthKind::SMILE : MouthKind::NONE;
+        case PetKind::SORRY:
+            return age >= 1600 ? MouthKind::SMILE : MouthKind::NONE;
         case PetKind::MORNING:
             return age >= 1500 ? MouthKind::SMILE : MouthKind::NONE; // the yawn draws its own mouth
         case PetKind::RARE_SURPRISE:
@@ -394,6 +414,22 @@ namespace disp
     void drawFace(TFT_eSPI &g, uint32_t now, bool alarm, bool happy, bool purr, bool sleepy,
                   const SceneInfo &scn, Reaction reaction, float exprP)
     {
+        int16_t R = W / 8; // same base size as before
+        int16_t eyeW = R * 2;
+        int16_t eyeH = (int16_t)(R * 2.25f);
+        int16_t cy = (int16_t)(faceH * 0.55f); // breathing is the eye height now (eyesSetBreath), not the position
+        int16_t lcx = W / 2 - R * 2;
+        int16_t rcx = W / 2 + R * 2;
+
+        // Wake-up at boot: a black card, then a thin line grows from the middle; the lids open after that.
+        if (persona.stage != PStage::RUN)
+        {
+            g.fillRect(0, 0, W, faceH, 0x0000);
+            if (persona.stage == PStage::BOOT_LINE)
+                drawBootLine(g, cy, R);
+            return;
+        }
+
         g.fillRect(0, 0, W, faceH, C_BG);
 
         // Background: weather/time-of-day scene. The alarm keeps the plain starry
@@ -402,13 +438,6 @@ namespace disp
             drawSceneBackground(g, now, scn);
         else
             drawStars(g, now);
-
-        int16_t R = W / 8; // same base size as before
-        int16_t eyeW = R * 2;
-        int16_t eyeH = (int16_t)(R * 2.25f);
-        int16_t cy = (int16_t)(faceH * 0.55f); // breathing is the eye height now (eyesSetBreath), not the position
-        int16_t lcx = W / 2 - R * 2;
-        int16_t rcx = W / 2 + R * 2;
 
         // ---- Eye pose: situation -> presets -> spring targets. The springs run every frame, also
         // while the alarm / a pet reaction is drawn, so the eyes never jump when they come back. ----
@@ -420,11 +449,15 @@ namespace disp
         if (!alarm && !happy && exprAnticipating(now))
             antic = true;
         bool decor = !alarm && !antic && happy && (purr || !petEyesFirst(petEv.kind)); // heart / spiral / arches take over
-        EyeMood mood = pickEyeMood(sleepy, reaction, ex);
+        // Drowsy / waking: the lids come from persona.lidBias (a ramp), not from the TIRED preset.
+        EyeMood mood = pickEyeMood((sleepy && !persona.lidRamp) || persona.snoozed, reaction, ex);
         EyeMood moodR = (ex == Expr::WINK) ? EyeMood::HAPPY : mood; // a wink is just one eye's preset
+        if (persona.frown)                                          // woken by a touch: a small frown before the smile
+            mood = moodR = EyeMood::ANGRY;
         float scale = 1.0f;
         if (reaction == Reaction::STORM && lightningActive(now))
-            scale = 1.25f; // flinch at every flash
+            scale = 1.25f;           // flinch at every flash
+        scale *= persona.scalePulse; // the chime widens the eyes once
         if (antic)
         {
             mood = moodR = EyeMood::COLD; // lid 0.15
@@ -445,11 +478,14 @@ namespace disp
                 wantMouth = MouthKind::OPEN_O;
             else if (ex == Expr::WINK)
                 wantMouth = MouthKind::SMILE;
+            else if (persona.relief > 0.15f && persona.relief < 0.7f)
+                wantMouth = MouthKind::OPEN_O; // the sigh
         }
         eyesSetMouth(wantMouth);
         int16_t mouthY = cy + eyeH / 2 + u(10); // ~y 76 on the 128x88 face
         eyesSetFast(antic);
         eyesSetDecor(decor);
+        eyesSetLidBias(persona.lidBias);
         eyesSetTargets(mood, moodR, scale, lookX * u(5) + lookTremX, lookY * u(4) + lookTremY, lookX, R);
         eyesStep(now);
 
@@ -465,6 +501,13 @@ namespace disp
                 g.drawRect(1, 1, W - 2, faceH - 2, C_RED);
             }
             drawBang(g, W / 2, cy, u(19), C_RED);
+            return;
+        }
+
+        // fast asleep: closed contented eyes, Zs, now and then a twitch or a dream bubble
+        if (persona.asleep && !happy)
+        {
+            drawSleepFace(g, now, cy, lcx, rcx, R);
             return;
         }
 
@@ -486,8 +529,10 @@ namespace disp
 
         // normal / sleepy eyes (the blink is the lid spring inside the rig)
         int16_t shiver = 0;
-        if (reaction == Reaction::COLD)
+        if (reaction == Reaction::COLD || persona.shiver)
             shiver = (((now / 40) & 1) ? 1 : -1) * u(1);
+        // peek-a-boo: the eyes rise from below the card's bottom edge (the sprite clips them)
+        int16_t cyE = cy + (int16_t)(persona.peek * ((faceH - cy) + eyeH / 2));
 
         // one-off idle expressions
         float squeeze = 0;
@@ -499,7 +544,7 @@ namespace disp
             squeeze = 0.92f * edge; // eyes squeeze shut mid-yawn
         }
 
-        drawRigEyes(g, lcx, rcx, cy, squeeze, shiver);
+        drawRigEyes(g, lcx, rcx, cyE, squeeze, shiver);
 
         // extras
         uint16_t dropCol = rgb(120, 200, 255);
@@ -539,8 +584,9 @@ namespace disp
 
         drawMouth(g, W / 2, mouthY);
 
-        if (sleepy)
+        if (sleepy && !persona.snoozed)
             drawSleepZ(g, now, cy, R);
+        drawPersonaExtras(g, now, cy, R, eyeH);
     }
 
 } // namespace disp

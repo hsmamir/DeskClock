@@ -18,7 +18,8 @@ enum class PetKind : uint8_t
     RARE_WINK,     // rare: wink with tongue
     RARE_SURPRISE, // rare: surprise, then a big heart pops up
     HOT,           // hot weather: happy + sweat drop
-    COLD           // cold weather: happy + shivering + snowflakes
+    COLD,          // cold weather: happy + shivering + snowflakes
+    SORRY          // the first touch after sulking: a small apology (chosen by the display, not by pet.cpp)
 };
 
 struct PetEvent
@@ -47,6 +48,11 @@ void pet_on_press(uint32_t nowMs);
 // Latest reaction (thread-safe snapshot).
 PetEvent pet_get_event();
 
+// Shows a reaction without a tap (e.g. MORNING after the alarm was switched off). streak = 0 marks it as
+// injected; no statistics change. Safe from any task.
+void pet_inject_event(PetKind kind);
+// The display replaces the kind of the reaction that was just picked (e.g. SORRY). Same seq, so nothing restarts.
+void pet_set_kind(PetKind kind);
 // How long the display keeps the face of this reaction.
 uint32_t pet_hold_ms(PetKind kind);
 

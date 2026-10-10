@@ -13,6 +13,7 @@
 #include "settings.h"
 #include "sun.h"
 #include "pet.h"
+#include "alarm_ctrl.h"
 #include "display_fonts.h" // smooth (VLW) fonts, see tools/make_vlw.py
 
 namespace disp
@@ -290,6 +291,82 @@ namespace disp
     void drawSleepZ(TFT_eSPI &g, uint32_t now, int16_t cy, int16_t R);
     void drawFace(TFT_eSPI &g, uint32_t now, bool alarm, bool happy, bool purr, bool sleepy,
                   const SceneInfo &scn, Reaction reaction, float exprP);
+
+    // ---- Persona: behaviours that span many frames (display_persona.cpp) ----
+    // personaUpdate() runs once per tick, after the reaction is known, and fills `persona`; drawFace(),
+    // updateLook(), updateBlink(), the info panel and display_tick() read it.
+    enum class PStage : uint8_t
+    {
+        RUN,
+        BOOT_BLACK, // wake-up, first 300 ms: the face card is black
+        BOOT_LINE   // 300-700 ms: a thin line grows from the middle
+    };
+    struct Persona
+    {
+        PStage stage = PStage::BOOT_BLACK;
+        float lineP = 0;       // BOOT_LINE: 0..1 how far the line has grown
+        float lidBias = 0;     // 0..1: extra upper-lid closing for the eye rig (drowsy, sulk, squint, sigh)
+        bool lidRamp = false;  // lids are driven by lidBias, not by the TIRED preset
+        bool asleep = false;   // closed contented eyes + Zs (drawSleepFace)
+        bool snoozed = false;  // "five more minutes" face
+        bool frown = false;    // woken by a touch: small frown first
+        bool thinking = false; // time / WiFi not there yet: look up-right, three dots
+        bool exprOk = true;    // random idle expressions allowed
+        bool sulking = false;
+        float scalePulse = 1.0f; // eye size factor (the chime widens them once)
+        float peek = 0;          // 0 normal .. 1 hidden below the card edge
+        bool shiver = false;     // small tremble (before the alarm)
+        float digitPulse = 0;    // 0..1 the clock digits flash (top of the hour)
+        float relief = 0;        // 0..1 progress of the sigh when WiFi came back (0 = none)
+        bool celestOk = false;   // the sun / moon is up there: a share of idle looks goes to it
+        float celestX = 0, celestY = 0;
+        bool gazeOn = false;     // the persona decides where to look
+        bool gazeDirect = false; // ... and sets the gaze itself (roll, peek) instead of a saccade target
+        float gazeX = 0, gazeY = 0;
+    };
+    extern Persona persona;
+    struct PersonaIn
+    {
+        uint32_t now;
+        bool alarm; // alarm face is up
+        bool happy; // a pet reaction is showing
+        bool haveTime;
+        const struct tm *ti;
+        bool night;          // sun_is_night
+        bool sleepy;         // night && !alarm (the old "tired eyes" flag)
+        bool sunny;          // bright clear day around noon
+        bool sunrise;        // the warm sunrise flash is running
+        bool offline;        // WiFi gone long enough for the worried eyes
+        uint32_t wifiDownMs; // 0 = connected
+        Reaction reaction;
+        bool weatherKnown;
+        int weatherCode;
+        AlarmState alarmState;
+        int alarmSecsLeft; // seconds until the next alarm ring when <= PRE_ALARM_S, else -1
+        bool celestOk;     // the sun / moon is visible: gaze target below
+        float celestX, celestY;
+    };
+    void personaUpdate(const PersonaIn &in);
+    struct TouchResult
+    {
+        PetKind kind;     // the reaction to show (may differ from what pet.cpp picked)
+        uint32_t frownMs; // wait this long (a frown) before the reaction starts
+    };
+    TouchResult personaOnTouch(const PetEvent &pe, uint32_t now);
+    void drawBootLine(TFT_eSPI &g, int16_t cy, int16_t R);
+    void drawSleepFace(TFT_eSPI &g, uint32_t now, int16_t cy, int16_t lcx, int16_t rcx, int16_t R);
+    void drawPersonaExtras(TFT_eSPI &g, uint32_t now, int16_t cy, int16_t R, int16_t eyeH);
+    void drawContentEye(TFT_eSPI &g, int16_t cx, int16_t cy, int16_t R);
+    // hooks into the blink / expression machines (display_eyes.cpp)
+    void blinkHold(bool on);                       // keep the lids shut (boot)
+    void blinkOpenSlow(uint32_t now, uint16_t ms); // release the lids: they open over ms
+    void blinkTrigger(uint32_t now);               // one blink right now
+    void eyesSetLidBias(float v);
+    void exprForce(Expr e, uint32_t now, uint32_t durMs);
+    // where the sun / moon is, as a gaze target (display_scene.cpp)
+    bool celestialGaze(const SceneInfo &scn, float &gx, float &gy);
+    // seconds until the next alarm ring if it is within PRE_ALARM_S, else -1 (display_widgets.cpp)
+    int alarmSecondsLeft(const struct tm &ti);
 
     // ---- Emotional eye colour (display_emotion.cpp) ----
     enum class Emo : uint8_t

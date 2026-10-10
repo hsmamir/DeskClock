@@ -480,4 +480,28 @@ namespace disp
         }
     }
 
+    // Where the sun / moon is, as a gaze target for the eyes (-1..1 sideways, up is negative). false = not visible
+    // (no time yet, or the sky is covered). Same arc as drawSceneBackground().
+    bool celestialGaze(const SceneInfo &scn, float &gx, float &gy)
+    {
+        int code = scn.weatherKnown ? scn.code : -1;
+        bool clearish = !scn.weatherKnown || code == 0 || code == 1 || code == 2;
+        if (!scn.timeKnown || !clearish)
+            return false;
+        int16_t cx = u(16), cy = u(16);
+        if (SCENE_SUN_ARC && scn.arc >= 0)
+        {
+            float lift = sinf((float)M_PI * scn.arc);
+            int16_t margin = u(14);
+            cx = margin + (int16_t)((W - 2 * margin) * scn.arc);
+            cy = (int16_t)(faceH * 0.42f - faceH * 0.30f * lift);
+            cy = imax(cy, u(13));
+        }
+        gx = (cx - W / 2.0f) / (W / 2.0f);
+        gy = (cy - faceH * 0.55f) / (faceH * 0.40f);
+        gx = gx < -1 ? -1 : (gx > 1 ? 1 : gx);
+        gy = gy < -1 ? -1 : (gy > 0.2f ? 0.2f : gy);
+        return true;
+    }
+
 } // namespace disp

@@ -68,8 +68,8 @@ static void triggerPetHappy()
     // audio_play_gentle() stays quiet (or muted) during the night window.
     if (petted)
     {
-        pet_on_press(millis()); // picks the reaction the display will draw (streak, night, rain, ...)
-        audio_play_gentle(SOUND_INDEX_PET);
+        pet_on_press(millis());                    // picks the reaction the display will draw (streak, night, rain, ...)
+        audio_play_gentle(audio_next_pet_chirp()); // up to three versions, so it does not repeat
     }
 }
 

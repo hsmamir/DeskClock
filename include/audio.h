@@ -36,3 +36,12 @@ void audio_stop();
 // not at all when that is 0. Outside the night window it plays at the saved
 // volume. Call from a task (may block ~30 ms).
 void audio_play_gentle(uint16_t fileIndex);
+
+// Same as audio_play_gentle(), but for the display task: it only queues the request (non-blocking, any task,
+// 0 = nothing) and audio_tick() plays it. Used for yawn / chime / boot sounds.
+void audio_play_async(uint16_t fileIndex);
+// Plays what audio_play_async() queued. Call regularly from a task that may block ~30 ms (the alarm task).
+void audio_tick();
+// Index of the touch chirp to play now: SOUND_INDEX_PET, or one of the extra versions
+// (SOUND_INDEX_PET_B / _C when set), never the same one twice in a row.
+uint16_t audio_next_pet_chirp();

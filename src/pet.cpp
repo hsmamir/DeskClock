@@ -68,6 +68,8 @@ uint32_t pet_hold_ms(PetKind kind)
     case PetKind::HOT:
     case PetKind::COLD:
         return 2200;
+    case PetKind::SORRY:
+        return 2800;
     case PetKind::HAPPY:
     default:
         return 2000;
@@ -165,6 +167,23 @@ void pet_on_press(uint32_t now)
     s_ev.startMs = now;
     s_ev.seq++;
     s_ev.streak = s_streak;
+    xSemaphoreGive(s_mutex);
+}
+
+void pet_inject_event(PetKind kind)
+{
+    xSemaphoreTake(s_mutex, portMAX_DELAY);
+    s_ev.kind = kind;
+    s_ev.startMs = millis();
+    s_ev.seq++;
+    s_ev.streak = 0;
+    xSemaphoreGive(s_mutex);
+}
+
+void pet_set_kind(PetKind kind)
+{
+    xSemaphoreTake(s_mutex, portMAX_DELAY);
+    s_ev.kind = kind;
     xSemaphoreGive(s_mutex);
 }
 

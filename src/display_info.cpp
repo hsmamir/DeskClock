@@ -24,6 +24,22 @@ namespace disp
         }
     }
 
+    // No time yet: the unlit clock digits with a slowly breathing colon (instead of a spinner; the eyes
+    // above do the "thinking").
+    static void drawDormantClock(TFT_eSPI &g, int16_t dw, int16_t dh, int16_t gap, int16_t dy, uint16_t accent, uint32_t now)
+    {
+        int16_t cw = imax(4, u(8));
+        int16_t total = 4 * dw + 2 * gap + 2 * gap + cw;
+        int16_t x0 = (W - total) / 2;
+        int16_t xs[4] = {x0, (int16_t)(x0 + dw + gap),
+                         (int16_t)(x0 + 2 * dw + gap + 2 * gap + cw),
+                         (int16_t)(x0 + 2 * dw + gap + 2 * gap + cw + dw + gap)};
+        for (uint8_t i = 0; i < 4; i++)
+            drawSegDigit(g, xs[i], dy, dw, dh, -1, accent, C_GHOST);
+        uint8_t level = (uint8_t)(7.5f + 7.0f * sinf(now / 450.0f));
+        drawColonGlow(g, x0 + 2 * dw + gap + gap + cw / 2, dy, dh, imax(2, dw / 4), tint(accent, 0.5f), level);
+    }
+
     void drawInfoPanel(DisplayMode mode, bool alarm, bool haveTime, const struct tm &ti, uint32_t now)
     {
 #if ALARM_ICON_ENABLED
@@ -102,9 +118,9 @@ namespace disp
         {
         case DisplayMode::CLOCK:
             if (haveTime)
-                sig = (1u << 28) | (uint32_t)(ti.tm_hour * 3600 + ti.tm_min * 60 + ti.tm_sec) | // bits 0-16
-                      (alarmFlashOn ? (1u << 17) : 0u) | ((uint32_t)colonLevel << 18) |         // colon "breath"
-                      (digAnimating ? ((((now / 33) & 0x1Fu) + 1u) << 22) : 0u);                // redraw every frame while a digit slides
+                sig = (1u << 28) | (uint32_t)(ti.tm_hour * 3600 + ti.tm_min * 60 + ti.tm_sec) |              // bits 0-16
+                      (alarmFlashOn ? (1u << 17) : 0u) | ((uint32_t)colonLevel << 18) |                      // colon "breath"
+                      ((digAnimating || persona.digitPulse > 0) ? ((((now / 33) & 0x1Fu) + 1u) << 22) : 0u); // redraw every frame while a digit slides / flashes
             else
                 sig = (2u << 28) | (now / 90);
             break;
@@ -176,7 +192,7 @@ namespace disp
                 int16_t cw = imax(4, u(8));
                 int16_t total = 4 * dw + 2 * gap + 2 * gap + cw;
                 int16_t x0 = (W - total) / 2;
-                uint16_t on = alarm ? (alarmFlashOn ? C_RED : tint(C_RED, 0.35f)) : C_ACCENT;
+                uint16_t on = alarm ? (alarmFlashOn ? C_RED : tint(C_RED, 0.35f)) : mixColor(C_ACCENT, 0xFFFF, 0.6f * persona.digitPulse); // top of the hour: flash
                 int16_t xs[4] = {x0, (int16_t)(x0 + dw + gap),
                                  (int16_t)(x0 + 2 * dw + gap + 2 * gap + cw),
                                  (int16_t)(x0 + 2 * dw + gap + 2 * gap + cw + dw + gap)};
@@ -209,7 +225,7 @@ namespace disp
             }
             else
             {
-                drawSpinner(g, W / 2, (int16_t)(infoH * 0.38f), u(10), accent);
+                drawDormantClock(g, dw, dh, gap, dy, accent, now); // the eyes "think" about it up in the face card
                 strcpy(cap, "Syncing...");
             }
         }
@@ -235,7 +251,7 @@ namespace disp
             }
             else
             {
-                drawSpinner(g, W / 2, (int16_t)(infoH * 0.38f), u(10), accent);
+                drawDormantClock(g, dw, dh, gap, dy, accent, now); // the eyes "think" about it up in the face card
                 strcpy(cap, "Syncing...");
             }
         }

@@ -51,6 +51,20 @@ namespace disp
         return -1;
     }
 
+    // Seconds until the next ring when that is within PRE_ALARM_S, else -1 (the clock has no sub-minute
+    // alarm: it rings at hh:mm:00, nextAlarmIn() counts whole minutes from the start of this minute).
+    int alarmSecondsLeft(const struct tm &ti)
+    {
+        if (!alarmCfgOn)
+            return -1;
+        int dayOff = 0, wd = 0;
+        int mins = nextAlarmIn(ti, alarmCfgHour, alarmCfgMin, alarmCfgDays, dayOff, wd);
+        if (mins != 1)
+            return -1;
+        int secs = 60 - ti.tm_sec;
+        return secs <= PRE_ALARM_S ? secs : -1;
+    }
+
     static const char *const NEXT_ALARM_DAY[7] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
 
     // Small bell: dome + body + rim + clapper. (cx, cy) = middle of the body,
@@ -108,6 +122,10 @@ namespace disp
                 smoothText(g, sf, sfCap, tail, rightX, cy + 1, R_BASELINE, tint(C_SOFT, 0.7f), C_BG); // dimmer than the alarm time
         }
     }
+#endif
+
+#if !ALARM_ICON_ENABLED
+    int alarmSecondsLeft(const struct tm &) { return -1; }
 #endif
 
     // ---- Rolling temperature ----

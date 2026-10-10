@@ -149,12 +149,19 @@ void display_tick()
     if (pe.seq != petSeqSeen)
     {
         petSeqSeen = pe.seq;
+        // the persona may turn the reaction into another one (apology after a sulk) or ask for a frown first (woken up)
+        TouchResult tr = personaOnTouch(pe, now);
+        if (tr.kind != pe.kind)
+        {
+            pe.kind = tr.kind;
+            pet_set_kind(tr.kind); // the servo reads the kind too
+        }
         petEv = pe;
-        happyStartMs = now;
-        happyUntilMs = now + pet_hold_ms(pe.kind);
+        happyStartMs = now + tr.frownMs;
+        happyUntilMs = happyStartMs + pet_hold_ms(pe.kind);
     }
     bool purr = !alarm && mood == Mood::PET_PURR; // button held: purring takes over from the tap reaction
-    bool happy = !alarm && (purr || now < happyUntilMs);
+    bool happy = !alarm && (purr || ((int32_t)(now - happyStartMs) >= 0 && now < happyUntilMs));
 
     if (alarm && now - lastAlarmFlashMs > ALARM_FLASH_MS)
     {
@@ -198,9 +205,33 @@ void display_tick()
     Reaction reaction = alarm ? Reaction::NONE : pickReaction(scn, offline, sleepy);
     emoUpdate(now, emoPick(alarm, happy, purr, sleepy, reaction)); // eye colour follows the feeling
 
+    // behaviours that span many frames: boot wake-up, sleep, chime, pre-alarm, sulk, micro moods ...
+    {
+        PersonaIn pin;
+        pin.now = now;
+        pin.alarm = alarm;
+        pin.happy = happy;
+        pin.haveTime = haveTime;
+        pin.ti = haveTime ? &ti : nullptr;
+        pin.night = night;
+        pin.sleepy = sleepy;
+        pin.sunny = scn.day && scn.weatherKnown && scn.code == 0 && scn.arc >= 0.25f && scn.arc <= 0.75f;
+        pin.sunrise = ambientSunriseFlash(now) > 0.001f;
+        pin.offline = offline;
+        pin.wifiDownMs = wifiDownSinceMs ? (uint32_t)(now - wifiDownSinceMs) : 0;
+        pin.reaction = reaction;
+        pin.weatherKnown = scn.weatherKnown;
+        pin.weatherCode = scn.code;
+        pin.alarmState = alarm_get_state();
+        pin.alarmSecsLeft = haveTime ? alarmSecondsLeft(ti) : -1;
+        pin.celestX = pin.celestY = 0;
+        pin.celestOk = celestialGaze(scn, pin.celestX, pin.celestY);
+        personaUpdate(pin);
+    }
+
     updateLook(now, alarm, sleepy, reaction);
     updateBlink(now, sleepy);
-    float exprP = updateExpression(now, !alarm && !happy && reaction != Reaction::WORRIED, sleepy);
+    float exprP = updateExpression(now, !alarm && !happy && reaction != Reaction::WORRIED && persona.exprOk, sleepy);
 
     // Diagnostics page: full screen, replaces face + info panel. An alarm
     // always wins (it falls through to the normal clock/face drawing below).
@@ -219,8 +250,11 @@ void display_tick()
 
     TFT_eSPI &g = faceCv.begin();
     drawFace(g, now, alarm, happy, purr, sleepy, scn, reaction, exprP);
-    drawStatusIcons(g, now);
-    drawHoldRing(g);
+    if (persona.stage == PStage::RUN) // not over the black boot screen
+    {
+        drawStatusIcons(g, now);
+        drawHoldRing(g);
+    }
     faceCv.end();
 
     drawInfoPanel(mode, alarm, haveTime, ti, now);
