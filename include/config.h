@@ -50,7 +50,7 @@
 #define MODE_HOLD_RING 1
 #define MODE_HOLD_RING_DELAY_MS 250
 static_assert(MODE_HOLD_RING_DELAY_MS < MODE_LONG_PRESS_MS, "ring delay must be shorter than the long press");
-#define DISPLAY_RETURN_MS 15000
+#define DISPLAY_RETURN_MS 45000
 #define DIAG_RETURN_MS 15000
 
 // ---- Full-screen pages ----
