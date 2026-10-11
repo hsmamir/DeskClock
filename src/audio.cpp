@@ -34,6 +34,7 @@ static int s_curVolume = -1;
 static uint32_t s_lastTxMs = 0;
 static uint32_t s_lastPlayMs = 0;
 static bool s_everPlayed = false;
+static bool s_paused = false; // true after audio_stop(): the module sits paused until a play + resume
 
 // JQ6500 serial frame: 0x7E, LEN, CMD, [args...], 0xEF
 // LEN counts itself + CMD + args (so a command with n args has LEN = n + 2).
@@ -88,11 +89,15 @@ static void sendPlay(uint16_t fileIndex)
     uint8_t args[2] = {(uint8_t)(fileIndex >> 8), (uint8_t)(fileIndex & 0xFF)};
     sendCommand(0x03, args, 2);
     // After audio_stop() the module sits PAUSED, and then "play file N" only loads the
-    // file without starting it (silent until a K pin is pressed, which also plays all the
-    // clips that piled up). An explicit "play/resume" right after makes it start for sure;
-    // it does nothing harmful when the module is already playing.
-    delay(AUDIO_SETTLE_MS);
-    sendCommand(0x0D, nullptr, 0);
+    // file without starting it (silent until a K pin is pressed). An explicit "resume"
+    // right after makes it start. It is sent ONLY in that case: on a module that is
+    // already playing it restarts the clip and makes a click/noise at the start.
+    if (s_paused)
+    {
+        delay(AUDIO_SETTLE_MS);
+        sendCommand(0x0D, nullptr, 0);
+        s_paused = false;
+    }
 }
 
 // Volume (only if it changed), then play. No pause before it: pausing first left the
@@ -231,6 +236,7 @@ void audio_stop()
 {
     AudioLock lock;
     sendCommand(0x0E, nullptr, 0); // pause
+    s_paused = true;
     delay(50);
     uint8_t mode = 4; // back to "play once, then stop" for pet sounds etc.
     sendCommand(0x11, &mode, 1);
