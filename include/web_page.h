@@ -71,6 +71,7 @@ details{margin-top:10px}
 <h2>صدای نوازش</h2>
 <div class="row"><span>ولوم</span><input type="range" id="vol" min="0" max="30"><output id="volOut"></output></div>
 <button type="button" class="ghost" id="testBtn">پخش صدای نوازش</button>
+<div class="row"><span>تست همه‌ی صداها</span><select id="tSound"></select><button type="button" class="ghost" id="tSoundBtn">پخش</button></div>
 </section>
 
 <section>
@@ -177,8 +178,11 @@ const i=document.createElement('input');i.type='checkbox';i.dataset.d=d[0];
 const s=document.createElement('span');s.textContent=d[1];l.append(i,s);box.appendChild(l);});})();
 function setDays(m){document.querySelectorAll('#days input').forEach(i=>{i.checked=((m>>(+i.dataset.d))&1)===1;});}
 function getDays(){let m=0;document.querySelectorAll('#days input').forEach(i=>{if(i.checked)m|=1<<(+i.dataset.d);});return m;}
+const SN=['آرام','اصلی','جیک نوازش','ملودیک','بلند','بویینگ','بیپ‌ها','خمیازه','زنگ ساعت','روشن‌شدن','UI روشن','UI خاموش','تیک‌تاک','UI خطا'];
+function sName(k){return k+' - '+(SN[k-1]||'');}
 function fillSounds(list,cur){const sel=$('aSound');sel.textContent='';
-list.forEach((k,i)=>{const o=document.createElement('option');o.value=k;o.textContent='صدای '+(i+1);sel.appendChild(o);});sel.value=cur;}
+list.forEach(k=>{const o=document.createElement('option');o.value=k;o.textContent=sName(k);sel.appendChild(o);});sel.value=cur;}
+(function(){const sel=$('tSound');for(let k=1;k<=SN.length;k++){const o=document.createElement('option');o.value=k;o.textContent=sName(k);sel.appendChild(o);}})();
 async function load(){
  try{
   const s=await (await fetch('/api/settings')).json();
@@ -239,6 +243,7 @@ async function preview(q){
  }catch(e){msg('ارتباط با ساعت برقرار نشد',false);}
 }
 $('testBtn').onclick=()=>preview('volume='+$('vol').value);
+$('tSoundBtn').onclick=()=>preview('sound='+$('tSound').value+'&volume='+$('vol').value);
 $('aSoundBtn').onclick=()=>preview('sound='+$('aSound').value+'&volume='+$('avol').value);
 const AST={idle:'آماده (آلارم زنگ نمی‌زند)',ringing:'در حال زنگ‌زدن 🔔',snoozed:'اسنوز شده'};
 async function alarmState(){

@@ -30,6 +30,11 @@ struct AudioLock
 // volume commands and the settle delay that goes with them.
 static int s_curVolume = -1;
 
+// Timing guards (see AUDIO_MIN_CMD_GAP_MS / AUDIO_MIN_PLAY_GAP_MS in config.h).
+static uint32_t s_lastTxMs = 0;
+static uint32_t s_lastPlayMs = 0;
+static bool s_everPlayed = false;
+
 // JQ6500 serial frame: 0x7E, LEN, CMD, [args...], 0xEF
 // LEN counts itself + CMD + args (so a command with n args has LEN = n + 2).
 static void sendCommand(uint8_t cmd, const uint8_t *args, uint8_t argCount)
@@ -42,7 +47,18 @@ static void sendCommand(uint8_t cmd, const uint8_t *args, uint8_t argCount)
     for (uint8_t i = 0; i < argCount; i++)
         buf[n++] = args[i];
     buf[n++] = 0xEF;
+
+    // The module jams when frames come too close together: keep a minimum gap
+    // between ANY two frames, whichever task sends them (the caller holds the lock).
+    uint32_t since = millis() - s_lastTxMs;
+    if (since < AUDIO_MIN_CMD_GAP_MS)
+        delay(AUDIO_MIN_CMD_GAP_MS - since);
+
+    while (Serial2.available()) // the module's replies are never read: don't let them pile up
+        Serial2.read();
+
     Serial2.write(buf, n); // one write = one whole frame
+    s_lastTxMs = millis();
 }
 
 // ---- Internal helpers (caller already holds the lock) ----
@@ -64,13 +80,41 @@ static void ensureVolume(uint8_t volume)
     if (s_curVolume == (int)volume)
         return;
     sendVolume(volume);
-    delay(30);
+    delay(AUDIO_SETTLE_MS);
 }
 
 static void sendPlay(uint16_t fileIndex)
 {
     uint8_t args[2] = {(uint8_t)(fileIndex >> 8), (uint8_t)(fileIndex & 0xFF)};
     sendCommand(0x03, args, 2);
+    // After audio_stop() the module sits PAUSED, and then "play file N" only loads the
+    // file without starting it (silent until a K pin is pressed, which also plays all the
+    // clips that piled up). An explicit "play/resume" right after makes it start for sure;
+    // it does nothing harmful when the module is already playing.
+    delay(AUDIO_SETTLE_MS);
+    sendCommand(0x0D, nullptr, 0);
+}
+
+// Volume (only if it changed), then play. No pause before it: pausing first left the
+// module in the paused state.
+static void stopThenPlay(uint8_t volume, uint16_t fileIndex)
+{
+    ensureVolume(volume);
+    sendPlay(fileIndex);
+}
+
+// Rate limit for the sounds that may be triggered in bursts (pet taps, previews, yawns).
+// Too many play commands in a row is what makes the module hang, and a chirp that
+// starts 100 ms after the previous one is inaudible anyway. Caller holds the lock.
+static bool playTooSoon()
+{
+    return s_everPlayed && (uint32_t)(millis() - s_lastPlayMs) < AUDIO_MIN_PLAY_GAP_MS;
+}
+
+static void markPlayed()
+{
+    s_everPlayed = true;
+    s_lastPlayMs = millis();
 }
 
 static bool isNightNow()
@@ -98,9 +142,13 @@ void audio_play_async(uint16_t fileIndex)
 
 void audio_tick()
 {
-    uint16_t idx;
+    // Several sounds queued at once: only the newest is worth playing; the older
+    // ones would just cut each other off and flood the module.
+    uint16_t idx = 0, last = 0;
     while (s_audioQueue && xQueueReceive(s_audioQueue, &idx, 0) == pdTRUE)
-        audio_play_gentle(idx);
+        last = idx;
+    if (last != 0)
+        audio_play_gentle(last);
 }
 
 uint16_t audio_next_pet_chirp()
@@ -125,20 +173,23 @@ void audio_set_volume(uint8_t volume)
 {
     AudioLock lock;
     sendVolume(volume);
-    delay(30); // same settle time as ensureVolume(): a play command right after must not be lost
+    delay(AUDIO_SETTLE_MS); // same settle time as ensureVolume(): a play command right after must not be lost
 }
 
 void audio_play_preview(uint16_t fileIndex, uint8_t volume)
 {
     AudioLock lock;
-    ensureVolume(volume); // sends the volume + settle delay only when the level really changes
-    sendPlay(fileIndex);
+    if (playTooSoon())
+        return;
+    stopThenPlay(volume, fileIndex);
+    markPlayed();
 }
 
 void audio_play(uint16_t fileIndex)
 {
     AudioLock lock;
     sendPlay(fileIndex);
+    markPlayed();
 }
 
 void audio_play_gentle(uint16_t fileIndex)
@@ -154,8 +205,10 @@ void audio_play_gentle(uint16_t fileIndex)
     }
 
     AudioLock lock;
-    ensureVolume(volume);
-    sendPlay(fileIndex);
+    if (playTooSoon())
+        return; // tapped/triggered again too fast: the sound already playing is enough
+    stopThenPlay(volume, fileIndex);
+    markPlayed();
 }
 
 // The alarm always plays at the saved ALARM volume (separate from the pet
@@ -171,6 +224,7 @@ void audio_play_loop(uint16_t fileIndex)
     sendCommand(0x11, &mode, 1);
     delay(50); // give the module time to apply the mode before the play command
     sendPlay(fileIndex);
+    markPlayed();
 }
 
 void audio_stop()

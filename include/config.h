@@ -113,7 +113,11 @@ static_assert(WEATHER_BARS >= 2 && WEATHER_BARS <= 8, "WEATHER_BARS must be 2-8"
 #define AUDIO_VOLUME 30       // default volume of the pet/touch sound, 0-30 (changeable from the settings page)
 #define AUDIO_ALARM_VOLUME 30 // default volume of the ALARM, 1-30 (changeable from the settings page).
                               // Separate from the pet volume. Minimum 1: an alarm can't be set to silent.
-#define AUDIO_FILE_COUNT 14   // how many clips are on the module (the test-sound endpoint accepts 1..this)
+// Anti-jam guards for the JQ6500 (it locks up or ignores commands when frames arrive too fast):
+#define AUDIO_MIN_CMD_GAP_MS 60   // minimum pause between two serial frames sent to the module
+#define AUDIO_SETTLE_MS 60        // wait after pause / volume before the next command
+#define AUDIO_MIN_PLAY_GAP_MS 250 // pet/preview/yawn plays closer together than this are dropped (the alarm is never dropped)
+#define AUDIO_FILE_COUNT 14       // how many clips are on the module (the test-sound endpoint accepts 1..this)
 
 // File index = upload order into the module's onboard flash, starting at 1.
 //   01_alarm_soft     02_alarm_main    03_pet_chirp     04_alarm_melodic  05_alarm_loud
