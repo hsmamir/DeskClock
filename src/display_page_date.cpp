@@ -29,10 +29,10 @@ namespace disp
 
     void drawDatePageTop(TFT_eSPI &g, bool haveTime, const struct tm &ti)
     {
-        const int16_t dh = u(40);
+        const int16_t dh = u(34); // a bit smaller than before: the Date page's upper card is shorter (geometrySet)
         const int16_t dw = (int16_t)(dh * 0.56f);
         const int16_t gap = imax(2, u(3));
-        const int16_t dy = u(24);
+        const int16_t dy = u(19);
 
         if (!haveTime)
         {
@@ -42,7 +42,7 @@ namespace disp
                 drawSegDigit(g, x0 + i * (dw + gap), dy, dw, dh, -1, C_AMBER, C_GHOST);
             g.setTextDatum(MC_DATUM);
             g.setTextColor(C_SOFT);
-            g.drawString("Syncing...", W / 2, dy + dh + u(12), 2);
+            g.drawString("Syncing...", W / 2, dy + dh + u(7), 2);
             return;
         }
 
@@ -52,7 +52,7 @@ namespace disp
         strftime(buf, sizeof(buf), "%A", &ti);
         {
             bool fits = smoothWidth(g, ClockSm18, buf) <= W - u(8);
-            smoothText(g, fits ? ClockSm18 : ClockSm12, fits ? CLOCKSM18_CAPH : CLOCKSM12_CAPH, buf, W / 2, u(13),
+            smoothText(g, fits ? ClockSm18 : ClockSm12, fits ? CLOCKSM18_CAPH : CLOCKSM12_CAPH, buf, W / 2, u(10),
                        C_BASELINE, mixColor(C_SOFT, 0xFFFF, 0.5f), C_BG);
         }
 
@@ -75,14 +75,14 @@ namespace disp
         for (char *p = monUp; *p; p++)
             if (*p >= 'a' && *p <= 'z')
                 *p -= 32;
-        int16_t monY = dy + (int16_t)(dh * 0.34f);
+        int16_t monY = dy + (int16_t)(dh * 0.28f);
         if (smoothWidth(g, ClockSm26, monUp) <= availW)
             smoothText(g, ClockSm26, CLOCKSM26_CAPH, monUp, cx, monY, C_BASELINE, C_AMBER, C_BG);
         else // a wide month on a narrow screen: the smaller mixed-case font
             smoothText(g, ClockSm18, CLOCKSM18_CAPH, mon, cx, monY, C_BASELINE, C_AMBER, C_BG);
 
         strftime(buf, sizeof(buf), "%Y", &ti);
-        smoothText(g, ClockSm18, CLOCKSM18_CAPH, buf, cx, dy + (int16_t)(dh * 0.82f), C_BASELINE, C_SOFT, C_BG);
+        smoothText(g, ClockSm18, CLOCKSM18_CAPH, buf, cx, dy + (int16_t)(dh * 0.80f), C_BASELINE, C_SOFT, C_BG);
 
         // calendar header (weekday initials) at the bottom edge of the upper half; today's column is amber
         const uint8_t cf = calFont();
@@ -108,11 +108,15 @@ namespace disp
         int dim = daysInMonth(ti.tm_year + 1900, ti.tm_mon);
         int weeks = (off + dim + 6) / 7;
 
-        int16_t gridTop = u(5);
-        int16_t gridBottom = infoH - u(12); // the page dots sit below
-        int16_t pitch = (int16_t)((gridBottom - gridTop) / weeks);
-        if (pitch > u(11))
-            pitch = u(11);
+        // Rows get as much height as the card allows: the grid starts right under the top edge and runs down to
+        // just above the page dots. The pitch is a float so a 6-week month spreads its rows evenly (an integer
+        // pitch lost up to a pixel per row, and 6 rows of 8 px left no gap between the digits).
+        int16_t gridTop = u(2);
+        int16_t gridBottom = infoH - u(9); // the page dots (radius <= 2.5 u) sit below
+        float pitchF = (float)(gridBottom - gridTop) / weeks;
+        if (pitchF > u(13))
+            pitchF = (float)u(13);
+        int16_t pitch = (int16_t)pitchF;
 
         const uint8_t cf = calFont();
         const int16_t cellW = (int16_t)((W - 2 * u(6)) / 7);
@@ -125,12 +129,12 @@ namespace disp
         {
             int idx = off + day - 1;
             int16_t cx = calColX(idx % 7);
-            int16_t cy = (int16_t)(gridTop + (idx / 7) * pitch + pitch / 2);
+            int16_t cy = (int16_t)(gridTop + ((idx / 7) + 0.5f) * pitchF + 0.5f);
             snprintf(buf, sizeof(buf), "%d", day);
             if (day == ti.tm_mday)
             {
                 int16_t w = imin((int16_t)(cellW - 1), (int16_t)u(14));
-                int16_t h = imax(5, (int16_t)(pitch - 1));
+                int16_t h = imax(5, imin((int16_t)(pitch - 2), (int16_t)u(10)));
                 g.fillRoundRect(cx - w / 2, cy - h / 2, w, h, imax(1, u(2)), C_AMBER);
                 g.setTextColor(C_BG);
             }

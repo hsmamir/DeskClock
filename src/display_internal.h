@@ -101,16 +101,18 @@ namespace disp
     {
         TFT_eSprite spr;
         bool ok = false;
-        int16_t x0 = 0, y0 = 0, w = 0, h = 0; // screen position / size of the card
+        int16_t x0 = 0, y0 = 0, w = 0, h = 0; // screen position / size of the card (h and y0 follow geometrySet())
+        int16_t sh = 0;                       // real height of the sprite: >= h (the Date page uses a taller / shorter card)
         Canvas() : spr(&tft) {}
-        bool init(int16_t x, int16_t y, int16_t width, int16_t height)
+        bool init(int16_t x, int16_t y, int16_t width, int16_t height, int16_t spriteH = 0)
         {
             x0 = x;
             y0 = y;
             w = width;
             h = height;
+            sh = spriteH > height ? spriteH : height;
             spr.setColorDepth(16);
-            ok = (spr.createSprite(w, h) != nullptr);
+            ok = (spr.createSprite(w, sh) != nullptr);
             return ok;
         }
         TFT_eSPI &begin()
@@ -131,9 +133,11 @@ namespace disp
     extern bool alarmFlashOn;
 
     // ---- Cards / frame (display_core.cpp) ----
-    void cardsInit();       // computes the layout from the screen size, the corner table, C_FRAME
-    void frameUpdate();     // keeps the frame colour in step with the theme; repaints it when needed
-    extern bool frameDirty; // a full-screen page (OTA, portal) overwrote the frame: repaint it
+    void cardsInit();                  // computes the layout from the screen size, the corner table, C_FRAME
+    void geometrySet(bool dateLayout); // card split: the Date page has a shorter upper card (more room for the calendar)
+    extern int16_t faceHMax, infoHMax; // tallest the two cards ever get (= the sprite heights)
+    void frameUpdate();                // keeps the frame colour in step with the theme; repaints it when needed
+    extern bool frameDirty;            // a full-screen page (OTA, portal) overwrote the frame: repaint it
 
     // ---- State readers (display_core.cpp) ----
     struct WeatherDetail

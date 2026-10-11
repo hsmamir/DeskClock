@@ -47,6 +47,15 @@ namespace disp
     Canvas faceCv, infoCv;
 
     // ---- Cards: layout, frame, rounded corners ----
+    // The Date page gives the calendar more room: its upper card (weekday, day, month, year) is shorter and the
+    // lower card (the calendar) taller. DATE_FACE_FRAC = share of the height (after margins and gap) of the upper
+    // card on that page; the clock and the Weather page keep CARD_FACE_FRAC. Override it with -D if you like.
+#ifndef DATE_FACE_FRAC
+#define DATE_FACE_FRAC 0.44f
+#endif
+    int16_t faceHMax = 0, infoHMax = 0;
+    static int16_t clockFaceH = 0, clockInfoH = 0, dateFaceH = 0, dateInfoH = 0;
+
     static const int MAX_R = 32;
     static float cornerOut[MAX_R]; // per corner row (0 = outermost): how many px of the row lie outside the arc
 
@@ -66,6 +75,18 @@ namespace disp
         infoH = avail - faceH;
         faceY = cardX;
         infoY = faceY + faceH + cardGap;
+        clockFaceH = faceH;
+        clockInfoH = infoH;
+        dateFaceH = (int16_t)(avail * DATE_FACE_FRAC + 0.5f);
+        if (dateFaceH > clockFaceH)
+            dateFaceH = clockFaceH; // never taller than on the clock page
+        dateInfoH = avail - dateFaceH;
+        faceHMax = imax(clockFaceH, dateFaceH);
+        infoHMax = imax(clockInfoH, dateInfoH);
+        if (cardR > dateFaceH / 2)
+            cardR = dateFaceH / 2;
+        if (cardR > dateInfoH / 2)
+            cardR = dateInfoH / 2;
         if (cardR > faceH / 2)
             cardR = faceH / 2;
         if (cardR > infoH / 2)
@@ -80,6 +101,25 @@ namespace disp
         C_FRAME = frameColor();
         tft.fillScreen(C_FRAME);
         frameDirty = false;
+    }
+
+    // Switches the card split (faceH / infoH / infoY and the two canvases) between the clock layout and the Date
+    // page. Call it every tick, before anything is drawn: the clock, the Weather page and the diagnostics page
+    // always see the clock split, only the Date page sees the other one. Both splits add up to the same height,
+    // so the frame and the bottom edge never move.
+    void geometrySet(bool dateLayout)
+    {
+        int16_t fh = dateLayout ? dateFaceH : clockFaceH;
+        if (fh == faceH)
+            return;
+        faceH = fh;
+        infoH = dateLayout ? dateInfoH : clockInfoH;
+        infoY = faceY + faceH + cardGap;
+        faceCv.h = faceH;
+        infoCv.y0 = infoY;
+        infoCv.h = infoH;
+        gapInvalidate();           // the strip between the cards is somewhere else now
+        lastInfoSig = 0xFFFFFFFFu; // and the lower card has to be redrawn
     }
 
     static void frameFill()
@@ -159,9 +199,10 @@ namespace disp
     {
         if (ok)
         {
-            if (dx != 0)
+            if (dx != 0 || sh != h)
             {
-                tft.setViewport(x0, y0, w, h, false); // absolute coords: clip the sliding sprite to the card
+                // clip the sprite to the card: when it slides, and when the sprite is taller than the card
+                tft.setViewport(x0, y0, w, h, false); // absolute coords
                 spr.pushSprite(x0 + dx, y0);
                 tft.resetViewport();
             }

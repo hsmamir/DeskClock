@@ -86,6 +86,7 @@ namespace disp
     static bool gapSigOk = false; // what is on screen in the strip right now is described by the values below
     static bool gapSigFull = false;
     static uint16_t gapSigBg = 0, gapSigFrame = 0, gapSigLine = 0;
+    static int16_t gapSigY = 0;
 
     void gapInvalidate()
     {
@@ -101,7 +102,7 @@ namespace disp
             int16_t right = cardX + W;
             uint16_t lineCol = tint(C_SOFT, 0.3f);
             bool same = gapSigOk && gapSigFull == fullLayout && gapSigBg == C_BG && gapSigFrame == C_FRAME &&
-                        gapSigLine == lineCol;
+                        gapSigLine == lineCol && gapSigY == gy;
             if (x < right && !same)
             {
                 if (fullLayout)
@@ -144,6 +145,7 @@ namespace disp
                 gapSigBg = C_BG;
                 gapSigFrame = C_FRAME;
                 gapSigLine = lineCol;
+                gapSigY = gy;
             }
         }
         if (dx == 0)

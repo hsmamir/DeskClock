@@ -68,8 +68,8 @@ void display_init()
     // two rounded cards (face on top, info panel below) on a darker frame: sizes, corner table, frame fill
     cardsInit();
 
-    bool f = faceCv.init(cardX, faceY, W, faceH);
-    bool i = infoCv.init(cardX, infoY, W, infoH);
+    bool f = faceCv.init(cardX, faceY, W, faceH, faceHMax);
+    bool i = infoCv.init(cardX, infoY, W, infoH, infoHMax);
 
     // small sprite for the clock-digit slide animation (needs the info panel to be a sprite too)
     if (CLOCK_DIGIT_ANIM && i)
@@ -135,6 +135,7 @@ void display_tick()
     // Only the clock page shows the face (the eyes). Date and Weather are full-screen pages; an alarm always
     // brings the face and the clock back, whatever page was open. (The diagnostics page draws its own two cards.)
     fullLayout = !alarm && isFullPage(mode);
+    geometrySet(fullLayout && mode == DisplayMode::DATE); // the Date page has its own card split
 
     struct tm ti;
     bool haveTime = timeSynced && getLocalTime(&ti, 0);
