@@ -9,7 +9,7 @@ struct Settings
     int alarmHour;     // 0-23
     int alarmMinute;   // 0-59
     int alarmDays;     // weekday mask: bit0 = Sunday ... bit6 = Saturday (same numbering as tm_wday); 1-127
-    int alarmSound;    // clip number on the audio module, 1..AUDIO_FILE_COUNT
+    int alarmSound;    // clip number on the audio module, one of ALARM_SOUND_LIST
     int alarmVolume;   // 1-30, volume of the alarm only
     int volume;        // 0-30, volume of the pet/touch sound only
     bool petReactions; // varied Pet button reactions (hearts, dizzy, sleepy, ...); off = always the classic happy face
@@ -29,6 +29,11 @@ void settings_init();
 
 // Thread-safe snapshot of the current settings.
 Settings settings_get();
+
+// Clips that may be used as the alarm tone (config.h ALARM_SOUND_LIST).
+bool settings_is_alarm_sound(int n);
+int settings_alarm_sound_count();
+int settings_alarm_sound_at(int i);
 
 // Validates, saves to NVS, and applies the timezone. On failure returns false
 // and sets *err to a short English message; nothing is changed.

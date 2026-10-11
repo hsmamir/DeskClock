@@ -177,14 +177,14 @@ const i=document.createElement('input');i.type='checkbox';i.dataset.d=d[0];
 const s=document.createElement('span');s.textContent=d[1];l.append(i,s);box.appendChild(l);});})();
 function setDays(m){document.querySelectorAll('#days input').forEach(i=>{i.checked=((m>>(+i.dataset.d))&1)===1;});}
 function getDays(){let m=0;document.querySelectorAll('#days input').forEach(i=>{if(i.checked)m|=1<<(+i.dataset.d);});return m;}
-function fillSounds(n,cur){const sel=$('aSound');sel.textContent='';
-for(let k=1;k<=n;k++){const o=document.createElement('option');o.value=k;o.textContent='صدای '+k;sel.appendChild(o);}sel.value=cur;}
+function fillSounds(list,cur){const sel=$('aSound');sel.textContent='';
+list.forEach((k,i)=>{const o=document.createElement('option');o.value=k;o.textContent='صدای '+(i+1);sel.appendChild(o);});sel.value=cur;}
 async function load(){
  try{
   const s=await (await fetch('/api/settings')).json();
   $('aEn').checked=s.alarmEnabled;
   $('aTime').value=String(s.alarmHour).padStart(2,'0')+':'+String(s.alarmMinute).padStart(2,'0');
-  setDays(s.alarmDays);fillSounds(s.soundCount,s.alarmSound);
+  setDays(s.alarmDays);fillSounds(s.alarmSounds,s.alarmSound);
   $('avol').value=s.alarmVolume;$('avOut').textContent=s.alarmVolume;
   $('vol').value=s.volume;$('volOut').textContent=s.volume;
   $('petOn').checked=s.petReactions;

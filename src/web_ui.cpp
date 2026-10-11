@@ -62,7 +62,9 @@ static void sendSettings(int code)
     d["alarmDays"] = s.alarmDays;
     d["alarmSound"] = s.alarmSound;
     d["alarmVolume"] = s.alarmVolume;
-    d["soundCount"] = AUDIO_FILE_COUNT;
+    JsonArray snd = d["alarmSounds"].to<JsonArray>();
+    for (int i = 0; i < settings_alarm_sound_count(); i++)
+        snd.add(settings_alarm_sound_at(i));
     d["volume"] = s.volume;
     d["petReactions"] = s.petReactions;
     d["latitude"] = s.latitude;

@@ -10,6 +10,20 @@
 
 static const char *NVS_NAMESPACE = "deskclock";
 
+static const uint8_t kAlarmSounds[] = ALARM_SOUND_LIST;
+static_assert(sizeof(kAlarmSounds) > 0, "ALARM_SOUND_LIST must not be empty");
+
+bool settings_is_alarm_sound(int n)
+{
+    for (uint8_t k : kAlarmSounds)
+        if (k == n)
+            return true;
+    return false;
+}
+
+int settings_alarm_sound_count() { return (int)sizeof(kAlarmSounds); }
+int settings_alarm_sound_at(int i) { return kAlarmSounds[i]; }
+
 static_assert(ALARM_DAYS_MASK > 0 && ALARM_DAYS_MASK <= 0x7F, "ALARM_DAYS_MASK must be 1-127");
 static_assert(SOUND_INDEX_ALARM >= 1 && SOUND_INDEX_ALARM <= AUDIO_FILE_COUNT, "SOUND_INDEX_ALARM must be 1..AUDIO_FILE_COUNT");
 static_assert(AUDIO_ALARM_VOLUME >= 1 && AUDIO_ALARM_VOLUME <= 30, "AUDIO_ALARM_VOLUME must be 1-30");
@@ -68,9 +82,9 @@ static bool validate(const Settings &s, const char **err)
         *err = "pick at least one alarm day";
         return false;
     }
-    if (s.alarmSound < 1 || s.alarmSound > AUDIO_FILE_COUNT)
+    if (!settings_is_alarm_sound(s.alarmSound))
     {
-        *err = "alarm sound out of range";
+        *err = "alarm sound must be one of the alarm clips";
         return false;
     }
     // written so that NaN fails too
@@ -129,6 +143,8 @@ void settings_init()
             s.alarmVolume = s.volume < 1 ? 1 : s.volume;
         s.alarmDays = p.getUChar("aD", s.alarmDays);
         s.alarmSound = p.getUChar("aS", s.alarmSound);
+        if (!settings_is_alarm_sound(s.alarmSound))
+            s.alarmSound = SOUND_INDEX_ALARM; // saved clip is no longer an alarm tone: keep the other settings
         s.latitude = p.getFloat("lat", s.latitude);
         s.longitude = p.getFloat("lon", s.longitude);
         if (p.isKey("city"))
