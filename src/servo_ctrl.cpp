@@ -53,6 +53,16 @@ static PetMotion petMotion = {SERVO_PET_ANGLE, WIGGLE_LEG_MS, 0, WIGGLE_LEG_MS};
 static bool releasePending = false;
 static uint32_t releaseAtMs = 0;
 
+// ---- Head follows the eyes (servo_look) ----
+// The display asks for an angle; the servo task moves toward it in small steps (smooth, quiet) and, once it is back at
+// rest, lets go again.
+static volatile bool lookWanted = false;
+static volatile int lookTargetAngle = SERVO_REST_ANGLE;
+static bool lookTurned = false; // the head is (or was) away from rest because of servo_look
+static uint32_t lookLastStepMs = 0;
+static const uint16_t LOOK_STEP_MS = 30;
+static const int LOOK_STEP_DEG = 2;
+
 static Mood readMood()
 {
     xSemaphoreTake(g_stateMutex, portMAX_DELAY);
@@ -136,6 +146,47 @@ static void servoReleaseIfDue(uint32_t now)
     // Park the signal line LOW so it can't float and make the servo twitch.
     pinMode(SERVO_PIN, OUTPUT);
     digitalWrite(SERVO_PIN, LOW);
+}
+
+// Idle only: step the head toward what servo_look asked for (or back to rest).
+static void lookStep(uint32_t now)
+{
+    if (moveActive || (uint32_t)(now - lookLastStepMs) < LOOK_STEP_MS)
+        return;
+    int target = lookWanted ? (int)lookTargetAngle : SERVO_REST_ANGLE;
+    int cur = (int)lroundf(curAngle);
+    if (cur == target)
+    {
+        if (lookTurned && !lookWanted)
+        {
+            lookTurned = false;
+            servoReleaseSoon(now); // back at rest: let go
+        }
+        return;
+    }
+    lookLastStepMs = now;
+    int d = target - cur;
+    if (d > LOOK_STEP_DEG)
+        d = LOOK_STEP_DEG;
+    else if (d < -LOOK_STEP_DEG)
+        d = -LOOK_STEP_DEG;
+    servoMove(cur + d);
+    lookTurned = true;
+}
+
+void servo_look(float x)
+{
+    if (x > 1.0f)
+        x = 1.0f;
+    if (x < -1.0f)
+        x = -1.0f;
+    lookTargetAngle = SERVO_REST_ANGLE + (int)lroundf(x * SERVO_LOOK_DEG * SERVO_LOOK_DIR);
+    lookWanted = true;
+}
+
+void servo_look_end()
+{
+    lookWanted = false;
 }
 
 void servo_init()
@@ -255,5 +306,7 @@ void servo_tick()
             servoMove(SERVO_REST_ANGLE);
             servoReleaseSoon(now);
         }
+        else
+            lookStep(now); // idle: the head may follow the eyes
     }
 }

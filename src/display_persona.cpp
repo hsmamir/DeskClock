@@ -6,6 +6,7 @@
 // the drawing and the gaze / lid machines elsewhere only read it.
 #include "display_internal.h"
 #include "audio.h"
+#include "servo_ctrl.h"
 
 namespace disp
 {
@@ -56,12 +57,25 @@ namespace disp
         ROLL,
         SQUINT,
         RELIEF,
-        OH
+        OH,
+        THINK,  // "hmm": up and to the right, dots, sometimes an idea
+        GLANCE, // looks at the digits, they glow once
+        FLY,    // a fly buzzes across; eyes (and head) follow
+        YAWN    // evening / late-night yawn
     };
     static Act act = Act::NONE;
     static uint32_t actStartMs = 0, actDurMs = 0;
     static uint32_t nextMicroAtMs = 0;
     static uint32_t nextBondActMs = 0; // next sigh / self-started smile that comes from the bond level
+
+    // ---- idle life ----
+    static uint32_t nextYawnAtMs = 0;
+    static bool eveningArmed = false; // the evening window was entered and the first yawn is scheduled
+    static bool lateYawnDone = false; // already yawned during this "kept awake at night" spell
+    static float flySide = 1.0f;      // +1: enters on the right, -1: on the left
+    static float flyPhase = 0;        // makes every flight different
+    static bool thinkIdea = false;    // this "hmm" ends with an "oh!"
+    static bool thinkIdeaShown = false;
     static uint32_t pulseStartMs = 0;
     static bool pulseOn = false;
 
@@ -85,6 +99,31 @@ namespace disp
         act = a;
         actStartMs = now;
         actDurMs = dur;
+    }
+
+    // Minutes until night mode starts (same rule as sun_is_night); < 0 when there is no such moment today.
+    static float minutesToNight(const struct tm &ti)
+    {
+        float startH;
+        if (!NIGHT_FOLLOWS_SUN || !SUN_ENABLED)
+            startH = (float)NIGHT_START_HOUR;
+        else
+        {
+            SunTimes s = sun_today(ti);
+            if (!s.valid)
+                startH = (float)NIGHT_START_HOUR;
+            else if (s.polarNight || s.midnightSun)
+                return -1.0f;
+            else
+                startH = s.setH + (float)SUN_NIGHT_START_AFTER_SUNSET_H;
+        }
+        float nowH = ti.tm_hour + ti.tm_min / 60.0f;
+        return (startH - nowH) * 60.0f;
+    }
+
+    static float clampGaze(float v)
+    {
+        return v < -1.0f ? -1.0f : (v > 1.0f ? 1.0f : v);
     }
 
     static uint32_t bondActDelayMs()
@@ -202,6 +241,7 @@ namespace disp
         P.celestOk = false;
         P.frown = (int32_t)(now - frownUntilMs) < 0;
         P.digitPulse = 0;
+        P.flyOn = false;
 
         // ---------- 1. wake-up at boot ----------
         if (!bootInit)
@@ -397,6 +437,25 @@ namespace disp
         if (act != Act::NONE && (now - actStartMs >= actDurMs || !canAct))
             act = Act::NONE;
 
+        // yawns: in the last stretch before night mode, and once when he is kept awake at night
+        bool evening = false;
+        if (IDLE_YAWN_ENABLED && in.haveTime && in.ti && !in.night)
+        {
+            float toNight = minutesToNight(*in.ti);
+            evening = toNight > 0 && toNight <= (float)IDLE_YAWN_EVENING_MIN;
+        }
+        if (!evening)
+            eveningArmed = false;
+        else if (!eveningArmed)
+        {
+            eveningArmed = true;
+            nextYawnAtMs = now + (uint32_t)random(IDLE_YAWN_MIN_MIN, IDLE_YAWN_MAX_MIN + 1) * 60000UL / 2; // the first one comes sooner
+        }
+        if (!(in.night && stayAwake))
+            lateYawnDone = false;
+        const bool lateYawn = IDLE_YAWN_ENABLED && in.night && stayAwake && !lateYawnDone &&
+                              (int32_t)(stayAwakeUntilMs - now) <= (int32_t)(SLEEP_STAY_AWAKE_S * 1000UL - IDLE_YAWN_LATE_S * 1000UL);
+
         if (canAct)
         {
             bool offlineEdge = prevOffline && !in.offline;
@@ -415,6 +474,14 @@ namespace disp
                 startAct(Act::CHIME, now, 1600);
             else if (sunriseEdge)
                 startAct(Act::SQUINT, now, 2200);
+            else if (act == Act::NONE && ((evening && (int32_t)(now - nextYawnAtMs) >= 0) || lateYawn))
+            {
+                if (lateYawn)
+                    lateYawnDone = true;
+                nextYawnAtMs = now + (uint32_t)random(IDLE_YAWN_MIN_MIN, IDLE_YAWN_MAX_MIN + 1) * 60000UL;
+                startAct(Act::YAWN, now, 2400);
+                exprForce(Expr::YAWN, now, 2200); // (the yawn sound is muted at night by the audio module)
+            }
             else if (PET_BOND_ENABLED && act == Act::NONE && !in.sleepy && in.haveTime && in.wifiDownMs == 0 &&
                      (int32_t)(now - nextBondActMs) >= 0)
             {
@@ -434,12 +501,30 @@ namespace disp
             else if (act == Act::NONE && !in.sleepy && in.haveTime && in.wifiDownMs == 0 && (int32_t)(now - nextMicroAtMs) >= 0)
             {
                 int r = random(0, 100);
-                if (r < 30)
+                if (r < 18)
                     startAct(Act::PEEK, now, 3400);
-                else if (r < 70 || !in.sunny)
-                    startAct(Act::ROLL, now, 1100);
-                else
+                else if (r < 30 && in.sunny)
                     startAct(Act::SQUINT, now, 2200);
+                else if (r < 46 && IDLE_THINK_ENABLED)
+                {
+                    thinkIdea = random(0, 100) < 50;
+                    thinkIdeaShown = false;
+                    startAct(Act::THINK, now, 2600);
+                }
+                else if (r < 62 && IDLE_GLANCE_ENABLED)
+                {
+                    startAct(Act::GLANCE, now, 1500);
+                    pulseOn = true; // the digits glow once while he looks
+                    pulseStartMs = now;
+                }
+                else if (r < 78 && IDLE_FLY_ENABLED)
+                {
+                    flySide = random(0, 2) ? 1.0f : -1.0f;
+                    flyPhase = random(0, 628) / 100.0f;
+                    startAct(Act::FLY, now, IDLE_FLY_MS);
+                }
+                else
+                    startAct(Act::ROLL, now, 1100);
                 nextMicroAtMs = now + (uint32_t)random(MICRO_MIN_S, MICRO_MAX_S + 1) * 1000UL;
             }
         }
@@ -514,10 +599,56 @@ namespace disp
                 if (t < 900)
                     setGaze(0, -1);
                 break;
+            case Act::THINK: // "hmm": the dots bounce while he looks up and to the right; then maybe "oh!"
+            {
+                const float ideaAt = (float)actDurMs - 700.0f;
+                if (t < ideaAt)
+                {
+                    P.exprOk = false;
+                    P.thinking = true;
+                    P.lidBias = 0.10f * sstep(t / 400.0f);
+                    setGaze(0.9f, -0.8f);
+                }
+                else
+                {
+                    setGaze(0, -0.2f);
+                    if (thinkIdea && !thinkIdeaShown)
+                    {
+                        thinkIdeaShown = true;
+                        exprForce(Expr::SURPRISE, now, 650); // exprOk stays true so it is shown
+                    }
+                }
+                break;
+            }
+            case Act::GLANCE: // check the time
+                if (t < 1200)
+                    setGaze(0, CHIME_LOOK_Y);
+                break;
+            case Act::FLY: // in from one side, loops, out on the other; the eyes (and head) follow
+            {
+                float uu = t / (float)actDurMs;
+                if (uu > 1.0f)
+                    uu = 1.0f;
+                const float env = sinf(3.14159f * uu); // 0 at both ends: it comes and goes in a fairly straight line
+                float fx = flySide * 1.2f * (0.65f * (1.0f - 2.0f * uu) + 0.35f * cosf(3.14159f * uu));
+                fx += 0.40f * sinf(6.2832f * 2.5f * uu + flyPhase) * env;
+                float fy = -0.10f + 0.50f * sinf(6.2832f * 1.5f * uu + flyPhase * 0.7f) * env + 0.18f * sinf(6.2832f * 6.0f * uu) * env;
+                P.flyOn = true;
+                P.flyX = fx;
+                P.flyY = fy;
+                P.exprOk = false;
+                setGaze(clampGaze(fx), clampGaze(fy), true);
+                if (IDLE_FLY_HEAD)
+                    servo_look(clampGaze(fx));
+                break;
+            }
             default:
                 break;
             }
         }
+
+        if (act != Act::FLY)
+            servo_look_end(); // the head drifts back to rest
 
         // ---------- 5. longer moods (no act running) ----------
         if (P.asleep)
@@ -660,6 +791,18 @@ namespace disp
                 float a = sinf(now / 700.0f - i * 0.9f) * 0.5f + 0.5f;
                 g.fillCircle(W * 3 / 4 + i * u(6), cy - R - u(6) - i * u(2), imax(1, u(1.5f)), tint(C_ICE, 0.25f + 0.45f * a));
             }
+        }
+        if (persona.flyOn)
+        {
+            int16_t fx = W / 2 + (int16_t)(persona.flyX * (W / 2));
+            int16_t fy = cy + (int16_t)(persona.flyY * (faceH * 0.36f));
+            const int16_t r = imax(1, u(1.4f));
+            const int16_t wy = ((now / 45) & 1) ? -imax(1, u(1.8f)) : -imax(1, u(0.8f)); // the wings flick up and down
+            const uint16_t wing = rgb(200, 215, 230);
+            g.fillCircle(fx - u(1.8f), fy + wy, r, wing);
+            g.fillCircle(fx + u(1.8f), fy + wy, r, wing);
+            g.fillCircle(fx, fy, r + 1, rgb(190, 190, 200)); // light rim: visible on the dark card and on the bright eyes
+            g.fillCircle(fx, fy, r, rgb(25, 25, 30));
         }
         if (persona.relief > 0.2f)
         {

@@ -284,6 +284,29 @@ static_assert(AMBIENT_MOTES >= 3 && AMBIENT_MOTES <= 5, "AMBIENT_MOTES must be 3
 #define MICRO_MAX_S 150
 #define SKY_LOOK_PERCENT 10
 
+// ---- Idle life (display_persona.cpp, servo_ctrl.cpp) ----
+// More small things he does by himself while nothing else is going on (daytime, no reaction showing). They share the
+// MICRO_MIN_S..MICRO_MAX_S rhythm with peek-a-boo / eye roll / squint:
+//   THINK:  "hmm" - looks up and to the right, three dots bounce, half the time an "oh!" at the end.
+//   GLANCE: looks down at the digits for a moment and they glow once, as if checking the time.
+//   FLY:    a small fly buzzes in from one side, loops around and leaves on the other. The eyes follow it and, with
+//           IDLE_FLY_HEAD, the head turns a little (SERVO_LOOK_DEG at most; SERVO_LOOK_DIR = -1 if it turns the wrong way).
+//   YAWN:   in the last IDLE_YAWN_EVENING_MIN minutes before night mode he yawns every IDLE_YAWN_MIN_MIN..MAX_MIN minutes;
+//           and if you wake him at night he yawns once IDLE_YAWN_LATE_S seconds after the touch if you keep him up.
+// Set a switch to 0 to remove that behaviour.
+#define IDLE_THINK_ENABLED 1
+#define IDLE_GLANCE_ENABLED 1
+#define IDLE_FLY_ENABLED 1
+#define IDLE_FLY_MS 6500
+#define IDLE_FLY_HEAD 1
+#define SERVO_LOOK_DEG 14
+#define SERVO_LOOK_DIR 1
+#define IDLE_YAWN_ENABLED 1
+#define IDLE_YAWN_EVENING_MIN 90
+#define IDLE_YAWN_MIN_MIN 12
+#define IDLE_YAWN_MAX_MIN 26
+#define IDLE_YAWN_LATE_S 25
+
 // ---- Servo motion ----
 // Visible movements are eased in SERVO_STEP_MS steps instead of jumping, and start SERVO_FOLLOW_DELAY_MS after
 // the eyes reacted (the head follows the eyes). SERVO_TILT_DEG: head tilt for the raised-eyebrow / sorry faces.

@@ -11,6 +11,8 @@ Everything else - alarm time, volume, city, timezone - is set from a small web p
   (night / dawn / day / dusk) that follows the real sunrise and sunset.
 - **Eyes with character**: blinking, looking around, winking, yawning, squinting, peek-a-boo, sleepy at night,
   worried when WiFi is gone, sweating when hot, shivering when cold, startled by lightning.
+- **Idle life**: now and then he thinks ("hmm", sometimes an "oh!"), checks the time, chases a little fly with his eyes
+  and head, and yawns in the evening or when you keep him up at night. See [Idle life](#idle-life).
 - **Living background**: the sky behind the eyes follows the weather and the hour - sun and moon travelling
   across the sky, the real moon phase, drifting clouds, rain, snow, fog, lightning and stars. Clouds and
   rain follow the real wind speed and direction.
@@ -137,6 +139,21 @@ An unattended alarm stops by itself after 3 minutes. The next day's alarm is nev
   their age.
 - **Diagnostics**: IP address, WiFi signal, free memory, last NTP sync and age of the weather reading.
 
+### Idle life
+
+While nothing else is happening (daytime, no reaction showing) he does a small thing by himself every 1-2.5 minutes
+(the `MICRO_*` rhythm): peek-a-boo, an eye roll, a squint in bright sun, and these:
+
+| Behaviour | What you see                                                                                                                                          |
+| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Thinking  | looks up and to the right, three dots bounce; half the time an "oh!" at the end                                                                       |
+| Glance    | looks down at the digits and they glow once, as if checking the time                                                                                  |
+| Fly       | a small fly enters on one side, loops around for about 6.5 s and leaves on the other; the eyes follow it and the head turns a little                  |
+| Yawn      | in the last 90 minutes before night mode starts, a yawn every 12-26 minutes; at night, if you wake him and keep him up, one yawn 25 s after the touch |
+
+If the head turns the wrong way for the fly, set `SERVO_LOOK_DIR` to `-1` in `config.h`; `IDLE_FLY_HEAD 0` keeps the head
+still. Every behaviour has an `IDLE_*_ENABLED` switch.
+
 ### Pet reactions
 
 In priority order: fast repeated taps give hearts, then dizzy, then annoyed; the first tap of the morning gives a
@@ -206,18 +223,19 @@ clips of one family at a similar loudness, since they share one volume setting.
 
 Almost everything is a `#define` in `include/config.h`, each with a comment. The most useful ones:
 
-| Setting                                                   | What it does                                                              |
-| --------------------------------------------------------- | ------------------------------------------------------------------------- |
-| `WEB_HOSTNAME`, `WEB_UI_PASSWORD`, `OTA_PASSWORD`         | network name and passwords                                                |
-| `DEFAULT_TZ_*`, `WEATHER_*`                               | factory timezone, city and refresh interval                               |
-| `ALARM_*`                                                 | factory alarm, snooze length, snooze limit, auto-off, grace period        |
-| `NIGHT_FOLLOWS_SUN`, `NIGHT_START_HOUR`, `NIGHT_END_HOUR` | when night mode starts and ends                                           |
-| `BACKLIGHT_*`                                             | how the screen is dimmed (drive strength or PWM)                          |
-| `PET_*`                                                   | streak lengths, purr time, rare-reaction chance                           |
-| `PET_BOND_*`                                              | how fast the bond grows and fades, its levels, tint and self-started acts |
-| `SERVO_*`                                                 | rest / pet / alarm angles and timings                                     |
-| `SCENE_*`, `AMBIENT_FX`, `WEATHER_*_ANIM`                 | the background and the animations - set to 0 to switch off                |
-| `TASK_WDT_*`                                              | watchdog timeout                                                          |
+| Setting                                                   | What it does                                                                |
+| --------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `WEB_HOSTNAME`, `WEB_UI_PASSWORD`, `OTA_PASSWORD`         | network name and passwords                                                  |
+| `DEFAULT_TZ_*`, `WEATHER_*`                               | factory timezone, city and refresh interval                                 |
+| `ALARM_*`                                                 | factory alarm, snooze length, snooze limit, auto-off, grace period          |
+| `NIGHT_FOLLOWS_SUN`, `NIGHT_START_HOUR`, `NIGHT_END_HOUR` | when night mode starts and ends                                             |
+| `BACKLIGHT_*`                                             | how the screen is dimmed (drive strength or PWM)                            |
+| `PET_*`                                                   | streak lengths, purr time, rare-reaction chance                             |
+| `PET_BOND_*`                                              | how fast the bond grows and fades, its levels, tint and self-started acts   |
+| `IDLE_*`, `SERVO_LOOK_*`                                  | thinking, glance, fly and yawn behaviours, how far the head follows the fly |
+| `SERVO_*`                                                 | rest / pet / alarm angles and timings                                       |
+| `SCENE_*`, `AMBIENT_FX`, `WEATHER_*_ANIM`                 | the background and the animations - set to 0 to switch off                  |
+| `TASK_WDT_*`                                              | watchdog timeout                                                            |
 
 ## Project layout
 

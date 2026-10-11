@@ -324,12 +324,14 @@ namespace disp
         bool thinking = false; // time / WiFi not there yet: look up-right, three dots
         bool exprOk = true;    // random idle expressions allowed
         bool sulking = false;
-        float scalePulse = 1.0f; // eye size factor (the chime widens them once)
-        float peek = 0;          // 0 normal .. 1 hidden below the card edge
-        bool shiver = false;     // small tremble (before the alarm)
-        float digitPulse = 0;    // 0..1 the clock digits flash (top of the hour)
-        float relief = 0;        // 0..1 progress of the sigh when WiFi came back (0 = none)
-        bool celestOk = false;   // the sun / moon is up there: a share of idle looks goes to it
+        float scalePulse = 1.0f;  // eye size factor (the chime widens them once)
+        float peek = 0;           // 0 normal .. 1 hidden below the card edge
+        bool shiver = false;      // small tremble (before the alarm)
+        float digitPulse = 0;     // 0..1 the clock digits flash (top of the hour)
+        float relief = 0;         // 0..1 progress of the sigh when WiFi came back (0 = none)
+        bool flyOn = false;       // the virtual fly is on screen (drawPersonaExtras)
+        float flyX = 0, flyY = 0; // where: x -1..1 across the card (beyond = off screen), y -1 (up) .. 1 (down)
+        bool celestOk = false;    // the sun / moon is up there: a share of idle looks goes to it
         float celestX = 0, celestY = 0;
         bool gazeOn = false;     // the persona decides where to look
         bool gazeDirect = false; // ... and sets the gaze itself (roll, peek) instead of a saccade target
