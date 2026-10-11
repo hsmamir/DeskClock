@@ -16,6 +16,9 @@ Everything else - alarm time, volume, city, timezone - is set from a small web p
   rain follow the real wind speed and direction.
 - **Pet button** with varied reactions (hearts, dizzy, annoyed, sleepy, raised eyebrow in rain, "missed you",
   morning yawn, rare winks and surprises) plus purring when held. Statistics are kept in flash.
+- **Bond**: a lasting "how much does he like you" value that grows when you pet or purr him regularly and fades
+  when you stay away. It makes him more patient, lets him smile by himself, tints his eyes, and when he is lonely
+  he sighs now and then. See [Bond](#bond).
 - **Weather** from Open-Meteo (free, no API key): current conditions, today's high / low, feels-like, humidity,
   wind, UV, pressure, sunrise / sunset and hourly forecast bars with the chance of rain.
 - **Date page** with the weekday, a big day number and a month calendar (today highlighted).
@@ -141,6 +144,28 @@ yawn; the first tap after a long absence gives "missed you"; a rare random one g
 night (sleepy), rain (raised eyebrow), heat (sweating), cold (shivering); otherwise the classic happy face.
 All of it can be turned off on the settings page (then it is always the happy face).
 
+### Bond
+
+The clock remembers how much it likes you (0-100 %, kept in flash, shown on the settings page under *Pet reactions*).
+
+- **Grows** with taps (+1 % each, not while dizzy-spamming), with purring (+1.5 % per hold) and with making up after a
+  sulk (+2 %). Taps and purring together add at most 12 % per day, so one long session cannot max it out.
+  "That's enough!" costs 3 %.
+- **Fades** when nobody pets him: nothing for 12 hours after the last tap, then 8 % per day, never below 5 %.
+  The fading is only counted with a clock that was NTP-synced (not one restored from flash).
+- **Levels**: *lonely* (under 25 %), *friendly* (the start, 40 %), *fond* (55 %) and *devoted* (80 %).
+
+| Level    | What changes                                                                                                                                                        |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Lonely   | slightly washed-out eyes; every 20-50 min of an idle day he sighs; sulks last 1.5x as long                                                                          |
+| Friendly | the classic behaviour                                                                                                                                               |
+| Fond     | +2 taps before dizzy / "that's enough!", more rare reactions, faint pink eyes, smiles by himself, sulks 25 % shorter                                                |
+| Devoted  | +4 taps before dizzy / "that's enough!", heart eyes one tap sooner, even more rare reactions, pinker eyes, smiles or gets heart eyes by himself, sulks half as long |
+
+Nothing about it happens at night or while the alarm is involved. It follows the *varied reactions* switch: off means
+the bond neither changes nor shows. All numbers are `PET_BOND_*` in `config.h` (`PET_BOND_ENABLED 0` removes the feature,
+`PET_BOND_TINT 0` only the eye colour).
+
 ## Settings page
 
 `http://deskclock.local/` (or the IP shown on the diagnostics page). Values saved here are kept in flash and
@@ -150,7 +175,7 @@ override the defaults in `config.h`.
 | ------------- | --------------------------------------------------------------------------- |
 | Alarm         | on / off, time, weekdays, sound, alarm volume, preview                      |
 | Pet sound     | volume of the touch sound, preview                                          |
-| Pet reactions | varied reactions on / off, pet statistics                                   |
+| Pet reactions | varied reactions on / off, pet statistics, bond level                       |
 | Alarm test    | ring the alarm now, snooze it, dismiss it                                   |
 | City          | name and coordinates used for weather and for sunrise / sunset              |
 | Timezone      | a list of common zones or a custom POSIX rule (DST is handled)              |
@@ -181,17 +206,18 @@ clips of one family at a similar loudness, since they share one volume setting.
 
 Almost everything is a `#define` in `include/config.h`, each with a comment. The most useful ones:
 
-| Setting                                                   | What it does                                                       |
-| --------------------------------------------------------- | ------------------------------------------------------------------ |
-| `WEB_HOSTNAME`, `WEB_UI_PASSWORD`, `OTA_PASSWORD`         | network name and passwords                                         |
-| `DEFAULT_TZ_*`, `WEATHER_*`                               | factory timezone, city and refresh interval                        |
-| `ALARM_*`                                                 | factory alarm, snooze length, snooze limit, auto-off, grace period |
-| `NIGHT_FOLLOWS_SUN`, `NIGHT_START_HOUR`, `NIGHT_END_HOUR` | when night mode starts and ends                                    |
-| `BACKLIGHT_*`                                             | how the screen is dimmed (drive strength or PWM)                   |
-| `PET_*`                                                   | streak lengths, purr time, rare-reaction chance                    |
-| `SERVO_*`                                                 | rest / pet / alarm angles and timings                              |
-| `SCENE_*`, `AMBIENT_FX`, `WEATHER_*_ANIM`                 | the background and the animations - set to 0 to switch off         |
-| `TASK_WDT_*`                                              | watchdog timeout                                                   |
+| Setting                                                   | What it does                                                              |
+| --------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `WEB_HOSTNAME`, `WEB_UI_PASSWORD`, `OTA_PASSWORD`         | network name and passwords                                                |
+| `DEFAULT_TZ_*`, `WEATHER_*`                               | factory timezone, city and refresh interval                               |
+| `ALARM_*`                                                 | factory alarm, snooze length, snooze limit, auto-off, grace period        |
+| `NIGHT_FOLLOWS_SUN`, `NIGHT_START_HOUR`, `NIGHT_END_HOUR` | when night mode starts and ends                                           |
+| `BACKLIGHT_*`                                             | how the screen is dimmed (drive strength or PWM)                          |
+| `PET_*`                                                   | streak lengths, purr time, rare-reaction chance                           |
+| `PET_BOND_*`                                              | how fast the bond grows and fades, its levels, tint and self-started acts |
+| `SERVO_*`                                                 | rest / pet / alarm angles and timings                                     |
+| `SCENE_*`, `AMBIENT_FX`, `WEATHER_*_ANIM`                 | the background and the animations - set to 0 to switch off                |
+| `TASK_WDT_*`                                              | watchdog timeout                                                          |
 
 ## Project layout
 

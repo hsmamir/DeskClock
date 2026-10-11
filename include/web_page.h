@@ -77,7 +77,9 @@ details{margin-top:10px}
 <h2>واکنش‌های نوازش</h2>
 <label class="row"><span>واکنش‌های متنوع</span><input type="checkbox" id="petOn"></label>
 <p class="mut" id="petStats">…</p>
+<p class="mut" id="bondInfo"></p>
 <p class="mut">چند بار پشت‌سرهم = قلب، بعد گیجی و در آخر اخم 😄 — شب خواب‌آلود، در باران یک ابرو بالا، و نگه‌داشتن دکمه بیش از یک ثانیه = خرخر. خاموش = همیشه همان چهره‌ی خوشحال.</p>
+<p class="mut">دلبستگی: هر چه منظم‌تر نوازشش کنی (یا نگه داشتن دکمه تا خرخر) بیشتر بهت وابسته می‌شه: صبورتر می‌شه، گاهی خودش لبخند می‌زنه و رنگ چشم‌هاش کمی صورتی می‌شه. اگه چند روز نبینیش دلتنگ می‌شه، گاهی آه می‌کشه و دیرتر قهرش تموم می‌شه. افزایش روزانه محدوده، پس نوازش پشت‌سرهم زیاد فایده‌ای نداره.</p>
 </section>
 
 <section>
@@ -275,6 +277,8 @@ async function petStats(){
  try{
   const j=await (await fetch('/api/pet')).json();
   $('petStats').textContent='امروز: '+j.today+' — بیشترین پشت‌سرهم: '+j.bestStreak+' — کل: '+j.total;
+  const BL=['دلتنگ','آشنا','صمیمی','دلبسته'];
+  $('bondInfo').textContent=j.bondOn?('دلبستگی: '+j.bond+'٪ — '+(BL[j.bondLevel]||'')):'';
  }catch(e){$('petStats').textContent='ارتباط با ساعت برقرار نشد';}
 }
 setInterval(()=>{if(!document.hidden)alarmState();},2000);

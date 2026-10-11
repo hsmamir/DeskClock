@@ -338,6 +338,37 @@ static_assert(AMBIENT_MOTES >= 3 && AMBIENT_MOTES <= 5, "AMBIENT_MOTES must be 3
 #define PET_RARE_PERCENT 5         // chance (%) of a rare reaction instead of the usual one
 #define PET_SAVE_INTERVAL_MS 60000 // pet statistics are written to flash at most this often
 
+// ---- Bond (pet.cpp, display_persona.cpp, display_emotion.cpp) ----
+// A lasting "how much does he like you" value, 0..1000 (shown as 0..100 % on the settings page), kept in flash.
+//   It grows with taps (PET_BOND_TAP_GAIN each, but not during dizzy-spam), with purring (PET_BOND_PURR_GAIN) and with
+//   making up after a sulk (PET_BOND_SORRY_GAIN). Taps and purring together can add at most PET_BOND_DAILY_CAP per day,
+//   so one long session cannot max it out. "That's enough!" costs PET_BOND_ANNOYED_LOSS.
+//   It fades when nobody pets him: nothing for the first PET_BOND_GRACE_H hours after the last tap, then
+//   PET_BOND_DECAY_PER_DAY per day, never below PET_BOND_FLOOR. Needs a clock that is NTP-synced (not a time restored from flash).
+//   Four levels: LONELY (< FRIENDLY_AT), FRIENDLY, FOND, DEVOTED. What changes with the level:
+//     - taps in a row before dizzy / "that's enough!" (+2 FOND, +4 DEVOTED), hearts one tap sooner (DEVOTED),
+//       the chance of a rare reaction (+2 FOND, +5 DEVOTED) and how long a sulk lasts (DEVOTED half, LONELY 1.5x)
+//     - every PET_BOND_ACT_MIN_MIN..PET_BOND_ACT_MAX_MIN minutes while idle in daytime: LONELY sighs, FOND smiles by
+//       himself, DEVOTED smiles or gets heart eyes by himself (with a little head wiggle)
+//     - PET_BOND_TINT: the eyes carry a faint colour of the level all the time (pink for FOND / DEVOTED, washed out for LONELY)
+//   Everything follows the "varied reactions" switch on the settings page (off = no bond changes and no effects).
+#define PET_BOND_ENABLED 1
+#define PET_BOND_START 400        // value of a brand-new clock (FRIENDLY)
+#define PET_BOND_FLOOR 50         // it never drops below this
+#define PET_BOND_TAP_GAIN 10      // per tap (1 %)
+#define PET_BOND_PURR_GAIN 15     // per purring session
+#define PET_BOND_SORRY_GAIN 20    // the first touch after a sulk (not limited by the daily cap)
+#define PET_BOND_ANNOYED_LOSS 30  // once per "that's enough!"
+#define PET_BOND_DAILY_CAP 120    // most that taps + purring can add per local day
+#define PET_BOND_GRACE_H 12       // hours after the last tap before it starts to fade
+#define PET_BOND_DECAY_PER_DAY 80 // then it loses this much per day (8 %)
+#define PET_BOND_FRIENDLY_AT 250  // level borders (0..1000)
+#define PET_BOND_FOND_AT 550
+#define PET_BOND_DEVOTED_AT 800
+#define PET_BOND_TINT 1         // faint eye colour for the level (0 = off)
+#define PET_BOND_ACT_MIN_MIN 20 // minutes between the self-started sighs / smiles
+#define PET_BOND_ACT_MAX_MIN 50
+
 // ---- Night mode ----
 // Between NIGHT_START_HOUR (inclusive) and NIGHT_END_HOUR (exclusive), local
 // time, the backlight is dimmed and the pet sound is muted. The alarm

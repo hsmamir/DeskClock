@@ -383,12 +383,15 @@ namespace disp
     enum class Emo : uint8_t
     {
         NONE,
-        LOVE,   // pink #FF5C93
-        ANGER,  // toward red
-        SLEEPY, // washed-out and dark
-        COLD    // icy blue
+        LOVE,    // pink #FF5C93
+        ANGER,   // toward red
+        SLEEPY,  // washed-out and dark
+        COLD,    // icy blue
+        FOND,    // bond level: a faint pink, all the time
+        DEVOTED, // bond level: a stronger pink
+        LONELY   // bond level: a little washed out
     };
-    Emo emoPick(bool alarm, bool happy, bool purr, bool sleepy, Reaction reaction);
+    Emo emoPick(bool alarm, bool happy, bool purr, bool sleepy, Reaction reaction, const PetBond &bond);
     // Every frame: moves the emoTint spring toward `want` and writes C_EYE_TOP/BOT (= base colours mixed with the feeling).
     void emoUpdate(uint32_t now, Emo want);
 

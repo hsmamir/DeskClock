@@ -51,6 +51,12 @@ namespace disp
             return {{205, 235, 255}, {80, 165, 255}, 0.75f};
         case Emo::SLEEPY: // the time-of-day colour itself, washed out and dark
             return {washOut(toRgb(C_EYE_TOP_BASE), 0.35f, 0.58f), washOut(toRgb(C_EYE_BOT_BASE), 0.35f, 0.50f), 0.80f};
+        case Emo::FOND: // the bond level as a faint, lasting colour (PET_BOND_TINT)
+            return {{255, 140, 175}, {225, 80, 130}, 0.14f};
+        case Emo::DEVOTED:
+            return {{255, 110, 160}, {225, 55, 115}, 0.26f};
+        case Emo::LONELY: // a bit duller than usual
+            return {washOut(toRgb(C_EYE_TOP_BASE), 0.55f, 0.82f), washOut(toRgb(C_EYE_BOT_BASE), 0.55f, 0.78f), 0.60f};
         default:
             return {{0, 0, 0}, {0, 0, 0}, 0.0f};
         }
@@ -61,7 +67,7 @@ namespace disp
     static Rgb emoTop = {255, 92, 147}, emoBot = {214, 40, 104}; // colour the tint is moving toward (eased, so feeling -> feeling slides)
     static uint32_t emoLastMs = 0;
 
-    Emo emoPick(bool alarm, bool happy, bool purr, bool sleepy, Reaction reaction)
+    Emo emoPick(bool alarm, bool happy, bool purr, bool sleepy, Reaction reaction, const PetBond &bond)
     {
         if (!EMO_TINT_ENABLED || alarm)
             return Emo::NONE;
@@ -89,6 +95,20 @@ namespace disp
             return Emo::COLD;
         if (sleepy)
             return Emo::SLEEPY;
+        if (PET_BOND_TINT && bond.enabled) // nothing else going on: the colour of how much he likes you
+        {
+            switch (bond.level)
+            {
+            case BondLevel::DEVOTED:
+                return Emo::DEVOTED;
+            case BondLevel::FOND:
+                return Emo::FOND;
+            case BondLevel::LONELY:
+                return Emo::LONELY;
+            default:
+                break;
+            }
+        }
         return Emo::NONE;
     }
 

@@ -207,7 +207,8 @@ void display_tick()
     ambientUpdate(scn, now); // spots the sunrise for the warm flash
     bool offline = wifiDownSinceMs != 0 && (now - wifiDownSinceMs) >= REACT_OFFLINE_DELAY_MS;
     Reaction reaction = alarm ? Reaction::NONE : pickReaction(scn, offline, sleepy);
-    emoUpdate(now, emoPick(alarm, happy, purr, sleepy, reaction)); // eye colour follows the feeling
+    const PetBond bond = pet_bond();
+    emoUpdate(now, emoPick(alarm, happy, purr, sleepy, reaction, bond)); // eye colour follows the feeling (and the bond)
 
     // behaviours that span many frames: boot wake-up, sleep, chime, pre-alarm, sulk, micro moods ...
     {

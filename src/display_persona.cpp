@@ -61,6 +61,7 @@ namespace disp
     static Act act = Act::NONE;
     static uint32_t actStartMs = 0, actDurMs = 0;
     static uint32_t nextMicroAtMs = 0;
+    static uint32_t nextBondActMs = 0; // next sigh / self-started smile that comes from the bond level
     static uint32_t pulseStartMs = 0;
     static bool pulseOn = false;
 
@@ -84,6 +85,40 @@ namespace disp
         act = a;
         actStartMs = now;
         actDurMs = dur;
+    }
+
+    static uint32_t bondActDelayMs()
+    {
+        return (uint32_t)random(PET_BOND_ACT_MIN_MIN, PET_BOND_ACT_MAX_MIN + 1) * 60000UL;
+    }
+
+    // How long a sulk lasts: the more he likes you, the quicker he forgives.
+    static uint32_t sulkDurationMs()
+    {
+        const PetBond b = pet_bond();
+        if (!b.enabled)
+            return SULK_MS;
+        switch (b.level)
+        {
+        case BondLevel::DEVOTED:
+            return SULK_MS / 2;
+        case BondLevel::FOND:
+            return SULK_MS * 3 / 4;
+        case BondLevel::LONELY:
+            return SULK_MS * 3 / 2;
+        default:
+            return SULK_MS;
+        }
+    }
+
+    // A reaction nobody asked for (the head wiggles like after a tap). Same way as the morning stretch below.
+    static void smileByHimself(PetKind kind)
+    {
+        pet_inject_event(kind);
+        xSemaphoreTake(g_stateMutex, portMAX_DELAY);
+        if (g_state.mood != Mood::ALARM_ALERT)
+            g_state.mood = Mood::PET_HAPPY;
+        xSemaphoreGive(g_stateMutex);
     }
 
     static bool isPrecip(int code)
@@ -137,7 +172,8 @@ namespace disp
         }
         else if (apologyPending && r.kind != PetKind::DIZZY)
         {
-            r.kind = PetKind::SORRY; // the first touch after the sulk: a small apology
+            r.kind = PetKind::SORRY;                  // the first touch after the sulk: a small apology
+            pet_bond_add(PET_BOND_SORRY_GAIN, false); // making up brings you closer
             apologyPending = false;
             sulkUntilMs = 0;
         }
@@ -206,6 +242,7 @@ namespace disp
                     blinkTrigger(now);
                     audio_play_async(SOUND_INDEX_BOOT);
                     nextMicroAtMs = now + (uint32_t)random(MICRO_MIN_S, MICRO_MAX_S + 1) * 1000UL;
+                    nextBondActMs = now + bondActDelayMs();
                 }
             }
             return; // nothing else runs before the wake-up is over
@@ -252,7 +289,7 @@ namespace disp
         if (annoyedPending && !in.happy && !in.alarm)
         {
             annoyedPending = false;
-            sulkUntilMs = now + SULK_MS;
+            sulkUntilMs = now + sulkDurationMs();
             apologyPending = true;
             apologyUntilMs = now + 10UL * 60UL * 1000UL;
         }
@@ -378,6 +415,22 @@ namespace disp
                 startAct(Act::CHIME, now, 1600);
             else if (sunriseEdge)
                 startAct(Act::SQUINT, now, 2200);
+            else if (PET_BOND_ENABLED && act == Act::NONE && !in.sleepy && in.haveTime && in.wifiDownMs == 0 &&
+                     (int32_t)(now - nextBondActMs) >= 0)
+            {
+                // what he does by himself because of how much he likes you (daytime, nothing else going on)
+                nextBondActMs = now + bondActDelayMs();
+                const PetBond b = pet_bond();
+                if (b.enabled)
+                {
+                    if (b.level == BondLevel::LONELY)
+                        startAct(Act::RELIEF, now, 2000); // a small sigh: lids sink, a puff
+                    else if (b.level == BondLevel::FOND)
+                        smileByHimself(PetKind::HAPPY);
+                    else if (b.level == BondLevel::DEVOTED)
+                        smileByHimself(random(0, 100) < 50 ? PetKind::HEART_EYES : PetKind::HAPPY);
+                }
+            }
             else if (act == Act::NONE && !in.sleepy && in.haveTime && in.wifiDownMs == 0 && (int32_t)(now - nextMicroAtMs) >= 0)
             {
                 int r = random(0, 100);

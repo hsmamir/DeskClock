@@ -272,6 +272,10 @@ static void handleGetPet()
     d["bestStreak"] = ps.bestStreak;
     d["streak"] = ps.streak;
     d["total"] = ps.total;
+    PetBond pb = pet_bond();
+    d["bond"] = pb.value / 10;      // percent, 0-100
+    d["bondLevel"] = (int)pb.level; // 0 lonely, 1 friendly, 2 fond, 3 devoted
+    d["bondOn"] = pb.enabled;
     sendJson(200, d);
 }
 

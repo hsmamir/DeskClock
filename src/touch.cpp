@@ -93,10 +93,16 @@ static void updatePurr(uint32_t now)
         petPurrHandled = true;
         if (settings_get().petReactions)
         {
+            bool purring = false;
             xSemaphoreTake(g_stateMutex, portMAX_DELAY);
             if (g_state.mood == Mood::IDLE_BLINK)
+            {
                 g_state.mood = Mood::PET_PURR;
+                purring = true;
+            }
             xSemaphoreGive(g_stateMutex);
+            if (purring)
+                pet_bond_add(PET_BOND_PURR_GAIN, true); // purring = he feels safe with you
         }
     }
 
