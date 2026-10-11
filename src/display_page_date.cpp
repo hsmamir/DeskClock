@@ -29,10 +29,10 @@ namespace disp
 
     void drawDatePageTop(TFT_eSPI &g, bool haveTime, const struct tm &ti)
     {
-        const int16_t dh = u(34); // a bit smaller than before: the Date page's upper card is shorter (geometrySet)
+        const int16_t dh = u(32); // a bit smaller than before: the Date page's upper card is shorter (geometrySet)
         const int16_t dw = (int16_t)(dh * 0.56f);
         const int16_t gap = imax(2, u(3));
-        const int16_t dy = u(19);
+        const int16_t dy = u(20);
 
         if (!haveTime)
         {
@@ -82,7 +82,11 @@ namespace disp
             smoothText(g, ClockSm18, CLOCKSM18_CAPH, mon, cx, monY, C_BASELINE, C_AMBER, C_BG);
 
         strftime(buf, sizeof(buf), "%Y", &ti);
-        smoothText(g, ClockSm18, CLOCKSM18_CAPH, buf, cx, dy + (int16_t)(dh * 0.80f), C_BASELINE, C_SOFT, C_BG);
+        {
+            bool big = sc >= 1.5f; // the year is a small caption: 12 px font on the 128 px display, 18 px on bigger ones
+            smoothText(g, big ? ClockSm18 : ClockSm12, big ? CLOCKSM18_CAPH : CLOCKSM12_CAPH, buf, cx,
+                       dy + (int16_t)(dh * 0.84f), C_BASELINE, C_SOFT, C_BG);
+        }
 
         // calendar header (weekday initials) at the bottom edge of the upper half; today's column is amber
         const uint8_t cf = calFont();
