@@ -88,6 +88,14 @@ namespace disp
     // they stay a soft glow on a bright day background instead of turning into dark halos.
     inline uint16_t tint(uint16_t c, float k) { return mixColor(C_BG, c, k); }
 
+    // Which corners of a pushed card get the rounded cut (the full-screen pages keep the middle ones square).
+    enum : uint8_t
+    {
+        CORNERS_TOP = 1,
+        CORNERS_BOT = 2,
+        CORNERS_ALL = 3
+    };
+
     // ---- Off-screen canvases ----
     struct Canvas
     {
@@ -116,7 +124,7 @@ namespace disp
         // Push with a horizontal offset dx (page slide-in): the sprite is clipped to the card, the part left
         // of dx keeps the old picture. The viewport fallback cannot offset, so it just draws in place.
         // Afterwards the card corners are cut with the frame colour (see display_core.cpp).
-        void endAt(int16_t dx);
+        void endAt(int16_t dx, uint8_t corners = CORNERS_ALL);
     };
     extern Canvas faceCv, infoCv;
     extern TFT_eSprite digSpr; // clock-digit animation sprite (display_digits.cpp)
@@ -135,6 +143,9 @@ namespace disp
         int humidityPct; // -1 = unknown
         float windKmh;   // < 0 = unknown
         int windDirDeg;  // -1 = unknown
+        float feelsC;    // "feels like"; NAN = unknown
+        int pressureHpa; // -1 = unknown
+        float uvMax;     // today's highest UV index; < 0 = unknown
         uint8_t barCount;
         uint8_t hour[AppState::WEATHER_MAX_BARS];
         int8_t tempC[AppState::WEATHER_MAX_BARS];
@@ -417,11 +428,26 @@ namespace disp
     void drawSceneBackground(TFT_eSPI &g, uint32_t now, const SceneInfo &scn);
     void drawWeatherIcon(TFT_eSPI &g, int code, int16_t cx, int16_t cy, int16_t r, uint32_t now);
 
-    // ---- Info panel ----
+    // ---- Page flow: which layout is up, the slide between pages (display_pages.cpp) ----
+    // Clock page = face card above the info card. Date / Weather = ONE full-screen page (no eyes), drawn
+    // into the same two canvases: the upper half into faceCv, the lower half into infoCv.
+    extern bool fullLayout;    // the full-screen layout is the current one (set by display_tick every frame)
+    extern int16_t pageSlideX; // horizontal offset of the page that is sliding in; 0 = settled
+    bool isFullPage(DisplayMode m);
+    bool pageSliding();                                               // this frame is part of a slide (the landing frame included)
+    void pageFlowUpdate(DisplayMode shown, bool alarm, uint32_t now); // once per tick, before anything is drawn
+    void pageSlideStart(uint32_t now, uint32_t ms);                   // start a slide of both cards (page / weather view change)
+    uint32_t pageSlideSettleMs(uint32_t now);                         // when the page has stopped sliding (now if it is not)
+    void gapPaint(int16_t dx);                                        // the strip between the two cards: frame colour or page background
+    void drawFullPage(DisplayMode shown, bool haveTime, const struct tm &ti, uint32_t now);
+    extern bool gapIsFull; // what gapPaint() last painted
+
+    // ---- Info panel (clock page) ----
     const int MODE_COUNT = 3; // CLOCK, DATE, WEATHER (the DIAG page is opened by holding Mode, it has no dot)
     extern DisplayMode lastMode;
     extern uint32_t lastInfoSig;
-    void drawInfoPanel(DisplayMode mode, bool alarm, bool haveTime, const struct tm &ti, uint32_t now);
+    void drawInfoPanel(bool alarm, bool haveTime, const struct tm &ti, uint32_t now);
+    void drawModeDots(TFT_eSPI &g, DisplayMode shown, uint16_t accent, int16_t y);
 
 // ---- Info-panel widgets ----
 #if ALARM_ICON_ENABLED
@@ -429,14 +455,41 @@ namespace disp
     void pollAlarmCfg(uint32_t now);
     void drawAlarmBadge(TFT_eSPI &g, bool ringing, int16_t cy, const struct tm &ti);
 #endif
-    // settleMs: when the panel has finished sliding in (a roll starts then); pass `now` if it is not sliding.
+    // settleMs: when the page has finished sliding in (a roll starts then); pass `now` if it is not sliding.
+    // zoneL / zoneR: the part of the width (0..1) the number is centred in.
     void drawTempReadout(TFT_eSPI &g, float tempC, int16_t dw, int16_t dh, int16_t gap, int16_t dy, uint16_t accent,
-                         uint32_t now, uint32_t settleMs);
-    bool tempRollActive(float tempC, uint32_t now); // a temperature roll is running or about to start
-    uint32_t barsGrowTotalMs(uint8_t barCount);     // how long the hourly bars take to grow in
+                         uint32_t now, uint32_t settleMs, float zoneL = 0.50f, float zoneR = 0.98f);
+    int16_t tempReadoutDh(TFT_eSPI &g, float tempC, float zoneW, int16_t maxDh); // largest dh (<= maxDh) whose number fits zoneW (fraction of W)
+    bool tempRollActive(float tempC, uint32_t now);                              // a temperature roll is running or about to start
+    uint32_t barsGrowTotalMs(uint8_t barCount);                                  // how long the hourly bars take to grow in
     void drawViewDots(TFT_eSPI &g, uint8_t active, uint16_t accent, int16_t y);
-    // growMs: time since the bars started growing (negative = not yet, large = fully grown).
-    void drawWeatherDetails(TFT_eSPI &g, const WeatherDetail &d, uint16_t accent, int32_t growMs);
+    void drawWindArrow(TFT_eSPI &g, int16_t cx, int16_t cy, int16_t r, int deg, uint16_t col);
+
+    // ---- Full-screen pages: Date and Weather (display_page_date.cpp, display_page_weather.cpp) ----
+    // Each page is drawn in two halves with canvas coordinates: Top = the upper card (faceCv), Bottom = the lower card (infoCv).
+    // Nothing may cross the gap between them, so a page lays its content out from the top edge of the upper half and
+    // from the bottom edge of the lower half.
+    void drawPageAccent(TFT_eSPI &g, uint16_t accent); // coloured line + soft glow along the top edge
+    void drawDatePageTop(TFT_eSPI &g, bool haveTime, const struct tm &ti);
+    void drawDatePageBottom(TFT_eSPI &g, bool haveTime, const struct tm &ti);
+    struct WeatherPage
+    {
+        bool valid; // a weather reading exists
+        float tempC;
+        int code;
+        bool stale; // the reading is old (offline / fetches failing)
+        uint32_t ageMs;
+        WeatherDetail wd;  // wd.valid = the extra details exist
+        bool forecastView; // second view: hourly forecast + sun / UV / pressure (first view: now)
+        bool twoViews;     // both views available -> view indicator
+        uint16_t accent;
+        uint32_t now, settleMs;
+        int32_t growMs; // ms since the forecast view landed (the bars grow)
+        bool haveTime;
+        const struct tm *ti;
+    };
+    void drawWeatherPageTop(TFT_eSPI &g, const WeatherPage &p);
+    void drawWeatherPageBottom(TFT_eSPI &g, const WeatherPage &p);
 
     // ---- Full-screen pages, status icons, backlight ----
     extern int otaDrawnPct;

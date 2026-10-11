@@ -53,6 +53,15 @@ static_assert(MODE_HOLD_RING_DELAY_MS < MODE_LONG_PRESS_MS, "ring delay must be 
 #define DISPLAY_RETURN_MS 15000
 #define DIAG_RETURN_MS 15000
 
+// ---- Full-screen pages ----
+// Only the clock page shows the face (eyes). The Date and Weather pages use the whole screen:
+// the two cards are drawn as ONE page (the 3 px gap between them gets the page background).
+//   FULLPAGE_DIVIDER     thin line in that gap, between the upper and the lower half of the page
+//   CALENDAR_WEEK_START  first day of the week in the Date page's month calendar: 0 = Sunday, 1 = Monday, 6 = Saturday
+#define FULLPAGE_DIVIDER 1
+#define CALENDAR_WEEK_START 6
+static_assert(CALENDAR_WEEK_START >= 0 && CALENDAR_WEEK_START <= 6, "CALENDAR_WEEK_START must be 0-6");
+
 // ---- Servo angles ----
 #define SERVO_REST_ANGLE 90
 #define SERVO_PET_ANGLE 130
@@ -75,7 +84,7 @@ static_assert(MODE_HOLD_RING_DELAY_MS < MODE_LONG_PRESS_MS, "ring delay must be 
 #define WEATHER_DETAILS_ENABLED 1
 #define WEATHER_PAGE_SWITCH_MS 6000   // each view stays this long (the page opens on the big temperature)
 #define WEATHER_WIND_ARROW_DOWNWIND 1 // details view: wind arrow points where the wind blows TO (1, like weather maps) or where it comes FROM (0)
-#define WEATHER_BARS 6                // hours shown as bars, starting with the current hour (2-8)
+#define WEATHER_BARS 6                // hours shown as bars, starting with the current hour (2-8; 8 is a bit crowded on the 128 px display)
 #define WEATHER_BAR_RAIN_PCT 50       // an hour with at least this chance of rain is marked blue
 static_assert(WEATHER_BARS >= 2 && WEATHER_BARS <= 8, "WEATHER_BARS must be 2-8");
 

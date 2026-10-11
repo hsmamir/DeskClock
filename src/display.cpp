@@ -131,12 +131,16 @@ void display_tick()
         lastInfoSig = 0xFFFFFFFFu;
     }
 
+    bool alarm = (mood == Mood::ALARM_ALERT);
+    // Only the clock page shows the face (the eyes). Date and Weather are full-screen pages; an alarm always
+    // brings the face and the clock back, whatever page was open. (The diagnostics page draws its own two cards.)
+    fullLayout = !alarm && isFullPage(mode);
+
     struct tm ti;
     bool haveTime = timeSynced && getLocalTime(&ti, 0);
     themeUpdate(haveTime, ti, now); // background / accent follow the time of day
     frameUpdate();                  // the frame around the cards follows the card background
 
-    bool alarm = (mood == Mood::ALARM_ALERT);
     bool night = haveTime && sun_is_night(ti);
     bool sleepy = night && !alarm;
 
@@ -238,6 +242,8 @@ void display_tick()
     if (mode == DisplayMode::DIAG && !alarm)
     {
         lastMode = DisplayMode::DIAG; // so the page change is noticed on the way out
+        if (gapIsFull)
+            gapPaint(0); // coming from a full-screen page: the strip between the cards is frame colour again
         if (!diagShown || now - lastDiagDrawMs >= 500)
         {
             lastDiagDrawMs = now;
@@ -248,6 +254,21 @@ void display_tick()
     }
     diagShown = false;
 
+    // Page flow: the slide between pages, and which layout is up
+    DisplayMode shown = alarm ? DisplayMode::CLOCK : mode;
+    pageFlowUpdate(shown, alarm, now);
+
+    // Date / Weather: one full-screen page, no eyes (the face is only drawn on the clock page, below)
+    if (fullLayout)
+    {
+        drawFullPage(shown, haveTime, ti, now);
+        return;
+    }
+
+    // Clock page: face card above the info card
+    if (pageSliding() || gapIsFull)
+        gapPaint(pageSlideX); // coming back from a full-screen page: the strip between the cards turns into frame again
+
     TFT_eSPI &g = faceCv.begin();
     drawFace(g, now, alarm, happy, purr, sleepy, scn, reaction, exprP);
     if (persona.stage == PStage::RUN) // not over the black boot screen
@@ -255,7 +276,7 @@ void display_tick()
         drawStatusIcons(g, now);
         drawHoldRing(g);
     }
-    faceCv.end();
+    faceCv.endAt(pageSlideX); // slides in together with the info card when the clock page comes back
 
-    drawInfoPanel(mode, alarm, haveTime, ti, now);
+    drawInfoPanel(alarm, haveTime, ti, now);
 }

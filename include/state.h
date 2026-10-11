@@ -49,6 +49,9 @@ struct AppState
     int humidityPct = -1;                     // relative humidity, 0-100; -1 = unknown
     float windKmh = -1.0f;                    // wind speed at 10 m; < 0 = unknown
     int windDirDeg = -1;                      // direction the wind comes FROM, 0-359; -1 = unknown
+    float apparentC = NAN;                    // "feels like" temperature; NAN = unknown
+    int pressureHpa = -1;                     // sea-level pressure in hPa; -1 = unknown
+    float uvMax = -1.0f;                      // today's highest UV index; < 0 = unknown
     uint8_t barCount = 0;                     // hourly forecast entries below (starting with the current hour)
     uint8_t barHour[WEATHER_MAX_BARS] = {};   // local hour of the entry, 0-23
     int8_t barTempC[WEATHER_MAX_BARS] = {};   // temperature, rounded

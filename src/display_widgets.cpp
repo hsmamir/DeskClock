@@ -1,5 +1,5 @@
-// display_widgets.cpp - info-panel widgets: alarm badge + next-ring text, the big temperature, wind arrow,
-// weather view dots and the weather "details" view.
+// display_widgets.cpp - widgets shared by the pages: alarm badge + next-ring text, the big temperature, wind arrow,
+// weather view dots and the hourly-bars timing.
 #include "display_internal.h"
 
 namespace disp
@@ -157,7 +157,7 @@ namespace disp
     bool tempRollActive(float tempC, uint32_t now)
     {
 #if WEATHER_TEMP_ROLL
-        if (!infoCv.ok)
+        if (!faceCv.ok) // the temperature is drawn on the upper card of the weather page
             return false;
         if (tempSeen && (int)lroundf(tempC) != tempTarget)
             return true; // a roll is about to start
@@ -169,10 +169,41 @@ namespace disp
 #endif
     }
 
-    // Big seven-segment temperature with the degree ring and "C", right-hand side of
-    // the weather / forecast pages.
+    // How many cells the number needs: digits plus the minus sign.
+    static uint8_t tempCells(int t)
+    {
+        int a = t < 0 ? -t : t;
+        if (a > 999)
+            a = 999;
+        uint8_t n = a >= 100 ? 3 : (a >= 10 ? 2 : 1);
+        return (uint8_t)(n + (t < 0 ? 1 : 0));
+    }
+
+    // Largest dh (at most maxDh) for which the whole readout (digits, ring, "C") still fits into zoneW
+    // (a fraction of the page width), so "-12" and "104" shrink instead of running off the card.
+    int16_t tempReadoutDh(TFT_eSPI &g, float tempC, float zoneW, int16_t maxDh)
+    {
+        uint8_t n = tempCells((int)lroundf(tempC));
+        int16_t gap = imax(2, u(3));
+        int16_t ring = imax(2, u(2.5f));
+        int16_t wC = smoothWidth(g, ClockSm26, "C");
+        int16_t limit = (int16_t)(W * zoneW);
+        int16_t lo = imax(8, u(16));
+        for (int16_t dh = maxDh; dh > lo; dh--)
+        {
+            int16_t dw = (int16_t)(dh * 0.56f);
+            int16_t dwT = (int16_t)(dw * 0.85f);
+            int16_t total = n * dwT + (n - 1) * gap + gap + ring * 2 + gap + wC;
+            if (total <= limit)
+                return dh;
+        }
+        return lo;
+    }
+
+    // Big seven-segment temperature with the degree ring and "C", centred in the part of the width
+    // between zoneL and zoneR (fractions of W).
     void drawTempReadout(TFT_eSPI &g, float tempC, int16_t dw, int16_t dh, int16_t gap, int16_t dy, uint16_t accent,
-                         uint32_t now, uint32_t settleMs)
+                         uint32_t now, uint32_t settleMs, float zoneL, float zoneR)
     {
         int t = (int)lroundf(tempC);
         int from = t; // value the digits roll away from
@@ -188,7 +219,7 @@ namespace disp
             tempFrom = tempTarget;
             tempTarget = t;
             tempRollStart = ((int32_t)(settleMs - now) > 0) ? settleMs : now;
-            tempRollOn = infoCv.ok; // rolling needs the sprite
+            tempRollOn = faceCv.ok; // rolling needs the sprite
         }
         if (tempRollOn)
         {
@@ -219,9 +250,10 @@ namespace disp
         int16_t wC = smoothWidth(g, ClockSm26, "C");
         int16_t ring = imax(2, u(2.5f));
         int16_t total = numW + gap + ring * 2 + gap + wC;
-        int16_t x0 = (int16_t)(W * 0.50f) + ((int16_t)(W * 0.48f) - total) / 2;
-        if (x0 < (int16_t)(W * 0.40f))
-            x0 = (int16_t)(W * 0.40f);
+        int16_t zl = (int16_t)(W * zoneL), zw = (int16_t)(W * (zoneR - zoneL));
+        int16_t x0 = zl + (zw - total) / 2;
+        if (x0 < zl - (int16_t)(W * 0.10f))
+            x0 = zl - (int16_t)(W * 0.10f);
         int16_t y0 = dy + (dh - dhT) / 2;
 
         // right to left, so the units always roll against the units. A slot that only the OLD value
@@ -245,11 +277,11 @@ namespace disp
         smoothText(g, ClockSm26, CLOCKSM26_CAPH, "C", x0 + numW + gap * 2 + ring * 2, y0 + dhT / 2, L_BASELINE, accent, C_BG);
     }
 
-    // ---- Weather "details" view: Hi / Lo, humidity, wind and small hourly bars ----
+    // ---- Wind arrow, view dots, bar timing (used by the weather page) ----
     // Wind direction as a small arrow (up = north, clockwise). windDirDeg is the direction the wind
     // comes FROM; WEATHER_WIND_ARROW_DOWNWIND decides whether the arrow shows where it blows TO
     // (weather-map style, default) or where it comes from.
-    static void drawWindArrow(TFT_eSPI &g, int16_t cx, int16_t cy, int16_t r, int deg, uint16_t col)
+    void drawWindArrow(TFT_eSPI &g, int16_t cx, int16_t cy, int16_t r, int deg, uint16_t col)
     {
 #if WEATHER_WIND_ARROW_DOWNWIND
         deg += 180;
@@ -298,105 +330,6 @@ namespace disp
         (void)barCount;
         return 0;
 #endif
-    }
-
-    void drawWeatherDetails(TFT_eSPI &g, const WeatherDetail &d, uint16_t accent, int32_t growMs)
-    {
-        const uint8_t fontRow = 2;
-        const uint8_t fontLbl = sc >= 1.5f ? 2 : 1;
-        const uint16_t rainCol = rgb(120, 200, 255);
-        int16_t margin = u(6);
-        char buf[32];
-
-        // row 1: today's high / low (left), humidity (right)
-        int16_t y1 = u(13);
-        snprintf(buf, sizeof(buf), "Hi %d  Lo %d", (int)lroundf(d.maxC), (int)lroundf(d.minC));
-        g.setTextDatum(ML_DATUM);
-        g.setTextColor(accent);
-        g.drawString(buf, margin, y1, fontRow);
-        if (d.humidityPct >= 0)
-        {
-            snprintf(buf, sizeof(buf), "%d%%", d.humidityPct);
-            int16_t tw = g.textWidth(buf, fontRow);
-            g.setTextDatum(MR_DATUM);
-            g.setTextColor(C_SOFT);
-            g.drawString(buf, W - margin, y1, fontRow);
-            drawDrop(g, W - margin - tw - u(6), y1 + 1, imax(2, u(3)), rainCol); // humidity = a water drop
-        }
-
-        // row 2: wind speed (the longest variant that fits) + an arrow for the direction
-        int16_t y2 = u(29);
-        if (d.windKmh >= 0)
-        {
-            int spd = (int)lroundf(d.windKmh);
-            bool arrow = d.windDirDeg >= 0 && spd >= 1; // a direction means nothing in calm air
-            int16_t ar = u(6);
-            int16_t arrowW = arrow ? (int16_t)(ar * 2 + u(5)) : 0;
-            char opt[2][32];
-            snprintf(opt[0], 32, "Wind %d km/h", spd);
-            snprintf(opt[1], 32, "%d km/h", spd);
-            uint8_t pick = 1;
-            for (uint8_t i = 0; i < 2; i++)
-                if (g.textWidth(opt[i], fontRow) <= W - 2 * margin - arrowW)
-                {
-                    pick = i;
-                    break;
-                }
-            g.setTextDatum(ML_DATUM);
-            g.setTextColor(C_SOFT);
-            g.drawString(opt[pick], margin, y2, fontRow);
-            if (arrow)
-                drawWindArrow(g, margin + g.textWidth(opt[pick], fontRow) + u(5) + ar, y2, ar, d.windDirDeg, accent);
-        }
-
-        // hourly bars: height = temperature relative to the other shown hours,
-        // colour = temperature, hour label below (blue = rain likely)
-        int n = d.barCount;
-        if (n <= 0)
-            return;
-        int16_t top = u(39), base = infoH - u(19);
-        int16_t area = base - top;
-        int16_t x0 = u(8);
-        int16_t slot = (W - 2 * x0) / n;
-        int16_t barW = imax(3, slot * 6 / 10);
-        int tmin = d.tempC[0], tmax = d.tempC[0];
-        for (int i = 1; i < n; i++)
-        {
-            if (d.tempC[i] < tmin)
-                tmin = d.tempC[i];
-            if (d.tempC[i] > tmax)
-                tmax = d.tempC[i];
-        }
-        int16_t hMin = imax(3, area / 4);
-        for (int i = 0; i < n; i++)
-        {
-            int16_t h = tmax > tmin ? hMin + (int16_t)((long)(area - hMin) * (d.tempC[i] - tmin) / (tmax - tmin)) : (int16_t)(area * 3 / 5);
-            int16_t bx = x0 + i * slot + (slot - barW) / 2;
-            bool rain = d.rainPct[i] >= WEATHER_BAR_RAIN_PCT;
-            uint16_t col = tempColor((float)d.tempC[i]);
-            float ge = 1.0f; // growth of this bar, 0..1: each starts a little after its left neighbour
-#if WEATHER_BARS_GROW
-            {
-                float tp = clamp01((float)(growMs - (int32_t)i * WEATHER_BARS_STAGGER_MS) / (float)WEATHER_BARS_GROW_MS);
-                float iv = 1.0f - tp;
-                ge = 1.0f - iv * iv * iv; // ease-out
-            }
-#else
-            (void)growMs;
-#endif
-            int16_t hv = (int16_t)(h * ge + 0.5f);
-            if (hv > 0)
-                g.fillRect(bx, base - hv, barW, hv, i == 0 ? col : tint(col, 0.75f));
-            if (rain)
-                g.fillRect(bx, base + 1, barW, imax(1, u(1.5f)), rainCol);
-            if (i == 0)
-                strcpy(buf, "now");
-            else
-                snprintf(buf, sizeof(buf), "%d", d.hour[i]);
-            g.setTextDatum(MC_DATUM);
-            g.setTextColor(rain ? rainCol : C_SOFT);
-            g.drawString(buf, bx + barW / 2, infoH - u(12), fontLbl);
-        }
     }
 
 } // namespace disp

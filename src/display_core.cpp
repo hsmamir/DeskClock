@@ -22,6 +22,7 @@ namespace disp
     int16_t cardX, cardGap, cardR, faceY, infoY;
     float sc = 1.0f; // scale relative to the 128 px wide real display
     bool frameDirty = false;
+    bool fullLayout = false; // Date / Weather page: one full-screen page instead of face card + info card (display_pages.cpp)
 
     // ---- Colour helpers ----
     uint16_t dimColor(uint16_t c, uint8_t v)
@@ -106,7 +107,8 @@ namespace disp
     // Cuts the four corners of a card that was just pushed, in the frame colour. The outermost pixel of each
     // row is blended with the card's own pixel (read back from the sprite) for a softer edge; while the card
     // slides (aa = false) the sprite pixel is not where the screen shows it, so only whole pixels are cut.
-    static void maskCorners(Canvas &c, bool aa)
+    // corners: which of the card's corners are cut (CORNERS_TOP / CORNERS_BOT); a full-screen page keeps the middle ones square.
+    static void maskCorners(Canvas &c, bool aa, uint8_t corners)
     {
         if (cardR < 2)
             return;
@@ -120,25 +122,37 @@ namespace disp
             int16_t yT = c.y0 + dy, yB = c.y0 + c.h - 1 - dy;
             if (n > 0)
             {
-                tft.drawFastHLine(c.x0, yT, n, C_FRAME);
-                tft.drawFastHLine(c.x0 + c.w - n, yT, n, C_FRAME);
-                tft.drawFastHLine(c.x0, yB, n, C_FRAME);
-                tft.drawFastHLine(c.x0 + c.w - n, yB, n, C_FRAME);
+                if (corners & CORNERS_TOP)
+                {
+                    tft.drawFastHLine(c.x0, yT, n, C_FRAME);
+                    tft.drawFastHLine(c.x0 + c.w - n, yT, n, C_FRAME);
+                }
+                if (corners & CORNERS_BOT)
+                {
+                    tft.drawFastHLine(c.x0, yB, n, C_FRAME);
+                    tft.drawFastHLine(c.x0 + c.w - n, yB, n, C_FRAME);
+                }
             }
             if (frac > 0.08f)
             {
                 int16_t xl = n, xr = c.w - 1 - n;
                 int16_t ly = dy, lyb = c.h - 1 - dy;
-                tft.drawPixel(c.x0 + xl, yT, mixColor(c.spr.readPixel(xl, ly), C_FRAME, frac));
-                tft.drawPixel(c.x0 + xr, yT, mixColor(c.spr.readPixel(xr, ly), C_FRAME, frac));
-                tft.drawPixel(c.x0 + xl, yB, mixColor(c.spr.readPixel(xl, lyb), C_FRAME, frac));
-                tft.drawPixel(c.x0 + xr, yB, mixColor(c.spr.readPixel(xr, lyb), C_FRAME, frac));
+                if (corners & CORNERS_TOP)
+                {
+                    tft.drawPixel(c.x0 + xl, yT, mixColor(c.spr.readPixel(xl, ly), C_FRAME, frac));
+                    tft.drawPixel(c.x0 + xr, yT, mixColor(c.spr.readPixel(xr, ly), C_FRAME, frac));
+                }
+                if (corners & CORNERS_BOT)
+                {
+                    tft.drawPixel(c.x0 + xl, yB, mixColor(c.spr.readPixel(xl, lyb), C_FRAME, frac));
+                    tft.drawPixel(c.x0 + xr, yB, mixColor(c.spr.readPixel(xr, lyb), C_FRAME, frac));
+                }
             }
         }
         tft.endWrite();
     }
 
-    void Canvas::endAt(int16_t dx)
+    void Canvas::endAt(int16_t dx, uint8_t corners)
     {
         if (ok)
         {
@@ -153,7 +167,7 @@ namespace disp
         }
         else
             tft.resetViewport();
-        maskCorners(*this, dx == 0);
+        maskCorners(*this, dx == 0, corners);
     }
 
     // Small sprite for the clock-digit slide animation (display_digits.cpp). Defined here, right after
@@ -223,6 +237,9 @@ namespace disp
         d.humidityPct = g_state.humidityPct;
         d.windKmh = g_state.windKmh;
         d.windDirDeg = g_state.windDirDeg;
+        d.feelsC = g_state.apparentC;
+        d.pressureHpa = g_state.pressureHpa;
+        d.uvMax = g_state.uvMax;
         d.barCount = g_state.barCount;
         for (uint8_t i = 0; i < d.barCount && i < AppState::WEATHER_MAX_BARS; i++)
         {

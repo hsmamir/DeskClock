@@ -54,14 +54,15 @@ static bool fetchWeather()
 
     HTTPClient http;
     Settings cfg = settings_get();
-    // current reading + humidity/wind + today's high/low + the next hours' temperature
-    // and chance of rain. timezone=auto makes "today" and the hourly times local to
+    // current reading + humidity/wind/feels-like/pressure + today's high/low/UV + the next hours'
+    // temperature and chance of rain. timezone=auto makes "today" and the hourly times local to
     // the coordinates.
-    char url[420];
+    char url[520];
     snprintf(url, sizeof(url),
              "https://api.open-meteo.com/v1/forecast?latitude=%.4f&longitude=%.4f"
-             "&current=temperature_2m,weather_code,relative_humidity_2m,wind_speed_10m,wind_direction_10m"
-             "&daily=temperature_2m_max,temperature_2m_min"
+             "&current=temperature_2m,weather_code,relative_humidity_2m,wind_speed_10m,wind_direction_10m,"
+             "apparent_temperature,pressure_msl"
+             "&daily=temperature_2m_max,temperature_2m_min,uv_index_max"
              "&hourly=temperature_2m,precipitation_probability&forecast_hours=%d&forecast_days=1&timezone=auto",
              cfg.latitude, cfg.longitude, WEATHER_BARS);
 
@@ -87,6 +88,9 @@ static bool fetchWeather()
             float hum = doc["current"]["relative_humidity_2m"] | -1.0f;
             float wind = doc["current"]["wind_speed_10m"] | -1.0f;
             float windDir = doc["current"]["wind_direction_10m"] | -1.0f;
+            float feels = doc["current"]["apparent_temperature"] | NAN;
+            float pres = doc["current"]["pressure_msl"] | -1.0f;
+            float uv = doc["daily"]["uv_index_max"][0] | -1.0f;
 
             // Hourly arrays should start at the current hour (forecast_hours); find that
             // entry by its time anyway. No match = no bars rather than wrong ones.
@@ -132,6 +136,9 @@ static bool fetchWeather()
                 g_state.humidityPct = hum >= 0 ? (int)lroundf(hum) : -1;
                 g_state.windKmh = wind;
                 g_state.windDirDeg = windDir >= 0 ? ((int)lroundf(windDir)) % 360 : -1;
+                g_state.apparentC = feels;
+                g_state.pressureHpa = pres > 0 ? (int)lroundf(pres) : -1;
+                g_state.uvMax = uv;
                 g_state.barCount = bars;
                 for (uint8_t i = 0; i < bars; i++)
                 {

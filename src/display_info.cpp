@@ -1,17 +1,15 @@
-// display_info.cpp - the info panel under the face: clock / date / weather pages (drawInfoPanel).
+// display_info.cpp - the info panel under the face: the clock page (drawInfoPanel). Date and Weather are full-screen
+// pages, see display_pages.cpp.
 #include "display_internal.h"
 
 namespace disp
 {
 
-    // ---- Info panel de-dup / page transition state ----
+    // ---- Info panel de-dup state ----
     DisplayMode lastMode = static_cast<DisplayMode>(-1);
     uint32_t lastInfoSig = 0xFFFFFFFFu;
-    static bool transActive = false; // info panel is sliding in
-    static uint32_t transStartMs = 0;
-    static uint32_t transMs = TRANSITION_MS; // length of the slide that is running (page change / weather view change)
 
-    static void drawModeDots(TFT_eSPI &g, DisplayMode shown, uint16_t accent, int16_t y)
+    void drawModeDots(TFT_eSPI &g, DisplayMode shown, uint16_t accent, int16_t y)
     {
         int idx = (int)shown;
         for (int i = 0; i < MODE_COUNT; i++)
@@ -40,18 +38,20 @@ namespace disp
         drawColonGlow(g, x0 + 2 * dw + gap + gap + cw / 2, dy, dh, imax(2, dw / 4), tint(accent, 0.5f), level);
     }
 
-    void drawInfoPanel(DisplayMode mode, bool alarm, bool haveTime, const struct tm &ti, uint32_t now)
+    // The clock page: big digits, date line, seconds bar, alarm badge. Only drawn when the face card is above
+    // it (an alarm always comes here, whatever page was open).
+    void drawInfoPanel(bool alarm, bool haveTime, const struct tm &ti, uint32_t now)
     {
 #if ALARM_ICON_ENABLED
         pollAlarmCfg(now);
 #endif
-        DisplayMode shown = alarm ? DisplayMode::CLOCK : mode; // an alarm always shows the time
+        const DisplayMode shown = DisplayMode::CLOCK;
         uint8_t colonLevel = colonLevelNow(now);
 
         // ---- clock digits: spot a changed digit and start its slide animation ----
         int8_t cd[4] = {0, 0, 0, 0};
         bool digAnimating = false;
-        if (shown == DisplayMode::CLOCK && haveTime)
+        if (haveTime)
         {
             cd[0] = (int8_t)(ti.tm_hour / 10);
             cd[1] = (int8_t)(ti.tm_hour % 10);
@@ -83,90 +83,22 @@ namespace disp
         else
             digCur[0] = -1; // no time shown: the next time we show one it appears without animating
 
-        bool wValid = false;
-        float tempC = 0;
-        int wCode = 0;
-        uint32_t wUpdatedMs = 0;
-        if (shown == DisplayMode::WEATHER)
-            readWeather(wValid, tempC, wCode, wUpdatedMs);
-        uint32_t wAgeMs = wValid ? ageSince(millis(), wUpdatedMs) : 0;
-        bool wStale = wValid && wAgeMs > WEATHER_STALE_MS; // offline / fetches failing: reading is old
-
-        // Weather page: opens on the big temperature, then alternates with the details view.
-        static uint32_t weatherEnterMs = 0;
-        if (shown == DisplayMode::WEATHER && lastMode != DisplayMode::WEATHER)
-            weatherEnterMs = now;
-        WeatherDetail wd = {};
-        bool detailView = false;
-        bool twoViews = false; // both views available -> show the view indicator
-        if (WEATHER_DETAILS_ENABLED && shown == DisplayMode::WEATHER)
-        {
-            readWeatherDetail(wd);
-            twoViews = wd.valid && wValid;
-            detailView = twoViews && (((now - weatherEnterMs) / WEATHER_PAGE_SWITCH_MS) & 1);
-        }
-
-        // The weather page just swapped between its two views (not a page change)?
-        static bool lastDetailView = false;
-        static uint32_t detailStartMs = 0; // when the details view landed = when its bars start to grow
-        bool viewChanged = shown == DisplayMode::WEATHER && lastMode == DisplayMode::WEATHER && detailView != lastDetailView;
-        lastDetailView = shown == DisplayMode::WEATHER && detailView;
-
         // ---- signature: only redraw when something visible changed ----
         uint32_t sig = 0;
-        switch (shown)
-        {
-        case DisplayMode::CLOCK:
-            if (haveTime)
-                sig = (1u << 28) | (uint32_t)(ti.tm_hour * 3600 + ti.tm_min * 60 + ti.tm_sec) |              // bits 0-16
-                      (alarmFlashOn ? (1u << 17) : 0u) | ((uint32_t)colonLevel << 18) |                      // colon "breath"
-                      ((digAnimating || persona.digitPulse > 0) ? ((((now / 33) & 0x1Fu) + 1u) << 22) : 0u); // redraw every frame while a digit slides / flashes
-            else
-                sig = (2u << 28) | (now / 90);
-            break;
-        case DisplayMode::DATE:
-            sig = (3u << 28) | (haveTime ? (uint32_t)(ti.tm_mday | (ti.tm_mon << 5) | ((ti.tm_year & 0x7F) << 9)) : 0u) |
-                  ((themeStamp & 0xFFFu) << 16); // theme moved -> redraw
-            break;
-        default:
-        {
-            // every frame while the bars grow / the temperature rolls, otherwise as slowly as before
-            bool growing = detailView && (int32_t)(now - detailStartMs) < (int32_t)barsGrowTotalMs(wd.barCount);
-            bool rolling = !detailView && wValid && tempRollActive(tempC, now);
-            uint32_t tick = detailView ? (growing ? now / 33 : now / 1000) : (rolling ? now / 33 : now / 120);
-            sig = ((detailView ? 6u : 4u) << 28) | (tick & 0xFF) |
-                  (((uint32_t)((int)lroundf(tempC) + 128) & 0xFF) << 8) |
-                  (((uint32_t)wCode & 0x7F) << 16) | (wValid ? (1u << 23) : 0u);
-            break;
-        }
-        }
+        if (haveTime)
+            sig = (1u << 28) | (uint32_t)(ti.tm_hour * 3600 + ti.tm_min * 60 + ti.tm_sec) |              // bits 0-16
+                  (alarmFlashOn ? (1u << 17) : 0u) | ((uint32_t)colonLevel << 18) |                      // colon "breath"
+                  ((digAnimating || persona.digitPulse > 0) ? ((((now / 33) & 0x1Fu) + 1u) << 22) : 0u); // redraw every frame while a digit slides / flashes
+        else
+            sig = (2u << 28) | (now / 90);
+
         bool modeChanged = (shown != lastMode);
-        // start a slide-in between two normal pages (not from boot / the diagnostics page / an alarm)
-        if (TRANSITION_ENABLED && modeChanged && !alarm && infoCv.ok &&
-            (int)lastMode >= 0 && lastMode != DisplayMode::DIAG)
-        {
-            transActive = true;
-            transStartMs = now;
-            transMs = TRANSITION_MS;
-        }
-        else if (WEATHER_VIEW_TRANSITION && viewChanged && !alarm && infoCv.ok)
-        {
-            transActive = true; // the other weather view slides in the same way
-            transStartMs = now;
-            transMs = WEATHER_VIEW_TRANSITION_MS;
-        }
-        // when the panel stands still: roll / grow animations wait for this moment
-        uint32_t settleMs = transActive ? transStartMs + transMs : now;
-        if (viewChanged && detailView)
-            detailStartMs = settleMs;
-        if (!transActive && !modeChanged && sig == lastInfoSig)
+        if (!pageSliding() && !modeChanged && sig == lastInfoSig)
             return; // nothing visible changed (while sliding, every frame is redrawn)
         lastMode = shown;
         lastInfoSig = sig;
 
-        uint16_t accent = shown == DisplayMode::CLOCK ? C_ACCENT : (shown == DisplayMode::DATE ? C_AMBER : C_SOFT);
-        if (shown == DisplayMode::WEATHER && wValid)
-            accent = wStale ? tint(tempColor(tempC), 0.43f) : tempColor(tempC); // stale = dimmed
+        uint16_t accent = C_ACCENT;
         if (alarm)
             accent = alarmFlashOn ? C_RED : tint(C_RED, 0.35f);
 
@@ -185,116 +117,46 @@ namespace disp
         char cap[24] = "";
         bool capSmooth = false; // cap only holds glyphs of the smooth fonts (date, weekday)
 
-        if (shown == DisplayMode::CLOCK)
+        if (haveTime)
         {
-            if (haveTime)
+            int16_t cw = imax(4, u(8));
+            int16_t total = 4 * dw + 2 * gap + 2 * gap + cw;
+            int16_t x0 = (W - total) / 2;
+            uint16_t on = alarm ? (alarmFlashOn ? C_RED : tint(C_RED, 0.35f)) : mixColor(C_ACCENT, 0xFFFF, 0.6f * persona.digitPulse); // top of the hour: flash
+            int16_t xs[4] = {x0, (int16_t)(x0 + dw + gap),
+                             (int16_t)(x0 + 2 * dw + gap + 2 * gap + cw),
+                             (int16_t)(x0 + 2 * dw + gap + 2 * gap + cw + dw + gap)};
+            for (uint8_t i = 0; i < 4; i++)
             {
-                int16_t cw = imax(4, u(8));
-                int16_t total = 4 * dw + 2 * gap + 2 * gap + cw;
-                int16_t x0 = (W - total) / 2;
-                uint16_t on = alarm ? (alarmFlashOn ? C_RED : tint(C_RED, 0.35f)) : mixColor(C_ACCENT, 0xFFFF, 0.6f * persona.digitPulse); // top of the hour: flash
-                int16_t xs[4] = {x0, (int16_t)(x0 + dw + gap),
-                                 (int16_t)(x0 + 2 * dw + gap + 2 * gap + cw),
-                                 (int16_t)(x0 + 2 * dw + gap + 2 * gap + cw + dw + gap)};
-                for (uint8_t i = 0; i < 4; i++)
+                if (digChangeMs[i] != 0 && digSprOk)
                 {
-                    if (digChangeMs[i] != 0 && digSprOk)
-                    {
-                        float pr = (now - digChangeMs[i]) / (float)CLOCK_DIGIT_ANIM_MS;
-                        drawAnimDigit(xs[i], dy, dw, dh, digPrev[i], digCur[i], pr > 1.0f ? 1.0f : pr, on);
-                    }
-                    else
-                        drawSegDigit(g, xs[i], dy, dw, dh, digCur[i], on, C_GHOST);
+                    float pr = (now - digChangeMs[i]) / (float)CLOCK_DIGIT_ANIM_MS;
+                    drawAnimDigit(xs[i], dy, dw, dh, digPrev[i], digCur[i], pr > 1.0f ? 1.0f : pr, on);
                 }
-                drawColonGlow(g, x0 + 2 * dw + gap + gap + cw / 2, dy, dh, imax(2, dw / 4), on, colonLevel);
-                strftime(cap, sizeof(cap), "%a %d %b", &ti);
-                capSmooth = true;
+                else
+                    drawSegDigit(g, xs[i], dy, dw, dh, digCur[i], on, C_GHOST);
+            }
+            drawColonGlow(g, x0 + 2 * dw + gap + gap + cw / 2, dy, dh, imax(2, dw / 4), on, colonLevel);
+            strftime(cap, sizeof(cap), "%a %d %b", &ti);
+            capSmooth = true;
 
-                // seconds progress bar
-                int16_t bx = u(12), bw = W - 2 * u(12), bh = imax(2, u(2.5f));
-                int16_t by = infoH - u(15);
-                g.fillRoundRect(bx, by, bw, bh, bh / 2, C_GHOST);
-                int16_t fw = (int16_t)((int32_t)bw * (ti.tm_sec + 1) / 60);
-                if (fw > 0)
-                    g.fillRoundRect(bx, by, fw, bh, bh / 2, accent);
+            // seconds progress bar
+            int16_t bx = u(12), bw = W - 2 * u(12), bh = imax(2, u(2.5f));
+            int16_t by = infoH - u(15);
+            g.fillRoundRect(bx, by, bw, bh, bh / 2, C_GHOST);
+            int16_t fw = (int16_t)((int32_t)bw * (ti.tm_sec + 1) / 60);
+            if (fw > 0)
+                g.fillRoundRect(bx, by, fw, bh, bh / 2, accent);
 
 #if ALARM_ICON_ENABLED
-                if (alarmCfgOn || alarm)
-                    drawAlarmBadge(g, alarm, infoH - u(7), ti);
+            if (alarmCfgOn || alarm)
+                drawAlarmBadge(g, alarm, infoH - u(7), ti);
 #endif
-            }
-            else
-            {
-                drawDormantClock(g, dw, dh, gap, dy, accent, now); // the eyes "think" about it up in the face card
-                strcpy(cap, "Syncing...");
-            }
         }
-        else if (shown == DisplayMode::DATE)
+        else
         {
-            if (haveTime)
-            {
-                int8_t d[2] = {(int8_t)(ti.tm_mday / 10), (int8_t)(ti.tm_mday % 10)};
-                int16_t dayW = 2 * dw + gap;
-                int16_t x0 = (int16_t)(W * 0.10f);
-                drawSegNumber(g, x0, dy, dw, dh, gap, d, 2, C_AMBER);
-                // thin divider
-                int16_t divX = x0 + dayW + u(9);
-                g.drawFastVLine(divX, dy + 2, dh - 4, tint(C_AMBER, 0.27f));
-                char mon[8];
-                strftime(mon, sizeof(mon), "%b", &ti);
-                for (char *p = mon; *p; p++)
-                    if (*p >= 'a' && *p <= 'z')
-                        *p -= 32;
-                smoothText(g, ClockSm26, CLOCKSM26_CAPH, mon, divX + (W - divX) / 2, dy + dh / 2, C_BASELINE, C_AMBER, C_BG);
-                strftime(cap, sizeof(cap), "%A", &ti);
-                capSmooth = true;
-            }
-            else
-            {
-                drawDormantClock(g, dw, dh, gap, dy, accent, now); // the eyes "think" about it up in the face card
-                strcpy(cap, "Syncing...");
-            }
-        }
-        else // WEATHER
-        {
-            if (wValid && detailView)
-            {
-                drawWeatherDetails(g, wd, accent, (int32_t)(now - detailStartMs));
-            }
-            else if (wValid)
-            {
-                int16_t r = u(14);
-                drawWeatherIcon(g, wCode, (int16_t)(W * 0.22f), dy + dh / 2, r, now);
-
-                drawTempReadout(g, tempC, dw, dh, gap, dy, accent, now, settleMs);
-
-                strncpy(cap, weather_code_to_label(wCode), sizeof(cap) - 1);
-                cap[sizeof(cap) - 1] = '\0';
-
-                if (wStale)
-                {
-                    // "Clear 3h ago" (drops "ago" if it would not fit), plus a small clock badge
-                    char age[8];
-                    fmtAge(age, sizeof(age), wAgeMs);
-                    char full[24];
-                    snprintf(full, sizeof(full), "%s %s ago", cap, age);
-                    g.setTextDatum(MC_DATUM);
-                    if (g.textWidth(full, 2) <= W - u(4))
-                        strcpy(cap, full);
-                    else
-                        snprintf(cap, sizeof(cap), "%s %s", weather_code_to_label(wCode), age);
-
-                    int16_t bx = W - u(10), by = infoH - u(7), br = imax(3, u(4));
-                    g.drawCircle(bx, by, br, C_AMBER);
-                    g.drawLine(bx, by, bx, by - br + 1, C_AMBER);
-                    g.drawLine(bx, by, bx + br - 1, by, C_AMBER);
-                }
-            }
-            else
-            {
-                drawCloud(g, W / 2, dy + dh / 2, u(14), tint(C_SOFT, 0.47f));
-                strcpy(cap, "No weather yet");
-            }
+            drawDormantClock(g, dw, dh, gap, dy, accent, now); // the eyes "think" about it up in the face card
+            strcpy(cap, "Syncing...");
         }
 
         if (cap[0])
@@ -313,22 +175,8 @@ namespace disp
             }
         }
         drawModeDots(g, shown, accent, infoH - u(5));
-        if (twoViews)
-            drawViewDots(g, detailView ? 1 : 0, accent, infoH - u(5));
 
-        int16_t slideX = 0;
-        if (transActive)
-        {
-            uint32_t el = now - transStartMs;
-            if (el >= transMs)
-                transActive = false; // last frame lands exactly at x = 0
-            else
-            {
-                float inv = 1.0f - el / (float)transMs; // ease-out: fast start, soft landing
-                slideX = (int16_t)(W * inv * inv * inv);
-            }
-        }
-        infoCv.endAt(slideX);
+        infoCv.endAt(pageSlideX);
     }
 
 } // namespace disp
