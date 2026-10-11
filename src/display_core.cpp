@@ -85,10 +85,13 @@ namespace disp
     static void frameFill()
     {
         tft.fillRect(0, 0, SW, faceY, C_FRAME);                           // top
-        tft.fillRect(0, faceY + faceH, SW, cardGap, C_FRAME);             // between the cards
         tft.fillRect(0, infoY + infoH, SW, H - (infoY + infoH), C_FRAME); // bottom
         tft.fillRect(0, faceY, cardX, H - 2 * faceY, C_FRAME);            // left
         tft.fillRect(SW - cardX, faceY, cardX, H - 2 * faceY, C_FRAME);   // right
+        // Between the cards (the left / right fills above already cover the side margins of those rows). The strip
+        // is painted by gapPaint(): frame colour on the clock page, page background + thin line on a full-screen page.
+        gapInvalidate();
+        gapPaint(0);
     }
 
     // Called every tick after the theme moved. The frame follows the card background; when it changes (or a

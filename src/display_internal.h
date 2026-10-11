@@ -444,6 +444,7 @@ namespace disp
     void pageSlideStart(uint32_t now, uint32_t ms);                   // start a slide of both cards (page / weather view change)
     uint32_t pageSlideSettleMs(uint32_t now);                         // when the page has stopped sliding (now if it is not)
     void gapPaint(int16_t dx);                                        // the strip between the two cards: frame colour or page background
+    void gapInvalidate();                                             // the strip was wiped by something else: the next gapPaint() repaints it
     void drawFullPage(DisplayMode shown, bool haveTime, const struct tm &ti, uint32_t now);
     extern bool gapIsFull; // what gapPaint() last painted
 
