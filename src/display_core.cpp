@@ -195,10 +195,58 @@ namespace disp
         tft.endWrite();
     }
 
+    // Cuts the corners INSIDE the sprite, before it is pushed: the corner pixels go out to the screen already in the
+    // frame colour (the outermost pixel of each row blended with the card's own pixel). The old way pushed the whole
+    // rectangle first and cut the corners on the screen afterwards, so on every redraw the corners showed card
+    // colour for a moment: that was the flicker at the two ends of the strip between the cards (and at the outer
+    // corners). The sprite is redrawn from scratch every frame, so nothing is lost by painting into it.
+    static void bakeCorners(Canvas &c, uint8_t corners)
+    {
+        if (cardR < 2)
+            return;
+        for (int16_t dy = 0; dy < cardR; dy++)
+        {
+            float xo = cornerOut[dy];
+            int16_t n = (int16_t)xo;
+            float frac = xo - n;
+            int16_t yT = dy, yB = c.h - 1 - dy;
+            if (n > 0)
+            {
+                if (corners & CORNERS_TOP)
+                {
+                    c.spr.drawFastHLine(0, yT, n, C_FRAME);
+                    c.spr.drawFastHLine(c.w - n, yT, n, C_FRAME);
+                }
+                if (corners & CORNERS_BOT)
+                {
+                    c.spr.drawFastHLine(0, yB, n, C_FRAME);
+                    c.spr.drawFastHLine(c.w - n, yB, n, C_FRAME);
+                }
+            }
+            if (frac > 0.08f)
+            {
+                int16_t xl = n, xr = c.w - 1 - n;
+                if (corners & CORNERS_TOP)
+                {
+                    c.spr.drawPixel(xl, yT, mixColor(c.spr.readPixel(xl, yT), C_FRAME, frac));
+                    c.spr.drawPixel(xr, yT, mixColor(c.spr.readPixel(xr, yT), C_FRAME, frac));
+                }
+                if (corners & CORNERS_BOT)
+                {
+                    c.spr.drawPixel(xl, yB, mixColor(c.spr.readPixel(xl, yB), C_FRAME, frac));
+                    c.spr.drawPixel(xr, yB, mixColor(c.spr.readPixel(xr, yB), C_FRAME, frac));
+                }
+            }
+        }
+    }
+
     void Canvas::endAt(int16_t dx, uint8_t corners)
     {
         if (ok)
         {
+            bool baked = (dx == 0);
+            if (baked)
+                bakeCorners(*this, corners); // settled card: corners are cut in the sprite, nothing to fix on the screen
             if (dx != 0 || sh != h)
             {
                 // clip the sprite to the card: when it slides, and when the sprite is taller than the card
@@ -208,10 +256,14 @@ namespace disp
             }
             else
                 spr.pushSprite(x0, y0);
+            if (!baked)
+                maskCorners(*this, false, corners); // sliding card: whole pixels are cut on the screen
         }
         else
+        {
             tft.resetViewport();
-        maskCorners(*this, dx == 0, corners);
+            maskCorners(*this, false, corners); // no sprite: drawn straight on the screen, cut afterwards
+        }
     }
 
     // Small sprite for the clock-digit slide animation (display_digits.cpp). Defined here, right after
