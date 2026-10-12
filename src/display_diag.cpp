@@ -170,28 +170,34 @@ namespace disp
 
     // yOff = screen y of this canvas' top edge; all coordinates below are screen
     // coordinates, shifted into the canvas.
+    //
+    // The page is two cards (face area on top, info area below) with a frame between them, so a row must
+    // never sit across the split. Rows are therefore placed in two groups, and none of them touches the split:
+    //   Yt(v) = v px from the top of the upper card (reference 128x160 display; scaled by u()),
+    //   Yb(v) = v px from the top of the lower card.
+    // 9 rows + the IP line do not fit with a title line, so the page has no title (the accent bar on top
+    // turns red when WiFi is down).
     static void drawDiagContent(TFT_eSPI &g, int16_t yOff, const DiagData &d)
     {
-        auto Y = [&](float v) -> int16_t
+        auto Yt = [&](float v) -> int16_t
         { return (int16_t)(u(v) - yOff); };
+        auto Yb = [&](float v) -> int16_t
+        { return (int16_t)(faceH + u(v) - yOff); };
 
         uint16_t accent = d.wifi ? C_ICE : C_RED;
         g.fillRect(0, -yOff, W, imax(2, u(2)), accent);
         g.fillRect(0, imax(2, u(2)) - yOff, W, imax(1, u(1)), tint(accent, 0.235f));
 
-        g.setTextDatum(MC_DATUM);
-        g.setTextColor(C_WHITE);
-        g.drawString("Diagnostics", W / 2, Y(11), 2);
-        g.drawFastHLine(u(6), Y(20), W - 2 * u(6), tint(C_SOFT, 0.31f));
-
         // IP, centred on its own line (a full 192.168.xxx.xxx would not fit next to a label)
         g.setTextDatum(MC_DATUM);
         g.setTextColor(d.wifi ? C_ACCENT : C_RED);
-        g.drawString(d.wifi ? d.ip : "Offline", W / 2, Y(30), 2);
+        g.drawString(d.wifi ? d.ip : "Offline", W / 2, Yt(13), 2);
+        g.drawFastHLine(u(6), Yt(22), W - 2 * u(6), tint(C_SOFT, 0.31f));
 
         char buf[24];
         uint16_t c;
 
+        // ---- upper card ----
         // signal strength
         if (d.wifi)
         {
@@ -203,32 +209,33 @@ namespace disp
             strcpy(buf, "--");
             c = C_RED;
         }
-        drawDiagRow(g, Y(44), "Signal", buf, c);
+        drawDiagRow(g, Yt(33), "Signal", buf, c);
 
         // free heap
         snprintf(buf, sizeof(buf), "%u KB", (unsigned)d.heapKb);
         c = d.heapKb < 30 ? C_RED : (d.heapKb < 60 ? C_AMBER : C_WHITE);
-        drawDiagRow(g, Y(57), "Heap", buf, c);
+        drawDiagRow(g, Yt(45.5f), "Heap", buf, c);
 
         // last NTP sync (clock time + age)
-        drawDiagRow(g, Y(70), "Sync", d.sync, d.syncOk ? C_WHITE : C_AMBER);
+        drawDiagRow(g, Yt(58), "Sync", d.sync, d.syncOk ? C_WHITE : C_AMBER);
 
         // weather reading age
-        drawDiagRow(g, Y(83), "Weather", d.weather, d.weatherOk ? (d.weatherStale ? C_AMBER : C_WHITE) : C_AMBER);
+        drawDiagRow(g, Yt(70.5f), "Weather", d.weather, d.weatherOk ? (d.weatherStale ? C_AMBER : C_WHITE) : C_AMBER);
 
+        // ---- lower card ----
         // uptime
-        drawDiagRow(g, Y(96), "Uptime", d.uptime, C_WHITE);
+        drawDiagRow(g, Yb(8), "Uptime", d.uptime, C_WHITE);
 
         // why this boot happened (kept in flash; red = brownout / panic / watchdog)
-        drawDiagRow(g, Y(109), "Reset", d.reset, d.resetBad ? C_RED : C_WHITE);
+        drawDiagRow(g, Yb(20.5f), "Reset", d.reset, d.resetBad ? C_RED : C_WHITE);
 
         // boot counter; "BO n" = brownouts so far (amber once there is one)
-        drawDiagRow(g, Y(122), "Boots", d.boots, d.bootsWarn ? C_AMBER : C_WHITE);
+        drawDiagRow(g, Yb(33), "Boots", d.boots, d.bootsWarn ? C_AMBER : C_WHITE);
 
         // firmware version, and whether a newer release is waiting (the owner installs it from the settings page)
-        drawDiagRow(g, Y(135), "Version", d.fw, C_WHITE);
+        drawDiagRow(g, Yb(45.5f), "Version", d.fw, C_WHITE);
         uint16_t uc = d.updLevel == 1 ? C_AMBER : (d.updLevel == 2 ? C_RED : (d.updLevel == 3 ? C_SOFT : rgb(90, 230, 130)));
-        drawDiagRow(g, Y(148), "Update", d.upd, uc);
+        drawDiagRow(g, Yb(58), "Update", d.upd, uc);
     }
 
     void drawDiagScreen(uint32_t now)
