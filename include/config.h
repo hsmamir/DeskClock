@@ -113,26 +113,39 @@ static_assert(WEATHER_BARS >= 2 && WEATHER_BARS <= 8, "WEATHER_BARS must be 2-8"
 #define AUDIO_VOLUME 30       // default volume of the pet/touch sound, 0-30 (changeable from the settings page)
 #define AUDIO_ALARM_VOLUME 30 // default volume of the ALARM, 1-30 (changeable from the settings page).
                               // Separate from the pet volume. Minimum 1: an alarm can't be set to silent.
-#define AUDIO_FILE_COUNT 5    // how many clips are on the module; the settings page offers 1..this as alarm sounds
+// Anti-jam guards for the JQ6500 (it locks up or ignores commands when frames arrive too fast):
+#define AUDIO_MIN_CMD_GAP_MS 60   // minimum pause between two serial frames sent to the module
+#define AUDIO_SETTLE_MS 60        // wait after pause / volume before the next command
+#define AUDIO_MIN_PLAY_GAP_MS 250 // pet/preview/yawn plays closer together than this are dropped (the alarm is never dropped)
+#define AUDIO_FILE_COUNT 14       // how many clips are on the module (the test-sound endpoint accepts 1..this)
 
 // File index = upload order into the module's onboard flash, starting at 1.
-// The module's K1..K5 pins play files 1..5, so the sound wired to K3 is file 3.
+//   01_alarm_soft     02_alarm_main    03_pet_chirp     04_alarm_melodic  05_alarm_loud
+//   06_pet_boing      07_pet_blips     08_yawn_servo    09_hour_chime     10_boot_blip
+//   11_ui_on          12_ui_off        13_tick_tock     14_ui_error
+// The module's K1..K5 pins play files 1..5, so the sound wired to K3 is file 3 (pet_chirp).
 // If a clip plays one off from what you expect, change the index below.
 #define SOUND_INDEX_PET 3   // pet/touch reaction = the K3 sound
 #define SOUND_INDEX_ALARM 2 // default alarm tone (changeable from the settings page) — played on repeat while the alarm rings
-                            // Not used yet - assign a file number here when you add it:
-                            // #define SOUND_INDEX_CLICK 1  // mode-switch click
 
-// ---- Extra sound clips (0 = not on the module yet, stays silent) ----
-// Upload the clips after the 5 above (so the alarm tone list is not shifted) and put their numbers here.
+// Clips the settings page offers as alarm tones (only the real alarm clips, not pet/UI sounds).
+#define ALARM_SOUND_LIST {1, 2, 4, 5}
+
+// ---- Extra sound clips (0 = not on the module, stays silent) ----
 //   PET_B / PET_C: two more versions of the touch chirp, so it does not repeat (0 = only SOUND_INDEX_PET)
 //   YAWN: every yawn          CHIME: the "ding" at the top of the hour          BOOT: short sound after waking up
 // All of them go through audio_play_gentle(): at night they follow AUDIO_NIGHT_PET_VOLUME (silent by default).
-#define SOUND_INDEX_PET_B 0
-#define SOUND_INDEX_PET_C 0
-#define SOUND_INDEX_YAWN 0
-#define SOUND_INDEX_CHIME 0
-#define SOUND_INDEX_BOOT 0
+#define SOUND_INDEX_PET_B 6
+#define SOUND_INDEX_PET_C 7
+#define SOUND_INDEX_YAWN 8
+#define SOUND_INDEX_CHIME 0 // hourly chime OFF (was 9 = 09_hour_chime); set back to 9 to re-enable
+#define SOUND_INDEX_BOOT 10
+
+// UI beeps (not wired to any feature yet — use these numbers when you add them):
+#define SOUND_INDEX_UI_ON 11    // feature switched on
+#define SOUND_INDEX_UI_OFF 12   // feature switched off
+#define SOUND_INDEX_TICK 13     // tick-tock
+#define SOUND_INDEX_UI_ERROR 14 // error / rejected action
 
 // ---- Alarm ----
 // Default alarm time (changeable from the settings page), local time of the
@@ -348,6 +361,7 @@ static_assert(AMBIENT_MOTES >= 3 && AMBIENT_MOTES <= 5, "AMBIENT_MOTES must be 3
 //   holding the button ... purring (closed eyes, the servo trembles gently)
 // Everything can be switched off from the settings page (that setting is the default below).
 #define PET_REACTIONS_DEFAULT 1
+#define UI_SOUNDS_DEFAULT 1        // settings-page feedback beeps (clips 11/12/14); changeable from the settings page
 #define PET_STREAK_GAP_MS 3000     // taps closer together than this count as one streak
 #define PET_HEART_STREAK 4         // this many taps in a row -> heart eyes
 #define PET_DIZZY_STREAK 12        // ... dizzy spiral eyes
