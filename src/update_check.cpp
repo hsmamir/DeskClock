@@ -24,12 +24,14 @@ bool update_request_install(const String &, String &err)
 #include <ArduinoJson.h>
 #include <Update.h>
 #include <ctype.h>
+#include <string.h>
 #include <esp_ota_ops.h>
 #include <mbedtls/md.h>
 #include "state.h"
 #include "time_sync.h"
 #include "alarm_ctrl.h"
 #include "update_certs.h"
+#include "tls_lock.h"
 
 static SemaphoreHandle_t s_mu = nullptr;
 static UpdateStatus s_st;
@@ -46,6 +48,15 @@ namespace
         ~Lock() { xSemaphoreGive(s_mu); }
     };
 }
+
+// The worker does TLS with full certificate verification (X.509 chain check, RSA-4096 / ECDSA P-384),
+// which needs a lot more stack and CPU time than the unverified weather request. The stack was 10240.
+// The priority is the IDLE priority on purpose: at priority 1 this CPU-bound task never lets the
+// core-0 idle task run during the handshake, and the task watchdog (which watches IDLE0 and panics)
+// would reset the chip. At priority 0 it time-slices with the idle task.
+#ifndef UPDATE_TASK_STACK
+#define UPDATE_TASK_STACK 12288
+#endif
 
 static const char *const ASSET_BIN = "deskclock-" FW_VARIANT ".bin";
 static const char *const ASSET_SHA = "deskclock-" FW_VARIANT ".bin.sha256";
@@ -88,6 +99,21 @@ static int compareVersions(const int a[3], const int b[3])
     return 0;
 }
 
+static String hostOf(const String &url)
+{
+    int hostEnd = url.indexOf('/', 8);
+    String host = url.substring(8, hostEnd < 0 ? url.length() : hostEnd);
+    host.toLowerCase();
+    return host;
+}
+
+// Every TLS connection parses all root certificates it is given into RAM, and this clock has little
+// free heap ("SSL - Memory allocation failed"). So each connection only gets the roots of its own host.
+static const char *rootsFor(const String &url)
+{
+    return hostOf(url).endsWith(".githubusercontent.com") ? UPDATE_ROOT_CAS_CDN : UPDATE_ROOT_CAS_API;
+}
+
 // Only GitHub's own hosts are accepted, over https (also after a redirect).
 static bool allowedUrl(const String &url)
 {
@@ -127,8 +153,13 @@ static String httpError(int code, WiFiClientSecure &client)
 {
     if (code < 0)
     {
-        char buf[64];
-        return client.lastError(buf, sizeof(buf)) != 0 ? "tls" : "connect";
+        char buf[100] = {0};
+        int tlsErr = client.lastError(buf, sizeof(buf));
+        // The real reason goes to Serial: e.g. -0x2700 = certificate verify failed,
+        // -0x7F00 = out of memory, -0x0010 = connection reset.
+        Serial.printf("Update: request failed, http %d, tls error %d (%s), heap free %u, largest block %u\n",
+                      code, tlsErr, buf, (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMaxAllocHeap());
+        return tlsErr != 0 ? "tls" : "connect";
     }
     if (code == 403 || code == 429)
         return "rate_limit";
@@ -139,7 +170,7 @@ static String httpError(int code, WiFiClientSecure &client)
 // host). On success the response is open, status 200, ready to be read; call http.end() after.
 static bool openUrl(WiFiClientSecure &client, HTTPClient &http, String url, bool http10, String &err)
 {
-    static const char *keys[] = {"Location"};
+    static const char *keys[] = {"Location", "Transfer-Encoding"};
     for (int hop = 0; hop < 4; hop++)
     {
         if (!allowedUrl(url))
@@ -147,21 +178,40 @@ static bool openUrl(WiFiClientSecure &client, HTTPClient &http, String url, bool
             err = "redirect";
             return false;
         }
-        if (!http.begin(client, url))
+        // The TLS handshake needs a burst of memory (record buffers, big-number maths for the
+        // certificate check). If another task (display, web page) holds it at that very moment the
+        // handshake fails with "Memory allocation failed". That is temporary: wait and try again.
+        int code = -1;
+        for (int attempt = 0; attempt < 4; attempt++)
         {
-            err = "connect";
-            return false;
-        }
-        http.setReuse(false);
-        http.setTimeout(12000);
-        http.setUserAgent("DeskClock/" FW_VERSION);
-        http.setFollowRedirects(HTTPC_DISABLE_FOLLOW_REDIRECTS);
-        http.useHTTP10(http10); // HTTP/1.0 = no chunked encoding, so the JSON can be streamed
-        http.collectHeaders(keys, 1);
-        if (http10)
-            http.addHeader("Accept", "application/vnd.github+json"); // the API call (the downloads need no header)
+            if (!http.begin(client, url))
+            {
+                err = "connect";
+                return false;
+            }
+            client.setCACert(rootsFor(url)); // the connection itself is opened by GET()
+            http.setReuse(false);
+            http.setTimeout(12000);
+            http.setUserAgent("DeskClock/" FW_VERSION);
+            http.setFollowRedirects(HTTPC_DISABLE_FOLLOW_REDIRECTS);
+            http.useHTTP10(http10); // HTTP/1.0 = no chunked encoding, so the JSON can be streamed
+            http.collectHeaders(keys, 2);
+            if (http10)
+                http.addHeader("Accept", "application/vnd.github+json"); // the API call (the downloads need no header)
 
-        int code = http.GET();
+            code = http.GET();
+            if (code >= 0 || attempt == 3)
+                break;
+            char msg[100] = {0};
+            int tlsErr = client.lastError(msg, sizeof(msg));
+            if (tlsErr == 0 || strstr(msg, "allocation") == nullptr)
+                break; // some other connection problem: not worth repeating
+            Serial.printf("Update: out of memory during the TLS handshake (%s), heap free %u, largest block %u; retry %d\n",
+                          msg, (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMaxAllocHeap(), attempt + 1);
+            http.end();
+            client.stop();
+            vTaskDelay(pdMS_TO_TICKS(2500));
+        }
         if (code == 200)
             return true;
         if (code == 301 || code == 302 || code == 303 || code == 307 || code == 308)
@@ -185,10 +235,122 @@ static bool openUrl(WiFiClientSecure &client, HTTPClient &http, String url, bool
     return false;
 }
 
+// Reads an HTTP response body from the TLS socket for the JSON parser. Reading the socket
+// byte by byte straight from the parser ended the JSON early ("IncompleteInput") whenever the next TLS
+// record had not arrived yet. This wrapper waits for data (until `timeoutMs` without any), only reports
+// the end when the server really closed the connection, and decodes chunked transfer encoding
+// (the response has no Content-Length, so it may be chunked).
+class BodyStream : public Stream
+{
+public:
+    BodyStream(WiFiClient &c, bool chunked, uint32_t timeoutMs) : c_(c), chunked_(chunked), timeoutMs_(timeoutMs)
+    {
+        setTimeout(0); // Stream::timedRead() must not wait again on top of our own waiting
+    }
+
+    int read() override
+    {
+        if (!chunked_)
+            return rawRead();
+        if (chunkLeft_ == 0)
+        {
+            if (done_ || !readChunkSize() || chunkLeft_ == 0)
+            {
+                done_ = true;
+                return -1;
+            }
+        }
+        int b = rawRead();
+        if (b < 0)
+            return -1;
+        if (--chunkLeft_ == 0)
+        {
+            rawRead(); // CR
+            rawRead(); // LF
+        }
+        return b;
+    }
+    int available() override { return 0; }
+    int peek() override { return -1; }
+    size_t write(uint8_t) override { return 0; }
+    void flush() override {}
+
+    size_t count() const { return count_; }
+    const char *endReason() const { return end_; }
+
+private:
+    int rawRead()
+    {
+        uint32_t t0 = millis();
+        for (;;)
+        {
+            if (c_.available() > 0)
+            {
+                int b = c_.read();
+                if (b >= 0)
+                {
+                    count_++;
+                    return b;
+                }
+            }
+            if (!c_.connected() && c_.available() <= 0)
+            {
+                end_ = "closed";
+                return -1;
+            }
+            if (millis() - t0 > timeoutMs_)
+            {
+                end_ = "timeout";
+                return -1;
+            }
+            vTaskDelay(1);
+        }
+    }
+
+    // "1f4a\r\n" (a ";extension" may follow the number) -> chunkLeft_
+    bool readChunkSize()
+    {
+        uint32_t n = 0;
+        bool any = false, ext = false;
+        for (;;)
+        {
+            int b = rawRead();
+            if (b < 0)
+                return false;
+            if (b == '\n')
+                break;
+            if (b == '\r' || ext)
+                continue;
+            if (b == ';')
+            {
+                ext = true;
+                continue;
+            }
+            if (!isxdigit(b))
+                return false;
+            n = n * 16 + (b <= '9' ? b - '0' : (b | 0x20) - 'a' + 10);
+            any = true;
+        }
+        if (!any) // an empty line (the CRLF after the previous chunk): try again
+            return readChunkSize();
+        chunkLeft_ = n;
+        return true;
+    }
+
+    WiFiClient &c_;
+    bool chunked_;
+    uint32_t timeoutMs_;
+    uint32_t chunkLeft_ = 0;
+    bool done_ = false;
+    size_t count_ = 0;
+    const char *end_ = "";
+};
+
 // ---------------------------------------------------------------- 1. check
 
 static void doCheck()
 {
+    TlsGuard tlsGuard; // waits for a running weather fetch; one TLS connection at a time (tls_lock.h)
     String err;
     if (!preconditions(err))
     {
@@ -197,13 +359,17 @@ static void doCheck()
     }
 
     WiFiClientSecure client;
-    client.setCACert(UPDATE_ROOT_CAS);
     HTTPClient http;
     if (!openUrl(client, http, "https://api.github.com/repos/" UPDATE_REPO "/releases/latest", true, err))
     {
         setFailed(err == "http_404" ? String("no_release") : err);
         return;
     }
+
+    // content-length -1 = unknown (e.g. chunked, which the JSON stream parser below cannot read)
+    Serial.printf("Update: connected, content-length %d, heap free %u, largest block %u, lowest ever %u\n",
+                  http.getSize(), (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMaxAllocHeap(),
+                  (unsigned)ESP.getMinFreeHeap());
 
     // Keep only what is needed: the response is large (release notes, uploader details, ...).
     JsonDocument filter;
@@ -213,14 +379,29 @@ static void doCheck()
     filter["assets"][0]["size"] = true;
     filter["assets"][0]["browser_download_url"] = true;
 
+    String te = http.header("Transfer-Encoding");
+    te.toLowerCase();
+    BodyStream body(http.getStream(), te.indexOf("chunked") >= 0, 15000);
+
     JsonDocument doc;
-    DeserializationError je = deserializeJson(doc, http.getStream(), DeserializationOption::Filter(filter));
+    DeserializationError je = deserializeJson(doc, body, DeserializationOption::Filter(filter));
     http.end();
     client.stop();
     if (je)
     {
-        setFailed("json");
-        return;
+        // NoMemory = heap ran out; IncompleteInput = the body ended early (see "ended" below);
+        // InvalidInput = not JSON.
+        Serial.printf("Update: JSON error %s after %u bytes (ended: %s, chunked: %s), heap free %u, largest block %u\n",
+                      je.c_str(), (unsigned)body.count(), body.endReason()[0] ? body.endReason() : "parser", te.c_str(),
+                      (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMaxAllocHeap());
+        // The parser keeps what it read before the break. Everything needed is checked below
+        // (tag, both file URLs, size), so a cut-off tail of the release notes does no harm.
+        if (!(je == DeserializationError::IncompleteInput && (doc["tag_name"] | "")[0]))
+        {
+            setFailed("json");
+            return;
+        }
+        Serial.println("Update: partial JSON accepted, the needed fields are complete");
     }
 
     String tag = doc["tag_name"] | "";
@@ -340,6 +521,7 @@ static void toHex(const uint8_t *in, size_t n, char *out)
 
 static void doInstall()
 {
+    TlsGuard tlsGuard; // held for the whole install: weather waits instead of competing for heap
     String binUrl, shaUrl;
     uint32_t size;
     {
@@ -361,7 +543,6 @@ static void doInstall()
     String expected;
     {
         WiFiClientSecure client;
-        client.setCACert(UPDATE_ROOT_CAS);
         HTTPClient http;
         if (!openUrl(client, http, shaUrl, false, err))
         {
@@ -386,7 +567,6 @@ static void doInstall()
 
     // 2) the firmware itself
     WiFiClientSecure client;
-    client.setCACert(UPDATE_ROOT_CAS);
     HTTPClient http;
     if (!openUrl(client, http, binUrl, false, err))
     {
@@ -450,6 +630,8 @@ static void doInstall()
 static void worker(void *arg)
 {
     int mode = (int)(intptr_t)arg; // 0 manual check, 1 install, 2 automatic check
+    Serial.printf("Update: worker start (mode %d), heap free %u, largest block %u\n", mode,
+                  (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMaxAllocHeap());
     if (mode == 1)
         doInstall();
     else
@@ -468,6 +650,9 @@ static void worker(void *arg)
             }
         }
     }
+    Serial.printf("Update: worker end, stack never used: %u of %u bytes, heap free %u\n",
+                  (unsigned)uxTaskGetStackHighWaterMark(nullptr), (unsigned)UPDATE_TASK_STACK,
+                  (unsigned)ESP.getFreeHeap());
     {
         Lock l;
         s_running = false;
@@ -478,7 +663,7 @@ static void worker(void *arg)
 // Caller holds no lock. Marks the status first so the page reacts immediately.
 static bool startWorker(int mode, String &err)
 {
-    if (xTaskCreatePinnedToCore(worker, "update", 10240, (void *)(intptr_t)mode, 1, nullptr, 0) != pdPASS)
+    if (xTaskCreatePinnedToCore(worker, "update", UPDATE_TASK_STACK, (void *)(intptr_t)mode, tskIDLE_PRIORITY, nullptr, 0) != pdPASS)
     {
         Lock l;
         s_running = false;

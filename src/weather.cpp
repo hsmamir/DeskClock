@@ -8,6 +8,7 @@
 #include "config.h"
 #include "settings.h"
 #include "state.h"
+#include "tls_lock.h"
 
 // After a failed fetch (no internet, server error, bad JSON) the next attempt comes
 // after this, not after a whole WEATHER_REFRESH_INTERVAL_MS. The weather task polls
@@ -47,6 +48,7 @@ const char *weather_code_to_label(int code)
 // Returns true when a complete reading was stored in g_state.
 static bool fetchWeather()
 {
+    TlsGuard tlsGuard; // one TLS connection at a time (see tls_lock.h); also covers the whole function
     bool stored = false;
 
     WiFiClientSecure client;

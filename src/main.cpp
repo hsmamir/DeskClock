@@ -245,7 +245,12 @@ void setup()
     startTask(alarmTask, "alarm", 5120, 2, 1); // audio_tick() reaches audio -> sun -> Serial.printf like the touch task
     startTask(timeTask, "time", 8192, 1, 0);
     startTask(weatherTask, "weather", 10240, 1, 0);
-    startTask(webTask, "web", 8192, 1, 0);
+    // Priority 0 = same as the core-0 idle task, on purpose. WebServer reads a request with
+    // readStringUntil(), which busy-waits up to 5 s per call without ever blocking; when a client
+    // cannot be served (e.g. no memory for its 1436-byte receive buffer while a TLS update check
+    // runs) that adds up to 10 s. At priority 1 the idle task never ran meanwhile and the task
+    // watchdog (it watches IDLE0) reset the chip. At priority 0 the two simply share the CPU.
+    startTask(webTask, "web", 8192, tskIDLE_PRIORITY, 0);
     startTask(otaTask, "ota", 6144, 1, 0);
 }
 
