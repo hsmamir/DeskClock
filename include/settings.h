@@ -12,6 +12,8 @@ struct Settings
     int alarmSound;    // clip number on the audio module, one of ALARM_SOUND_LIST
     int alarmVolume;   // 1-30, volume of the alarm only
     int volume;        // 0-30, volume of the pet/touch sound only
+    bool occasions;    // yearly occasion animations on the face (Halloween, Easter, Christmas, New Year's Eve)
+    bool uiSounds;     // short beeps for settings feedback: switched on / off / rejected (clips 11, 12, 14)
     bool petReactions; // varied Pet button reactions (hearts, dizzy, sleepy, ...); off = always the classic happy face
 
     float latitude; // weather location

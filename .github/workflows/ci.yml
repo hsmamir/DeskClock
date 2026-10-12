@@ -1,0 +1,35 @@
+name: Build
+
+# Compiles every display variant (and the Wokwi simulator build) for each push to main
+# and each Pull Request, so a change that does not build is caught before it is merged.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        env:
+          [
+            esp32dev,
+            esp32dev-green,
+            esp32dev-green2,
+            esp32dev-green3,
+            esp32dev-red,
+            wokwi,
+          ]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: pio-${{ hashFiles('platformio.ini') }}
+      - run: pip install platformio
+      - run: pio run -e ${{ matrix.env }}

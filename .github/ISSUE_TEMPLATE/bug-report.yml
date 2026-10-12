@@ -1,0 +1,29 @@
+name: Bug report
+description: Report a reproducible DeskClock firmware or hardware issue
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: A clear description of the issue.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      placeholder: "1. Power on...\n2. Press..."
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Hardware and software
+      description: ESP32 board, display variant, power supply, PlatformIO environment, and relevant module versions.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs, photos, or screenshots
+      description: Add serial logs or photos if relevant.

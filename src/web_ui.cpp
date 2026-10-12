@@ -10,9 +10,12 @@
 #include "settings.h"
 #include "audio.h"
 #include "alarm_ctrl.h"
+#include "occasion.h"
 #include "boot_log.h"
 #include "pet.h"
 #include "weather.h"
+#include "update_check.h"
+#include "version.h"
 #include "config.h"
 
 static WebServer server(80);
@@ -67,6 +70,8 @@ static void sendSettings(int code)
         snd.add(settings_alarm_sound_at(i));
     d["volume"] = s.volume;
     d["petReactions"] = s.petReactions;
+    d["uiSounds"] = s.uiSounds;
+    d["occasions"] = s.occasions;
     d["latitude"] = s.latitude;
     d["longitude"] = s.longitude;
     d["city"] = s.city;
@@ -94,6 +99,17 @@ static void handleGetSettings()
     if (!authorized())
         return;
     sendSettings(200);
+}
+
+// Short feedback beep for the settings page (clips 11 switched on / 12 switched off / 14 rejected).
+// Never while the alarm is ringing or snoozed (it would cut the alarm off); at night it follows
+// the pet volume rules (silent by default). `enabled` is passed in so that turning the beeps
+// off still gets its own "off" beep.
+static void uiBeep(bool enabled, uint16_t clip)
+{
+    if (!enabled || clip == 0 || alarm_get_state() != AlarmState::IDLE)
+        return;
+    audio_play_gentle(clip);
 }
 
 static void handlePostSettings()
@@ -128,6 +144,8 @@ static void handlePostSettings()
     s.alarmVolume = doc["alarmVolume"] | old.alarmVolume;
     s.volume = doc["volume"] | old.volume;
     s.petReactions = doc["petReactions"] | old.petReactions;
+    s.uiSounds = doc["uiSounds"] | old.uiSounds;
+    s.occasions = doc["occasions"] | old.occasions;
     s.latitude = doc["latitude"] | old.latitude;
     s.longitude = doc["longitude"] | old.longitude;
     copyString(s.city, sizeof(s.city), doc["city"]);
@@ -138,8 +156,20 @@ static void handlePostSettings()
     if (!settings_update(s, &err))
     {
         sendError(400, err);
+        uiBeep(old.uiSounds, SOUND_INDEX_UI_ERROR);
         return;
     }
+
+    // One beep per save (two beeps in a row would be dropped by the module's rate limit):
+    // "off" wins if anything was switched off, else "on" if anything was switched on.
+    bool turnedOff = (old.alarmEnabled && !s.alarmEnabled) || (old.petReactions && !s.petReactions) ||
+                     (old.uiSounds && !s.uiSounds);
+    bool turnedOn = (!old.alarmEnabled && s.alarmEnabled) || (!old.petReactions && s.petReactions) ||
+                    (!old.uiSounds && s.uiSounds);
+    if (turnedOff)
+        uiBeep(old.uiSounds, SOUND_INDEX_UI_OFF);
+    else if (turnedOn)
+        uiBeep(s.uiSounds, SOUND_INDEX_UI_ON);
 
     // No volume command here: every sound sets the volume it needs just before it
     // plays (pet = saved volume, alarm = saved alarm volume), so a changed value
@@ -176,6 +206,22 @@ static void handleTestSound()
     audio_play_preview((uint16_t)sound, (uint8_t)v); // volume + play as one sequence, with settle delay
     s_restoreVolume = true;
     s_restoreAtMs = millis() + PREVIEW_MS;
+    server.send(200, "application/json", "{\"ok\":true}");
+}
+
+// Shows a yearly occasion on the face for 25 s: /api/test-occasion?id=0..5 (0 = stop, 1 Halloween,
+// 2 Easter, 3 Christmas, 4 New Year's Eve with the countdown, 5 Valentine). Works whatever today's date is.
+static void handleTestOccasion()
+{
+    if (!authorized())
+        return;
+    int id = server.hasArg("id") ? server.arg("id").toInt() : 0;
+    if (id < 0 || id >= (int)Occasion::COUNT)
+    {
+        sendError(400, "id out of range");
+        return;
+    }
+    occasion_preview((uint8_t)id, 25000);
     server.send(200, "application/json", "{\"ok\":true}");
 }
 
@@ -281,6 +327,62 @@ static void handleGetPet()
     sendJson(200, d);
 }
 
+// ---- Firmware update (update_check.cpp): the user always confirms the install ----
+static void handleGetUpdate()
+{
+    if (!authorized())
+        return;
+    static const char *const NAMES[] = {"idle", "checking", "uptodate", "available", "downloading", "done", "failed"};
+    UpdateStatus u = update_status();
+    JsonDocument d;
+    d["enabled"] = (bool)UPDATE_ENABLED;
+    d["state"] = NAMES[(int)u.state];
+    d["current"] = FW_VERSION;
+    d["variant"] = FW_VARIANT;
+    d["latest"] = u.latest;
+    d["notes"] = u.notesUrl;
+    d["sizeKb"] = (u.sizeBytes + 512) / 1024;
+    d["percent"] = u.percent;
+    d["error"] = u.error;
+    d["autoCheck"] = (bool)UPDATE_AUTO_CHECK;
+    // seconds since the last successful check (manual or automatic), -1 = none yet
+    d["checkedAgoS"] = u.checkedMs ? (int32_t)((millis() - u.checkedMs) / 1000) : -1;
+    sendJson(200, d);
+}
+
+static void handleUpdateCheck()
+{
+    if (!authorized() || !requireJsonPost())
+        return;
+    if (!update_request_check())
+    {
+        sendError(409, "busy");
+        return;
+    }
+    server.send(200, "application/json", "{\"ok\":true}");
+}
+
+// Body: {"version":"v1.3.0"} - must be the version the last check found, so a stale page can't install
+// something the user did not see.
+static void handleUpdateInstall()
+{
+    if (!authorized() || !requireJsonPost())
+        return;
+    JsonDocument doc;
+    if (deserializeJson(doc, server.arg("plain")) != DeserializationError::Ok)
+    {
+        sendError(400, "bad json");
+        return;
+    }
+    String err;
+    if (!update_request_install(String(doc["version"] | ""), err))
+    {
+        sendError(409, err.c_str());
+        return;
+    }
+    server.send(200, "application/json", "{\"ok\":true}");
+}
+
 static void handleRoot()
 {
     if (!authorized())
@@ -298,12 +400,16 @@ static void startServer()
     server.on("/api/settings", HTTP_GET, handleGetSettings);
     server.on("/api/settings", HTTP_POST, handlePostSettings);
     server.on("/api/test-sound", HTTP_POST, handleTestSound);
+    server.on("/api/test-occasion", HTTP_POST, handleTestOccasion);
     server.on("/api/alarm", HTTP_GET, handleGetAlarm);
     server.on("/api/bootlog", HTTP_GET, handleGetBootLog);
     server.on("/api/pet", HTTP_GET, handleGetPet);
     server.on("/api/alarm/test", HTTP_POST, handleAlarmTest);
     server.on("/api/alarm/snooze", HTTP_POST, handleAlarmSnooze);
     server.on("/api/alarm/dismiss", HTTP_POST, handleAlarmDismiss);
+    server.on("/api/update", HTTP_GET, handleGetUpdate);
+    server.on("/api/update/check", HTTP_POST, handleUpdateCheck);
+    server.on("/api/update/install", HTTP_POST, handleUpdateInstall);
     server.onNotFound([]()
                       { server.send(404, "text/plain", "not found"); });
     server.begin();

@@ -438,6 +438,8 @@ namespace disp
             drawSceneBackground(g, now, scn);
         else
             drawStars(g, now);
+        if (!alarm)
+            drawOccasionBack(g, now); // bats, snow, fireworks ... behind the eyes
 
         // ---- Eye pose: situation -> presets -> spring targets. The springs run every frame, also
         // while the alarm / a pet reaction is drawn, so the eyes never jump when they come back. ----

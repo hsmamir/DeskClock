@@ -72,6 +72,14 @@ details{margin-top:10px}
 <div class="row"><span>ولوم</span><input type="range" id="vol" min="0" max="30"><output id="volOut"></output></div>
 <button type="button" class="ghost" id="testBtn">پخش صدای نوازش</button>
 <div class="row"><span>تست همه‌ی صداها</span><select id="tSound"></select><button type="button" class="ghost" id="tSoundBtn">پخش</button></div>
+<label class="row"><span>بوق تنظیمات (روشن/خاموش/خطا)</span><input type="checkbox" id="uiOn"></label>
+</section>
+
+<section>
+<h2>مناسبت‌های سالانه</h2>
+<label class="row"><span>انیمیشن مناسبت‌ها</span><input type="checkbox" id="occOn"></label>
+<div class="row"><span>پیش‌نمایش</span><select id="occSel"><option value="1">هالووین</option><option value="2">عید پاک</option><option value="3">کریسمس</option><option value="4">شب سال نو میلادی</option><option value="5">ولنتاین</option><option value="0">توقف پیش‌نمایش</option></select><button type="button" class="ghost" id="occBtn">نمایش</button></div>
+<p class="mut">هالووین ۲۸ تا ۳۱ اکتبر، عید پاک از جمعه تا دوشنبه، ولنتاین ۱۳ و ۱۴ فوریه، کریسمس ۲۰ تا ۲۶ دسامبر، شب سال نو از ساعت ۱۸ روز ۳۱ دسامبر.</p>
 </section>
 
 <section>
@@ -107,6 +115,19 @@ details{margin-top:10px}
 <p class="mut">تغییر ساعت تابستانی به‌صورت خودکار اعمال می‌شود.</p>
 <details><summary class="mut">پیشرفته: قاعده‌ی POSIX</summary>
 <input type="text" id="tzp" spellcheck="false"></details>
+</section>
+
+<section id="updSec">
+<h2>به‌روزرسانی نرم‌افزار</h2>
+<p class="mut">نسخه‌ی فعلی: <b id="uVer" dir="ltr">—</b> <span id="uVar" dir="ltr"></span></p>
+<p id="uMsg">…</p>
+<progress id="uProg" max="100" value="0" hidden style="width:100%"></progress>
+<div class="btns">
+<button type="button" id="uCheck">بررسی به‌روزرسانی</button>
+<button type="button" id="uInstall" hidden>نصب نسخه‌ی جدید</button>
+</div>
+<p class="mut"><a id="uNotes" href="#" target="_blank" rel="noopener" hidden>تغییرات این نسخه در GitHub</a></p>
+<p class="mut">نسخه‌ی جدید فقط از Releaseهای رسمی GitHub گرفته می‌شود و تا تأیید شما نصب نمی‌شود. فایل با checksum منتشرشده کنترل می‌شود و در صورت مغایرت نصب نمی‌شود. تنظیمات شما حفظ می‌ماند.</p>
 </section>
 
 <section>
@@ -191,7 +212,7 @@ async function load(){
   setDays(s.alarmDays);fillSounds(s.alarmSounds,s.alarmSound);
   $('avol').value=s.alarmVolume;$('avOut').textContent=s.alarmVolume;
   $('vol').value=s.volume;$('volOut').textContent=s.volume;
-  $('petOn').checked=s.petReactions;
+  $('petOn').checked=s.petReactions;$('uiOn').checked=s.uiSounds;$('occOn').checked=s.occasions;
   setLoc(s.latitude,s.longitude,s.city);
   pickTz(s.tzName,s.tzPosix);
   $('now').textContent='ساعت دستگاه: '+(s.time||'هنوز همگام نشده');
@@ -204,7 +225,7 @@ async function save(){
  if(!days){msg('حداقل یک روز را برای زنگ انتخاب کنید',false);return;}
  const body={alarmEnabled:$('aEn').checked,alarmHour:+t.slice(0,2),alarmMinute:+t.slice(3,5),
   alarmDays:days,alarmSound:+$('aSound').value,alarmVolume:+$('avol').value,
-  volume:+$('vol').value,petReactions:$('petOn').checked,latitude:S.lat,longitude:S.lon,city:S.city,
+  volume:+$('vol').value,petReactions:$('petOn').checked,uiSounds:$('uiOn').checked,occasions:$('occOn').checked,latitude:S.lat,longitude:S.lon,city:S.city,
   tzName:$('tz').value,tzPosix:$('tzp').value.trim()};
  try{
   const r=await fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
@@ -242,6 +263,7 @@ async function preview(q){
   if(!r.ok){const j=await r.json();msg('خطا: '+(j.error||r.status),false);}else msg('',true);
  }catch(e){msg('ارتباط با ساعت برقرار نشد',false);}
 }
+$('occBtn').onclick=async()=>{try{const r=await fetch('/api/test-occasion?id='+$('occSel').value,{method:'POST'});if(!r.ok){const j=await r.json();msg('خطا: '+(j.error||r.status),false);}else msg('',true);}catch(e){msg('ارتباط با ساعت برقرار نشد',false);}};
 $('testBtn').onclick=()=>preview('volume='+$('vol').value);
 $('tSoundBtn').onclick=()=>preview('sound='+$('tSound').value+'&volume='+$('vol').value);
 $('aSoundBtn').onclick=()=>preview('sound='+$('aSound').value+'&volume='+$('avol').value);
@@ -286,6 +308,48 @@ async function petStats(){
   $('bondInfo').textContent=j.bondOn?('دلبستگی: '+j.bond+'٪ — '+(BL[j.bondLevel]||'')):'';
  }catch(e){$('petStats').textContent='ارتباط با ساعت برقرار نشد';}
 }
+const UERR={wifi:'ساعت به اینترنت وصل نیست',time:'ساعت هنوز زمان دقیق (NTP) را نگرفته؛ چند دقیقه بعد دوباره تلاش کنید',heap:'حافظه‌ی آزاد کافی نیست؛ کمی بعد دوباره تلاش کنید',tls:'اتصال امن برقرار نشد (گواهی GitHub تأیید نشد)',connect:'اتصال به GitHub برقرار نشد',rate_limit:'GitHub موقتاً درخواست‌ها را محدود کرده؛ بعداً دوباره تلاش کنید',no_release:'هنوز هیچ Releaseای منتشر نشده',no_asset:'این Release فایل مخصوص نمایشگر این ساعت را ندارد',too_big:'فایل از فضای به‌روزرسانی بزرگ‌تر است',bad_tag:'نسخه‌ی Release قابل خواندن نیست',json:'پاسخ GitHub قابل خواندن نیست',redirect:'آدرس دانلود نامعتبر است',size_mismatch:'اندازه‌ی فایل با Release نمی‌خواند',bad_checksum_file:'فایل checksum نامعتبر است',flash_begin:'شروع نوشتن در فلش ممکن نشد',download:'دانلود ناقص ماند؛ دوباره تلاش کنید',checksum:'checksum فایل درست نبود؛ چیزی نصب نشد',flash_end:'تأیید فایل نصب‌شده ناموفق بود؛ چیزی تغییر نکرد',busy:'عملیات دیگری در حال اجراست',alarm_busy:'آلارم در حال زنگ‌زدن یا اسنوز است',not_available:'ابتدا دوباره بررسی کنید',disabled:'این قابلیت در این نسخه غیرفعال است'};
+function uErr(c){c=String(c||'');return UERR[c]||(c.startsWith('http_')?'خطای HTTP '+c.slice(5):c);}
+let uTimer=null,uLast='';
+async function updateState(){
+ try{
+  const j=await (await fetch('/api/update')).json();
+  if(!j.enabled){$('updSec').style.display='none';return;}
+  $('uVer').textContent=j.current;$('uVar').textContent='('+j.variant+')';
+  const busy=j.state==='checking'||j.state==='downloading'||j.state==='done';
+  let t='';
+  switch(j.state){
+   case 'idle':t=(uLast==='downloading'||uLast==='done')?'به‌روزرسانی انجام شد. نسخه‌ی فعلی: '+j.current:(j.autoCheck?'هنوز بررسی نشده؛ ساعت خودش چند دقیقه بعد از روشن‌شدن بررسی می‌کند.':'هنوز بررسی نشده.');break;
+   case 'checking':t='در حال بررسی…';break;
+   case 'uptodate':t='آخرین نسخه ('+j.latest+') نصب است.';break;
+   case 'available':t='نسخه‌ی جدید '+j.latest+' ('+j.sizeKb+' کیلوبایت) آماده‌ی نصب است.';break;
+   case 'downloading':t='در حال دانلود و نصب… '+j.percent+'٪ — ساعت را از برق نکشید.';break;
+   case 'done':t='نصب شد؛ ساعت در حال ریستارت است…';break;
+   case 'failed':t='ناموفق: '+uErr(j.error);break;
+  }
+  if(j.checkedAgoS>=0&&(j.state==='uptodate'||j.state==='available')){const m=Math.floor(j.checkedAgoS/60);t+=' (آخرین بررسی: '+(m<1?'همین الان':m<60?m+' دقیقه پیش':Math.floor(m/60)+' ساعت پیش')+(j.autoCheck?'؛ ساعت خودش هم روزی دو بار بررسی می‌کند':'')+')';}
+  $('uMsg').textContent=t;$('uMsg').style.color=j.state==='failed'?'var(--err)':'';
+  $('uProg').hidden=j.state!=='downloading';$('uProg').value=j.percent;
+  $('uCheck').disabled=busy;$('uInstall').hidden=j.state!=='available';$('uInstall').dataset.v=j.latest;
+  const n=$('uNotes');n.hidden=!(j.notes&&(j.state==='available'||j.state==='uptodate'));n.href=j.notes||'#';
+  uLast=j.state;
+  if(busy&&!uTimer)uTimer=setInterval(updateState,1000);
+  if(!busy&&uTimer){clearInterval(uTimer);uTimer=null;}
+ }catch(e){
+  if(uLast==='downloading'||uLast==='done'){$('uMsg').textContent='ساعت در حال ریستارت است؛ چند ثانیه صبر کنید…';if(!uTimer)uTimer=setInterval(updateState,2000);}
+  else $('uMsg').textContent='ارتباط با ساعت برقرار نشد';
+ }
+}
+async function uPost(path,body){
+ try{const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});
+  if(!r.ok){const j=await r.json();msg('خطا: '+uErr(j.error||r.status),false);}else msg('',true);
+ }catch(e){msg('ارتباط با ساعت برقرار نشد',false);}
+ updateState();
+}
+$('uCheck').onclick=()=>uPost('/api/update/check');
+$('uInstall').onclick=()=>{const v=$('uInstall').dataset.v;if(confirm('نسخه‌ی '+v+' نصب شود؟\n\nدانلود و نصب حدود یک دقیقه طول می‌کشد. در این مدت آلارم زنگ نمی‌زند و ساعت دوباره راه‌اندازی می‌شود. ساعت را از برق نکشید.'))uPost('/api/update/install',{version:v});};
+updateState();
+setInterval(()=>{if(!document.hidden&&!uTimer)updateState();},30000); // picks up the clock's automatic checks
 setInterval(()=>{if(!document.hidden)alarmState();},2000);
 setInterval(()=>{if(!document.hidden)petStats();},10000);
 load();
