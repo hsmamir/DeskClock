@@ -1,0 +1,43 @@
+name: 3D Design Proposal
+description: Propose or share a 3D-printable enclosure or hardware part
+title: "[3D Design]: "
+labels: ["3d-printing", "hardware", "help wanted"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping design a physical enclosure for DeskClock! Please discuss major design work here before spending time on a detailed model.
+  - type: textarea
+    id: idea
+    attributes:
+      label: Design idea
+      description: Describe the enclosure or part you want to design.
+      placeholder: A compact enclosure with a removable rear panel...
+    validations:
+      required: true
+  - type: dropdown
+    id: contribution
+    attributes:
+      label: Contribution stage
+      options:
+        - I want to propose an idea
+        - I am starting a CAD design
+        - I have a design ready to share
+        - I have printed and test-fitted a design
+    validations:
+      required: true
+  - type: textarea
+    id: components
+    attributes:
+      label: Components and dimensions
+      description: List the modules measured, their dimensions, and any assumptions.
+  - type: textarea
+    id: files
+    attributes:
+      label: CAD files, renders, or photos
+      description: Add links or attach images if available.
+  - type: textarea
+    id: constraints
+    attributes:
+      label: Constraints and questions
+      description: Mention USB access, display mounting, buttons, speaker, servo travel, fasteners, or print limitations.
