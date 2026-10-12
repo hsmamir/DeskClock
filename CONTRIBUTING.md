@@ -42,6 +42,11 @@ You do not need write access to the original repository. Please do not include u
 - Do not commit Wi-Fi passwords, OTA passwords, personal tokens, or other secrets.
 - Keep pull requests focused and update documentation if behavior or wiring changes.
 
+## Maintainers
+
+Publishing a firmware release (the clocks update from GitHub Releases): see [`docs/releasing.md`](docs/releasing.md).
+Every Pull Request is compiled for all display variants by the **Build** workflow.
+
 ## License
 
 - Firmware, software and tools: [MIT](LICENSE).

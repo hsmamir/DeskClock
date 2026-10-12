@@ -513,6 +513,16 @@ static inline bool isNightHour(int hour)
 // CHANGE IT: "" would let anyone on your WiFi flash the clock.
 #define OTA_PASSWORD "change-me-ota"
 
+// ---- Firmware update from GitHub Releases (update_check.h / update_check.cpp) ----
+// "Check for updates" on the settings page looks for the latest release of this repository; the
+// user confirms before anything is installed. Forks: put your own "owner/repo" here.
+// UPDATE_ENABLED 0 removes the feature (about 12 KB of root certificates and the code).
+#define UPDATE_ENABLED 1
+#define UPDATE_REPO "hsmamir/esp32-project"
+// An update (TLS handshake + download) needs free heap. Below this the page says "not enough
+// memory, try again". See the free memory on the diagnostics page before changing it.
+#define UPDATE_MIN_FREE_HEAP 55000
+
 // ---- Time-of-day colour theme ----
 // Background + accent colour (clock digits, accent lines, progress bars, eyes)
 // follow the time of day and blend smoothly between four looks:

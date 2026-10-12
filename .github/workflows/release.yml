@@ -1,0 +1,75 @@
+name: Release firmware
+
+# Push a tag like v1.2.0 and this builds the firmware for every display variant, writes the
+# SHA-256 of each file and publishes them as a GitHub Release. Clocks find the release with
+# "Check for updates" on their settings page and install it after the owner confirms.
+# See docs/releasing.md. Tags with a dash (v1.3.0-beta) become pre-releases, which clocks ignore.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        env:
+          [
+            esp32dev,
+            esp32dev-green,
+            esp32dev-green2,
+            esp32dev-green3,
+            esp32dev-red,
+          ]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: pio-${{ hashFiles('platformio.ini') }}
+      - run: pip install platformio
+      - name: Version from the tag
+        id: ver
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+      - name: Build
+        env:
+          PLATFORMIO_BUILD_FLAGS: '-DFW_VERSION=\"${{ steps.ver.outputs.version }}\"'
+        run: pio run -e ${{ matrix.env }}
+      - name: Package (file names must match what the clock looks for)
+        run: |
+          mkdir -p dist
+          cp .pio/build/${{ matrix.env }}/firmware.bin dist/deskclock-${{ matrix.env }}.bin
+          cd dist
+          sha256sum deskclock-${{ matrix.env }}.bin | cut -d' ' -f1 > deskclock-${{ matrix.env }}.bin.sha256
+          ls -l
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fw-${{ matrix.env }}
+          path: dist/*
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: fw-*
+          path: dist
+          merge-multiple: true
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PRE=""
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then PRE="--prerelease"; fi
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "DeskClock $GITHUB_REF_NAME" \
+            --generate-notes --verify-tag $PRE

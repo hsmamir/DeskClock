@@ -17,6 +17,8 @@
 #include "pet.h"
 #include "web_ui.h"
 #include "ota.h"
+#include "update_check.h"
+#include "version.h"
 
 AppState g_state;
 SemaphoreHandle_t g_stateMutex;
@@ -221,9 +223,11 @@ static void webTask(void *pvParameters)
 void setup()
 {
     Serial.begin(115200);
+    Serial.printf("DeskClock %s (%s)\n", FW_VERSION, FW_VARIANT);
     boot_log_init(); // counts the boot + keeps the reset reason in flash (and prints it)
 
     g_stateMutex = xSemaphoreCreateMutex();
+    update_init();             // mutex for the update-check status (the worker tasks are created on demand)
     settings_init();           // load NVS settings + apply timezone before any task reads them
     pet_init();                // pet button statistics (needs the mutexes above)
     time_restore_from_flash(); // approximate clock from flash so the alarm works before/without WiFi

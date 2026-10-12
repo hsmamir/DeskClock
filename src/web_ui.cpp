@@ -14,6 +14,8 @@
 #include "boot_log.h"
 #include "pet.h"
 #include "weather.h"
+#include "update_check.h"
+#include "version.h"
 #include "config.h"
 
 static WebServer server(80);
@@ -325,6 +327,59 @@ static void handleGetPet()
     sendJson(200, d);
 }
 
+// ---- Firmware update (update_check.cpp): the user always confirms the install ----
+static void handleGetUpdate()
+{
+    if (!authorized())
+        return;
+    static const char *const NAMES[] = {"idle", "checking", "uptodate", "available", "downloading", "done", "failed"};
+    UpdateStatus u = update_status();
+    JsonDocument d;
+    d["enabled"] = (bool)UPDATE_ENABLED;
+    d["state"] = NAMES[(int)u.state];
+    d["current"] = FW_VERSION;
+    d["variant"] = FW_VARIANT;
+    d["latest"] = u.latest;
+    d["notes"] = u.notesUrl;
+    d["sizeKb"] = (u.sizeBytes + 512) / 1024;
+    d["percent"] = u.percent;
+    d["error"] = u.error;
+    sendJson(200, d);
+}
+
+static void handleUpdateCheck()
+{
+    if (!authorized() || !requireJsonPost())
+        return;
+    if (!update_request_check())
+    {
+        sendError(409, "busy");
+        return;
+    }
+    server.send(200, "application/json", "{\"ok\":true}");
+}
+
+// Body: {"version":"v1.3.0"} - must be the version the last check found, so a stale page can't install
+// something the user did not see.
+static void handleUpdateInstall()
+{
+    if (!authorized() || !requireJsonPost())
+        return;
+    JsonDocument doc;
+    if (deserializeJson(doc, server.arg("plain")) != DeserializationError::Ok)
+    {
+        sendError(400, "bad json");
+        return;
+    }
+    String err;
+    if (!update_request_install(String(doc["version"] | ""), err))
+    {
+        sendError(409, err.c_str());
+        return;
+    }
+    server.send(200, "application/json", "{\"ok\":true}");
+}
+
 static void handleRoot()
 {
     if (!authorized())
@@ -349,6 +404,9 @@ static void startServer()
     server.on("/api/alarm/test", HTTP_POST, handleAlarmTest);
     server.on("/api/alarm/snooze", HTTP_POST, handleAlarmSnooze);
     server.on("/api/alarm/dismiss", HTTP_POST, handleAlarmDismiss);
+    server.on("/api/update", HTTP_GET, handleGetUpdate);
+    server.on("/api/update/check", HTTP_POST, handleUpdateCheck);
+    server.on("/api/update/install", HTTP_POST, handleUpdateInstall);
     server.onNotFound([]()
                       { server.send(404, "text/plain", "not found"); });
     server.begin();

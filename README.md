@@ -35,7 +35,8 @@ Everything else - alarm time, volume, city, timezone - is set from a small web p
 - **Alarm** with weekday mask, snooze, auto-off, missed-alarm catch-up and a servo sweep with red eyes.
   It keeps working without WiFi.
 - **Night mode**: dimmed backlight, muted pet sound, sleepy eyes - from sunset to sunrise.
-- **Web settings page** (Persian, right-to-left) with short feedback beeps, **OTA updates**, a diagnostics page on the
+- **Web settings page** (Persian, right-to-left) with short feedback beeps, **OTA updates** (also straight from GitHub
+  Releases, after you confirm, see [Updates from GitHub Releases](#updates-from-github-releases)), a diagnostics page on the
   screen, a task watchdog and a boot log that remembers why the chip reset.
 - **Community enclosure**: the 3D-printed case is designed by the community. See
   [Enclosure and 3D printing](#enclosure-and-3d-printing).
@@ -104,6 +105,30 @@ Extra flags for the environment that works best: `-D TFT_INVERSION_ON=1` (invert
 
 Change `OTA_PASSWORD` in `include/config.h` **and** the `--auth=` value in `platformio.ini` (they must match).
 The partition table (two 1.9 MB OTA slots, `partitions_ota_big.csv`) can only be changed over USB.
+
+### Updates from GitHub Releases
+
+Once a clock runs a firmware with this feature, it can update itself from the **Releases** of this repository,
+with no cable and no computer. It is always your decision:
+
+1. Open the settings page (`http://deskclock.local/`) and press **Check for updates** in *Firmware update*.
+   Nothing is downloaded yet.
+2. If a newer release exists for your display type, the page shows its version, size and a link to the release notes.
+3. Press **Install** and confirm. The clock downloads the file, checks it against the published SHA-256, writes it
+   to the other OTA slot and reboots. The progress is shown on the clock's screen. It takes about a minute and
+   the alarm cannot ring meanwhile. Do not unplug it. Your settings are kept.
+
+Details:
+
+- Only **official releases** are offered (not `main`, not pre-releases). The clock offers the file named
+  `deskclock-<your display variant>.bin`, for example `deskclock-esp32dev-green.bin`. A build you made yourself
+  reports its version as `dev`.
+- The connection is TLS with certificate checking, so the clock needs the real time (NTP) first.
+- A file whose checksum does not match is never activated. There is **no automatic rollback**, though: a release
+  that crashes at boot has to be fixed over USB. Maintainers: see [docs/releasing.md](docs/releasing.md).
+- Possible errors (no time yet, not enough memory, GitHub rate limit, no file for your variant, ...) are explained on the page.
+- Forks: set `UPDATE_REPO` in `config.h` to your own `owner/repo`. `UPDATE_ENABLED 0` removes the feature.
+- The cable / `pio ... -ota` ways above keep working as before.
 
 ### Simulator and test environments
 
@@ -214,16 +239,17 @@ The dates are the `OCC_*` values in `config.h`. The whole feature can be switche
 `http://deskclock.local/` (or the IP shown on the diagnostics page). Values saved here are kept in flash and
 override the defaults in `config.h`.
 
-| Section       | What you can set                                                            |
-| ------------- | --------------------------------------------------------------------------- |
-| Alarm         | on / off, time, weekdays, sound, alarm volume, preview                      |
-| Pet sound     | volume of the touch sound, preview, feedback beeps for settings changes     |
-| Occasions     | yearly occasion animations on / off, preview of each occasion (25 s)        |
-| Pet reactions | varied reactions on / off, pet statistics, bond level                       |
-| Alarm test    | ring the alarm now, snooze it, dismiss it                                   |
-| City          | name and coordinates used for weather and for sunrise / sunset              |
-| Timezone      | a list of common zones or a custom POSIX rule (DST is handled)              |
-| Diagnostics   | boot log with the reason for each reset (power on, brownout, watchdog, ...) |
+| Section         | What you can set                                                            |
+| --------------- | --------------------------------------------------------------------------- |
+| Alarm           | on / off, time, weekdays, sound, alarm volume, preview                      |
+| Pet sound       | volume of the touch sound, preview, feedback beeps for settings changes     |
+| Occasions       | yearly occasion animations on / off, preview of each occasion (25 s)        |
+| Pet reactions   | varied reactions on / off, pet statistics, bond level                       |
+| Alarm test      | ring the alarm now, snooze it, dismiss it                                   |
+| City            | name and coordinates used for weather and for sunrise / sunset              |
+| Timezone        | a list of common zones or a custom POSIX rule (DST is handled)              |
+| Firmware update | check GitHub for a new release and install it after you confirm             |
+| Diagnostics     | boot log with the reason for each reset (power on, brownout, watchdog, ...) |
 
 To protect the page, set `WEB_UI_PASSWORD` in `config.h` (HTTP Basic auth, user `admin`).
 
@@ -251,38 +277,43 @@ clips of one family at a similar loudness, since they share one volume setting.
 
 Almost everything is a `#define` in `include/config.h`, each with a comment. The most useful ones:
 
-| Setting                                                   | What it does                                                                |
-| --------------------------------------------------------- | --------------------------------------------------------------------------- |
-| `WEB_HOSTNAME`, `WEB_UI_PASSWORD`, `OTA_PASSWORD`         | network name and passwords                                                  |
-| `DEFAULT_TZ_*`, `WEATHER_*`                               | factory timezone, city and refresh interval                                 |
-| `ALARM_*`                                                 | factory alarm, snooze length, snooze limit, auto-off, grace period          |
-| `NIGHT_FOLLOWS_SUN`, `NIGHT_START_HOUR`, `NIGHT_END_HOUR` | when night mode starts and ends                                             |
-| `BACKLIGHT_*`                                             | how the screen is dimmed (drive strength or PWM)                            |
-| `PET_*`                                                   | streak lengths, purr time, rare-reaction chance                             |
-| `PET_BOND_*`                                              | how fast the bond grows and fades, its levels, tint and self-started acts   |
-| `IDLE_*`, `SERVO_LOOK_*`                                  | thinking, glance, fly and yawn behaviours, how far the head follows the fly |
-| `SERVO_*`                                                 | rest / pet / alarm angles and timings                                       |
-| `OCCASIONS_DEFAULT`, `OCC_*`                              | yearly occasion animations: default on / off and their dates                |
-| `UI_SOUNDS_DEFAULT`                                       | feedback beeps when settings are changed                                    |
-| `SCENE_*`, `AMBIENT_FX`, `WEATHER_*_ANIM`                 | the background and the animations - set to 0 to switch off                  |
-| `TASK_WDT_*`                                              | watchdog timeout                                                            |
+| Setting                                                   | What it does                                                                    |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `WEB_HOSTNAME`, `WEB_UI_PASSWORD`, `OTA_PASSWORD`         | network name and passwords                                                      |
+| `DEFAULT_TZ_*`, `WEATHER_*`                               | factory timezone, city and refresh interval                                     |
+| `ALARM_*`                                                 | factory alarm, snooze length, snooze limit, auto-off, grace period              |
+| `NIGHT_FOLLOWS_SUN`, `NIGHT_START_HOUR`, `NIGHT_END_HOUR` | when night mode starts and ends                                                 |
+| `BACKLIGHT_*`                                             | how the screen is dimmed (drive strength or PWM)                                |
+| `PET_*`                                                   | streak lengths, purr time, rare-reaction chance                                 |
+| `PET_BOND_*`                                              | how fast the bond grows and fades, its levels, tint and self-started acts       |
+| `IDLE_*`, `SERVO_LOOK_*`                                  | thinking, glance, fly and yawn behaviours, how far the head follows the fly     |
+| `SERVO_*`                                                 | rest / pet / alarm angles and timings                                           |
+| `OCCASIONS_DEFAULT`, `OCC_*`                              | yearly occasion animations: default on / off and their dates                    |
+| `UI_SOUNDS_DEFAULT`                                       | feedback beeps when settings are changed                                        |
+| `UPDATE_ENABLED`, `UPDATE_REPO`, `UPDATE_MIN_FREE_HEAP`   | firmware update from GitHub Releases: on / off, which repository, memory needed |
+| `SCENE_*`, `AMBIENT_FX`, `WEATHER_*_ANIM`                 | the background and the animations - set to 0 to switch off                      |
+| `TASK_WDT_*`                                              | watchdog timeout                                                                |
 
 ## Project layout
 
 ```
-include/        config.h (all tunables), pins.h, state.h, settings.h, occasion.h, headers, web_page.h (the settings page)
+include/        config.h (all tunables), pins.h, state.h, settings.h, occasion.h, version.h, headers,
+                web_page.h (the settings page), update_certs.h (generated root certificates)
 src/main.cpp    FreeRTOS tasks: display, touch, servo, alarm, time, weather, web, OTA
 src/touch.cpp   buttons: debounce, tap / hold logic, auto-return to the clock
 src/pet.cpp     which reaction a tap gives, and the statistics kept in flash
 src/alarm_ctrl.cpp, audio.cpp, servo_ctrl.cpp
 src/time_sync.cpp, weather.cpp, sun.cpp, settings.cpp, web_ui.cpp, ota.cpp, boot_log.cpp
+src/update_check.cpp  firmware update from GitHub Releases (check, confirm, download, SHA-256, install)
 src/display_*.cpp   the screen, split by job:
                     core (canvases, frame loop), eyes / face / emotion (expressions),
                     persona (boot, sleep, chime, sulking), scene / ambient (background),
                     occasion (yearly face animations, dates in occasionUpdate()),
                     theme / backlight, digits / fonts / widgets, pages (date, weather),
                     info / screens / diag
-tools/          make_vlw.py builds the smooth fonts (needs Pillow); vlw_check.py checks them
+tools/          make_vlw.py builds the smooth fonts (needs Pillow); vlw_check.py checks them;
+                make_update_certs.py regenerates include/update_certs.h
+.github/        Issue / PR templates; workflows: Build (every PR) and Release firmware (on a v* tag)
 docs/           hardware measurements, mechanical design brief, assembly notes
 3d-models/      community enclosure designs (CAD, STL), see its README
 ```
@@ -306,16 +337,18 @@ There is no official enclosure yet. A design counts as tested only after it has 
 
 ## Troubleshooting
 
-| Symptom                                                              | Try                                                                                                                        |
-| -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| Picture shifted, noisy edges, wrong colours                          | another tab environment (see above), then the extra flags                                                                  |
-| Random coloured pixels                                               | `-D SPI_FREQUENCY=10000000`, shorter wires, power supply                                                                   |
-| `deskclock.local` not found                                          | use the IP from the diagnostics page; Windows may need Bonjour                                                             |
-| Resets with "Brownout" in the boot log                               | stronger supply / cable; servo and speaker share it                                                                        |
-| Wrong sound plays                                                    | the files were copied in a different order; check the numbers in `config.h`                                                |
-| No time after a power cut                                            | the clock restores the saved time and fixes it as soon as WiFi is back                                                     |
-| Wrong WiFi network                                                   | hold Mode while powering on to open the setup portal again                                                                 |
-| Upload fails ("Failed to connect") or no boot with the display wired | GPIO2 (TFT DC) and GPIO15 (backlight) are ESP32 strapping pins: unplug those two wires, flash / reset, then plug them back |
+| Symptom                                                              | Try                                                                                                                                |
+| -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Picture shifted, noisy edges, wrong colours                          | another tab environment (see above), then the extra flags                                                                          |
+| Random coloured pixels                                               | `-D SPI_FREQUENCY=10000000`, shorter wires, power supply                                                                           |
+| `deskclock.local` not found                                          | use the IP from the diagnostics page; Windows may need Bonjour                                                                     |
+| Resets with "Brownout" in the boot log                               | stronger supply / cable; servo and speaker share it                                                                                |
+| Wrong sound plays                                                    | the files were copied in a different order; check the numbers in `config.h`                                                        |
+| No time after a power cut                                            | the clock restores the saved time and fixes it as soon as WiFi is back                                                             |
+| Wrong WiFi network                                                   | hold Mode while powering on to open the setup portal again                                                                         |
+| "Check for updates" says no time yet                                 | wait for the first NTP sync (diagnostics page shows the last sync)                                                                 |
+| "Check for updates" says secure connection failed                    | GitHub may have changed its certificate authority: `python tools/make_update_certs.py`, see [docs/releasing.md](docs/releasing.md) |
+| Upload fails ("Failed to connect") or no boot with the display wired | GPIO2 (TFT DC) and GPIO15 (backlight) are ESP32 strapping pins: unplug those two wires, flash / reset, then plug them back         |
 
 ## Planned
 
