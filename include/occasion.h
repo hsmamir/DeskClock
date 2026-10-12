@@ -10,6 +10,7 @@ enum class Occasion : uint8_t
     EASTER,       // 2
     CHRISTMAS,    // 3
     NEW_YEAR_EVE, // 4
+    VALENTINE,    // 5
     COUNT
 };
 

@@ -2,6 +2,7 @@
 //   Halloween     bats flying past, a glowing jack-o'-lantern, orange eyes
 //   Easter        bunny ears (one twitches now and then), pastel eggs that hop
 //   Christmas     falling snow, Santa hat, a string of blinking lights
+//   Valentine     hearts drifting up, blushing cheeks, a beating heart, pink eyes
 //   New Year's Eve fireworks, confetti, party hat, a 10..1 countdown and the new year at midnight
 // Everything is procedural (derived from `now`), no per-object state. Two layers: drawOccasionBack()
 // runs right after the background (behind the eyes), drawOccasionFront() after the eyes.
@@ -100,6 +101,12 @@ namespace disp
             occ.kind = Occasion::HALLOWEEN;
             return;
         }
+        // Valentine's Day: Feb 14 (and the days before it, OCC_VALENTINE_DAYS_BEFORE)
+        if (mon == 2 && day >= 14 - OCC_VALENTINE_DAYS_BEFORE && day <= 14)
+        {
+            occ.kind = Occasion::VALENTINE;
+            return;
+        }
         // Christmas: from OCC_CHRISTMAS_FROM_DAY to the 26th
         if (mon == 12 && day >= OCC_CHRISTMAS_FROM_DAY && day <= 26)
         {
@@ -139,6 +146,11 @@ namespace disp
         {
             C_EYE_TOP = mixColor(C_EYE_TOP, rgb(255, 150, 25), 0.75f);
             C_EYE_BOT = mixColor(C_EYE_BOT, rgb(225, 70, 0), 0.75f);
+        }
+        else if (occ.kind == Occasion::VALENTINE)
+        {
+            C_EYE_TOP = mixColor(C_EYE_TOP, rgb(255, 125, 175), 0.6f);
+            C_EYE_BOT = mixColor(C_EYE_BOT, rgb(225, 45, 105), 0.6f);
         }
     }
 
@@ -384,6 +396,44 @@ namespace disp
     }
 
     // =====================================================================
+    //  Valentine's Day
+    // =====================================================================
+    static void bgValentine(TFT_eSPI &g, uint32_t now)
+    {
+        // small hearts drifting up from the bottom edge, each at its own speed
+        for (uint8_t i = 0; i < 9; i++)
+        {
+            float speed = 0.010f + 0.014f * rnd01(i, 21); // px per ms (at scale 1)
+            float span = (float)(faceH + 16);
+            float p = fmodf(now * speed * sc + rnd01(i, 22) * span, span) / span; // 0 bottom .. 1 top
+            int16_t x = (int16_t)(rnd01(i, 23) * W + sinf(now / 700.0f + i * 1.9f) * u(4));
+            int16_t y = (int16_t)(faceH + u(6) - p * span);
+            int16_t s = u(2.5f) + (int16_t)(rnd01(i, 24) * u(2.5f));
+            uint16_t c = tint(C_HEART, 0.45f + 0.45f * (1.0f - p)); // fades toward the top
+            drawHeart(g, x, y - imax(1, s / 2), s, c);
+        }
+    }
+
+    static void fgValentine(TFT_eSPI &g, uint32_t now, int16_t cy, int16_t eyeW, int16_t eyeH, int16_t lcx, int16_t rcx)
+    {
+        // blushing cheeks under the eyes
+        int16_t chY = cy + eyeH / 2 - u(1);
+        drawCheek(g, lcx - eyeW / 2 + u(1), chY, u(6), u(3.5f), 1.0f);
+        drawCheek(g, rcx + eyeW / 2 - u(1), chY, u(6), u(3.5f), 1.0f);
+        // a big heart in the bottom-right corner that beats twice, then rests
+        uint32_t t = now % 1400;
+        float beat = 0;
+        if (t < 160)
+            beat = sinf(t / 160.0f * (float)M_PI);
+        else if (t >= 240 && t < 400)
+            beat = 0.7f * sinf((t - 240) / 160.0f * (float)M_PI);
+        int16_t s = u(7) + (int16_t)(beat * u(2.5f));
+        int16_t hx = W - u(14), hy = faceH - u(13);
+        drawHeart(g, hx, hy - imax(1, s / 2), s, C_HEART);
+        drawHeart(g, hx - s / 3, hy - s / 3 - imax(1, s / 5), imax(1, s / 4), rgb(255, 200, 215)); // shine
+    }
+
+    // =====================================================================
     //  Entry points
     // =====================================================================
     void drawOccasionBack(TFT_eSPI &g, uint32_t now)
@@ -398,6 +448,9 @@ namespace disp
             break;
         case Occasion::NEW_YEAR_EVE:
             bgFireworks(g, now, occ.midnight || occ.countdown > 0);
+            break;
+        case Occasion::VALENTINE:
+            bgValentine(g, now);
             break;
         default:
             break;
@@ -422,6 +475,9 @@ namespace disp
             break;
         case Occasion::CHRISTMAS:
             fgChristmas(g, now, cy, eyeW, eyeH, lcx);
+            break;
+        case Occasion::VALENTINE:
+            fgValentine(g, now, cy, eyeW, eyeH, lcx, rcx);
             break;
         case Occasion::NEW_YEAR_EVE:
         {

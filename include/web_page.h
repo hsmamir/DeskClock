@@ -78,8 +78,8 @@ details{margin-top:10px}
 <section>
 <h2>مناسبت‌های سالانه</h2>
 <label class="row"><span>انیمیشن مناسبت‌ها</span><input type="checkbox" id="occOn"></label>
-<div class="row"><span>پیش‌نمایش</span><select id="occSel"><option value="1">هالووین</option><option value="2">عید پاک</option><option value="3">کریسمس</option><option value="4">شب سال نو میلادی</option><option value="0">توقف پیش‌نمایش</option></select><button type="button" class="ghost" id="occBtn">نمایش</button></div>
-<p class="mut">هالووین ۲۸ تا ۳۱ اکتبر، عید پاک از جمعه تا دوشنبه، کریسمس ۲۰ تا ۲۶ دسامبر، شب سال نو از ساعت ۱۸ روز ۳۱ دسامبر.</p>
+<div class="row"><span>پیش‌نمایش</span><select id="occSel"><option value="1">هالووین</option><option value="2">عید پاک</option><option value="3">کریسمس</option><option value="4">شب سال نو میلادی</option><option value="5">ولنتاین</option><option value="0">توقف پیش‌نمایش</option></select><button type="button" class="ghost" id="occBtn">نمایش</button></div>
+<p class="mut">هالووین ۲۸ تا ۳۱ اکتبر، عید پاک از جمعه تا دوشنبه، ولنتاین ۱۳ و ۱۴ فوریه، کریسمس ۲۰ تا ۲۶ دسامبر، شب سال نو از ساعت ۱۸ روز ۳۱ دسامبر.</p>
 </section>
 
 <section>

@@ -363,6 +363,7 @@ static_assert(AMBIENT_MOTES >= 3 && AMBIENT_MOTES <= 5, "AMBIENT_MOTES must be 3
 #define PET_REACTIONS_DEFAULT 1
 #define OCCASIONS_DEFAULT 1         // yearly occasion animations (Halloween, Easter, Christmas, New Year's Eve); settings page can switch them off
 #define OCC_HALLOWEEN_DAYS_BEFORE 3 // Halloween look from Oct 31 minus this many days (3 = Oct 28 .. 31)
+#define OCC_VALENTINE_DAYS_BEFORE 1 // Valentine look on Feb 14 minus this many days (1 = Feb 13 .. 14, 0 = only the 14th)
 #define OCC_CHRISTMAS_FROM_DAY 20   // Christmas look Dec 20 .. 26
 #define OCC_NYE_FROM_HOUR 18        // New Year's Eve look from Dec 31 at this hour ...
 #define OCC_NYE_UNTIL_HOUR 3        // ... until Jan 1 at this hour (the 10..1 countdown and the new year at midnight are automatic)
