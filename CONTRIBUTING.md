@@ -13,7 +13,7 @@ Thanks for helping improve DeskClock! Contributions are welcome from firmware de
 
 1. Check existing Issues and Pull Requests to avoid duplicate work.
 2. For substantial changes, open an Issue first to discuss the approach.
-3. For enclosure work, review [`3d-models/README.md`](../3d-models/README.md) and confirm any unclear dimensions before finalizing the design.
+3. For enclosure work, review [`3d-models/README.md`](3d-models/README.md) and [`docs/hardware-measurements.md`](docs/hardware-measurements.md) and confirm any unclear dimensions before finalizing the design.
 
 ## Pull Request workflow
 
@@ -42,4 +42,10 @@ You do not need write access to the original repository. Please do not include u
 - Do not commit Wi-Fi passwords, OTA passwords, personal tokens, or other secrets.
 - Keep pull requests focused and update documentation if behavior or wiring changes.
 
-By submitting a contribution, you agree that it may be distributed under the applicable license(s) in this repository. If the repository does not yet specify a suitable license for a contribution type, please discuss licensing before submitting substantial work.
+## License
+
+- Firmware, software and tools: [MIT](LICENSE).
+- Files in `3d-models/` (CAD, STEP, STL, renders, photos): [CC BY-SA 4.0](3d-models/LICENSE.md).
+
+By submitting a contribution, you confirm that you have the right to share it and agree that it will be
+distributed under the license that applies to the part of the repository you changed.

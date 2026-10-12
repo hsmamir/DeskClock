@@ -5,6 +5,12 @@ An ESP32 desk clock with a face. A 1.8" colour TFT shows a pair of expressive ey
 module gives it a voice, and three push buttons let you pet it, change pages and silence the alarm.
 Everything else - alarm time, volume, city, timezone - is set from a small web page on your WiFi.
 
+**Contents:** [Features](#features) · [Hardware](#hardware) · [Build and flash](#build-and-flash) ·
+[First start](#first-start) · [Using it](#using-it) · [Settings page](#settings-page) ·
+[Sound clips](#sound-clips) · [Configuration](#configuration) · [Project layout](#project-layout) ·
+[Enclosure and 3D printing](#enclosure-and-3d-printing) · [Troubleshooting](#troubleshooting) ·
+[Contributing](#contributing) · [License](#license)
+
 ## Features
 
 - **Clock** with smooth digit animation, a breathing colon, an alarm indicator and a time-of-day colour theme
@@ -21,14 +27,18 @@ Everything else - alarm time, volume, city, timezone - is set from a small web p
 - **Bond**: a lasting "how much does he like you" value that grows when you pet or purr him regularly and fades
   when you stay away. It makes him more patient, lets him smile by himself, tints his eyes, and when he is lonely
   he sighs now and then. See [Bond](#bond).
+- **Yearly occasions**: Halloween, Valentine's Day, Christmas, Easter and New Year's Eve change the face on their own
+  (bats, hearts, snow and a Santa hat, bunny ears, fireworks and a 10..1 countdown). See [Yearly occasions](#yearly-occasions).
 - **Weather** from Open-Meteo (free, no API key): current conditions, today's high / low, feels-like, humidity,
   wind, UV, pressure, sunrise / sunset and hourly forecast bars with the chance of rain.
 - **Date page** with the weekday, a big day number and a month calendar (today highlighted).
 - **Alarm** with weekday mask, snooze, auto-off, missed-alarm catch-up and a servo sweep with red eyes.
   It keeps working without WiFi.
 - **Night mode**: dimmed backlight, muted pet sound, sleepy eyes - from sunset to sunrise.
-- **Web settings page** (Persian, right-to-left), **OTA updates**, a diagnostics page on the screen,
-  a task watchdog and a boot log that remembers why the chip reset.
+- **Web settings page** (Persian, right-to-left) with short feedback beeps, **OTA updates**, a diagnostics page on the
+  screen, a task watchdog and a boot log that remembers why the chip reset.
+- **Community enclosure**: the 3D-printed case is designed by the community. See
+  [Enclosure and 3D printing](#enclosure-and-3d-printing).
 
 ## Hardware
 
@@ -183,6 +193,22 @@ Nothing about it happens at night or while the alarm is involved. It follows the
 the bond neither changes nor shows. All numbers are `PET_BOND_*` in `config.h` (`PET_BOND_ENABLED 0` removes the feature,
 `PET_BOND_TINT 0` only the eye colour).
 
+### Yearly occasions
+
+On a few dates the face changes by itself. Everything is drawn on the screen, no extra files or hardware are needed.
+
+| Occasion        | When (defaults)                                                        | What you see                                                         |
+| --------------- | ---------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| Halloween       | Oct 28 - 31                                                            | bats flying past, a glowing jack-o'-lantern, orange eyes             |
+| Valentine's Day | Feb 13 - 14                                                            | hearts drifting up, blushing cheeks, a beating heart, pink eyes      |
+| Christmas       | Dec 20 - 26                                                            | falling snow, a Santa hat, a string of blinking lights               |
+| Easter          | Good Friday to Easter Monday (Western Easter, computed for every year) | bunny ears (one twitches now and then), pastel eggs that hop         |
+| New Year's Eve  | Dec 31 from 18:00 until Jan 1 03:00                                    | fireworks, confetti, a party hat, a 10..1 countdown and the new year |
+
+The countdown starts at 23:59:50 and the new year appears at midnight, so the clock needs a valid time (NTP or the time restored from flash).
+The dates are the `OCC_*` values in `config.h`. The whole feature can be switched off on the settings page
+(`OCCASIONS_DEFAULT 0` changes the factory default), and the settings page can preview each occasion for 25 s at any time of year.
+
 ## Settings page
 
 `http://deskclock.local/` (or the IP shown on the diagnostics page). Values saved here are kept in flash and
@@ -191,7 +217,8 @@ override the defaults in `config.h`.
 | Section       | What you can set                                                            |
 | ------------- | --------------------------------------------------------------------------- |
 | Alarm         | on / off, time, weekdays, sound, alarm volume, preview                      |
-| Pet sound     | volume of the touch sound, preview                                          |
+| Pet sound     | volume of the touch sound, preview, feedback beeps for settings changes     |
+| Occasions     | yearly occasion animations on / off, preview of each occasion (25 s)        |
 | Pet reactions | varied reactions on / off, pet statistics, bond level                       |
 | Alarm test    | ring the alarm now, snooze it, dismiss it                                   |
 | City          | name and coordinates used for weather and for sunrise / sunset              |
@@ -205,17 +232,18 @@ To protect the page, set `WEB_UI_PASSWORD` in `config.h` (HTTP Basic auth, user 
 The JQ6500 plays clips from its own flash by **upload order** (1 = the first file copied to the module).
 Copy all clips in numeric order. Suggested layout:
 
-| #          | Clip                                               | Config                                          |
-| ---------- | -------------------------------------------------- | ----------------------------------------------- |
-| 1, 2, 4, 5 | alarm tones (2 is the default and plays on repeat) | `SOUND_INDEX_ALARM` = 2, `AUDIO_FILE_COUNT` = 5 |
-| 3          | pet touch chirp                                    | `SOUND_INDEX_PET` = 3                           |
-| 6, 7       | two more touch chirps (so it never repeats)        | `SOUND_INDEX_PET_B`, `SOUND_INDEX_PET_C`        |
-| 8          | yawn                                               | `SOUND_INDEX_YAWN`                              |
-| 9          | hourly chime                                       | `SOUND_INDEX_CHIME`                             |
-| 10         | wake-up blip                                       | `SOUND_INDEX_BOOT`                              |
-| 11-14      | confirm on / confirm off / tick / error beeps      | not used by the firmware yet                    |
+| #          | Clip                                                  | Config                                                                    |
+| ---------- | ----------------------------------------------------- | ------------------------------------------------------------------------- |
+| 1, 2, 4, 5 | alarm tones (2 is the default and plays on repeat)    | `SOUND_INDEX_ALARM` = 2                                                   |
+| 3          | pet touch chirp                                       | `SOUND_INDEX_PET` = 3                                                     |
+| 6, 7       | two more touch chirps (so it never repeats)           | `SOUND_INDEX_PET_B`, `SOUND_INDEX_PET_C`                                  |
+| 8          | yawn                                                  | `SOUND_INDEX_YAWN`                                                        |
+| 9          | hourly chime (off by default)                         | `SOUND_INDEX_CHIME` = 0, set it to 9 to enable                            |
+| 10         | wake-up blip                                          | `SOUND_INDEX_BOOT`                                                        |
+| 11, 12, 14 | settings feedback: switched on / switched off / error | `SOUND_INDEX_UI_ON`, `_UI_OFF`, `_UI_ERROR` (switch: `UI_SOUNDS_DEFAULT`) |
+| 13         | tick                                                  | `SOUND_INDEX_TICK`, not used by the firmware yet                          |
 
-Anything set to `0` stays silent. Touch sounds, yawns and chimes are muted at night
+`AUDIO_FILE_COUNT` (14) is the number of clips on the module. Anything set to `0` stays silent. Touch sounds, yawns and chimes are muted at night
 (`AUDIO_NIGHT_PET_VOLUME`); the alarm is never muted. Use mono MP3 at a modest bit rate and keep the
 clips of one family at a similar loudness, since they share one volume setting.
 
@@ -234,13 +262,15 @@ Almost everything is a `#define` in `include/config.h`, each with a comment. The
 | `PET_BOND_*`                                              | how fast the bond grows and fades, its levels, tint and self-started acts   |
 | `IDLE_*`, `SERVO_LOOK_*`                                  | thinking, glance, fly and yawn behaviours, how far the head follows the fly |
 | `SERVO_*`                                                 | rest / pet / alarm angles and timings                                       |
+| `OCCASIONS_DEFAULT`, `OCC_*`                              | yearly occasion animations: default on / off and their dates                |
+| `UI_SOUNDS_DEFAULT`                                       | feedback beeps when settings are changed                                    |
 | `SCENE_*`, `AMBIENT_FX`, `WEATHER_*_ANIM`                 | the background and the animations - set to 0 to switch off                  |
 | `TASK_WDT_*`                                              | watchdog timeout                                                            |
 
 ## Project layout
 
 ```
-include/        config.h (all tunables), pins.h, state.h, settings.h, headers, web_page.h (the settings page)
+include/        config.h (all tunables), pins.h, state.h, settings.h, occasion.h, headers, web_page.h (the settings page)
 src/main.cpp    FreeRTOS tasks: display, touch, servo, alarm, time, weather, web, OTA
 src/touch.cpp   buttons: debounce, tap / hold logic, auto-return to the clock
 src/pet.cpp     which reaction a tap gives, and the statistics kept in flash
@@ -249,27 +279,56 @@ src/time_sync.cpp, weather.cpp, sun.cpp, settings.cpp, web_ui.cpp, ota.cpp, boot
 src/display_*.cpp   the screen, split by job:
                     core (canvases, frame loop), eyes / face / emotion (expressions),
                     persona (boot, sleep, chime, sulking), scene / ambient (background),
+                    occasion (yearly face animations, dates in occasionUpdate()),
                     theme / backlight, digits / fonts / widgets, pages (date, weather),
                     info / screens / diag
 tools/          make_vlw.py builds the smooth fonts (needs Pillow); vlw_check.py checks them
+docs/           hardware measurements, mechanical design brief, assembly notes
+3d-models/      community enclosure designs (CAD, STL), see its README
 ```
 
 Tasks and what they share: the display, touch, servo and alarm tasks run on core 1 and are watched by the
 watchdog; time, weather, web and OTA run on core 0. `g_state` is the small shared state guarded by a mutex.
 
+## Enclosure and 3D printing
+
+DeskClock is open to community enclosure designs. Designers, makers and engineers are welcome.
+
+- [`3d-models/README.md`](3d-models/README.md): what is needed, deliverables and folder conventions.
+- [`docs/hardware-measurements.md`](docs/hardware-measurements.md): measurement sheet for every module. Please fill it in
+  for your own parts; boards and displays sold under the same name differ between suppliers.
+- [`docs/mechanical-design.md`](docs/mechanical-design.md): the mechanical design brief and requirements.
+- [`docs/assembly.md`](docs/assembly.md): assembly notes, to be completed by the enclosure contributor.
+- To propose or share a design, open an Issue with the **3D Design Proposal** template, then send a Pull Request.
+  See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+There is no official enclosure yet. A design counts as tested only after it has been printed and fitted to the real hardware.
+
 ## Troubleshooting
 
-| Symptom                                     | Try                                                                         |
-| ------------------------------------------- | --------------------------------------------------------------------------- |
-| Picture shifted, noisy edges, wrong colours | another tab environment (see above), then the extra flags                   |
-| Random coloured pixels                      | `-D SPI_FREQUENCY=10000000`, shorter wires, power supply                    |
-| `deskclock.local` not found                 | use the IP from the diagnostics page; Windows may need Bonjour              |
-| Resets with "Brownout" in the boot log      | stronger supply / cable; servo and speaker share it                         |
-| Wrong sound plays                           | the files were copied in a different order; check the numbers in `config.h` |
-| No time after a power cut                   | the clock restores the saved time and fixes it as soon as WiFi is back      |
-| Wrong WiFi network                          | hold Mode while powering on to open the setup portal again                  |
+| Symptom                                                              | Try                                                                                                                        |
+| -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Picture shifted, noisy edges, wrong colours                          | another tab environment (see above), then the extra flags                                                                  |
+| Random coloured pixels                                               | `-D SPI_FREQUENCY=10000000`, shorter wires, power supply                                                                   |
+| `deskclock.local` not found                                          | use the IP from the diagnostics page; Windows may need Bonjour                                                             |
+| Resets with "Brownout" in the boot log                               | stronger supply / cable; servo and speaker share it                                                                        |
+| Wrong sound plays                                                    | the files were copied in a different order; check the numbers in `config.h`                                                |
+| No time after a power cut                                            | the clock restores the saved time and fixes it as soon as WiFi is back                                                     |
+| Wrong WiFi network                                                   | hold Mode while powering on to open the setup portal again                                                                 |
+| Upload fails ("Failed to connect") or no boot with the display wired | GPIO2 (TFT DC) and GPIO15 (backlight) are ESP32 strapping pins: unplug those two wires, flash / reset, then plug them back |
 
 ## Planned
 
 Making the three buttons more useful so that common settings (alarm on/off and time, volume) work without
 the web page, with short on-screen confirmations.
+
+## Contributing
+
+Firmware developers, electronics enthusiasts, CAD designers and 3D-printing makers are welcome.
+Read [CONTRIBUTING.md](CONTRIBUTING.md), check the open Issues, and for bigger changes open an Issue first.
+Never commit WiFi passwords, OTA passwords or other secrets.
+
+## License
+
+- Firmware, software and tools: [MIT License](LICENSE).
+- 3D models and CAD files in [`3d-models/`](3d-models/): [CC BY-SA 4.0](3d-models/LICENSE.md).

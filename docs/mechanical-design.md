@@ -58,7 +58,7 @@ The GPIO list describes electrical connections; it does not specify the physical
 
 ## Required measurements
 
-Record all measurements in millimetres. Use the table in `hardware-measurements.md`. For every component, record length, width, maximum height, connector position, and any mounting-hole locations. Take top and side photographs with a ruler or caliper visible.
+Record all measurements in millimetres. Use the sheet in [`hardware-measurements.md`](hardware-measurements.md). For every component, record length, width, maximum height, connector position, and any mounting-hole locations. Take top and side photographs with a ruler or caliper visible.
 
 ## Suggested CAD deliverables
 
