@@ -1,7 +1,9 @@
 # Releasing a new firmware version
 
-Clocks update from **GitHub Releases**. The owner of a clock always confirms the install on the
-settings page ("Check for updates" -> "Install"); nothing is installed by itself.
+Clocks update from **GitHub Releases**. A clock checks for a new release by itself about twice a day
+(`UPDATE_AUTO_CHECK_INTERVAL_MS` in `config.h`), so a new release shows up on its diagnostics page and settings page
+within about 12 hours; "Check for updates" on the settings page checks immediately. The owner of a clock always
+confirms the install ("Install"); nothing is installed by itself.
 
 ## Publish a release
 

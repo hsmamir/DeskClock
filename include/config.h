@@ -522,6 +522,14 @@ static inline bool isNightHour(int hour)
 // An update (TLS handshake + download) needs free heap. Below this the page says "not enough
 // memory, try again". See the free memory on the diagnostics page before changing it.
 #define UPDATE_MIN_FREE_HEAP 55000
+// Automatic check: the clock looks for a new release by itself (twice a day by default) and only
+// REPORTS it (settings page + diagnostics page). Installing always needs the owner's confirmation.
+// The manual "Check for updates" button keeps working; a manual check also restarts this timer.
+// UPDATE_AUTO_CHECK 0 = manual checks only.
+#define UPDATE_AUTO_CHECK 1
+#define UPDATE_AUTO_CHECK_INTERVAL_MS (12UL * 60 * 60 * 1000) // 12 h = twice a day (24 h = once a day)
+#define UPDATE_AUTO_FIRST_DELAY_MS (3UL * 60 * 1000)          // first check this long after boot (WiFi + NTP need time)
+#define UPDATE_AUTO_RETRY_MS (30UL * 60 * 1000)               // after a failed automatic check (no network, GitHub down)
 
 // ---- Time-of-day colour theme ----
 // Background + accent colour (clock digits, accent lines, progress bars, eyes)

@@ -319,7 +319,7 @@ async function updateState(){
   const busy=j.state==='checking'||j.state==='downloading'||j.state==='done';
   let t='';
   switch(j.state){
-   case 'idle':t=(uLast==='downloading'||uLast==='done')?'به‌روزرسانی انجام شد. نسخه‌ی فعلی: '+j.current:'هنوز بررسی نشده.';break;
+   case 'idle':t=(uLast==='downloading'||uLast==='done')?'به‌روزرسانی انجام شد. نسخه‌ی فعلی: '+j.current:(j.autoCheck?'هنوز بررسی نشده؛ ساعت خودش چند دقیقه بعد از روشن‌شدن بررسی می‌کند.':'هنوز بررسی نشده.');break;
    case 'checking':t='در حال بررسی…';break;
    case 'uptodate':t='آخرین نسخه ('+j.latest+') نصب است.';break;
    case 'available':t='نسخه‌ی جدید '+j.latest+' ('+j.sizeKb+' کیلوبایت) آماده‌ی نصب است.';break;
@@ -327,6 +327,7 @@ async function updateState(){
    case 'done':t='نصب شد؛ ساعت در حال ریستارت است…';break;
    case 'failed':t='ناموفق: '+uErr(j.error);break;
   }
+  if(j.checkedAgoS>=0&&(j.state==='uptodate'||j.state==='available')){const m=Math.floor(j.checkedAgoS/60);t+=' (آخرین بررسی: '+(m<1?'همین الان':m<60?m+' دقیقه پیش':Math.floor(m/60)+' ساعت پیش')+(j.autoCheck?'؛ ساعت خودش هم روزی دو بار بررسی می‌کند':'')+')';}
   $('uMsg').textContent=t;$('uMsg').style.color=j.state==='failed'?'var(--err)':'';
   $('uProg').hidden=j.state!=='downloading';$('uProg').value=j.percent;
   $('uCheck').disabled=busy;$('uInstall').hidden=j.state!=='available';$('uInstall').dataset.v=j.latest;
@@ -348,6 +349,7 @@ async function uPost(path,body){
 $('uCheck').onclick=()=>uPost('/api/update/check');
 $('uInstall').onclick=()=>{const v=$('uInstall').dataset.v;if(confirm('نسخه‌ی '+v+' نصب شود؟\n\nدانلود و نصب حدود یک دقیقه طول می‌کشد. در این مدت آلارم زنگ نمی‌زند و ساعت دوباره راه‌اندازی می‌شود. ساعت را از برق نکشید.'))uPost('/api/update/install',{version:v});};
 updateState();
+setInterval(()=>{if(!document.hidden&&!uTimer)updateState();},30000); // picks up the clock's automatic checks
 setInterval(()=>{if(!document.hidden)alarmState();},2000);
 setInterval(()=>{if(!document.hidden)petStats();},10000);
 load();

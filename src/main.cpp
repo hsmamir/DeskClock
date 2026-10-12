@@ -170,6 +170,7 @@ static void weatherTask(void *pvParameters)
     for (;;)
     {
         weather_tick();
+        update_tick(); // automatic update check (only when due; installing still needs the owner's OK)
         vTaskDelay(tickDelay);
     }
 }

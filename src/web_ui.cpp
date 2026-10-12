@@ -344,6 +344,9 @@ static void handleGetUpdate()
     d["sizeKb"] = (u.sizeBytes + 512) / 1024;
     d["percent"] = u.percent;
     d["error"] = u.error;
+    d["autoCheck"] = (bool)UPDATE_AUTO_CHECK;
+    // seconds since the last successful check (manual or automatic), -1 = none yet
+    d["checkedAgoS"] = u.checkedMs ? (int32_t)((millis() - u.checkedMs) / 1000) : -1;
     sendJson(200, d);
 }
 

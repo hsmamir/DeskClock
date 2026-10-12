@@ -7,6 +7,7 @@
 
 // The simulator (or a build with UPDATE_ENABLED 0) has no update feature.
 void update_init() {}
+void update_tick() {}
 UpdateStatus update_status() { return UpdateStatus(); }
 bool update_request_check() { return false; }
 bool update_request_install(const String &, String &err)
@@ -32,8 +33,10 @@ bool update_request_install(const String &, String &err)
 
 static SemaphoreHandle_t s_mu = nullptr;
 static UpdateStatus s_st;
-static String s_binUrl, s_shaUrl; // found by the last check
-static bool s_running = false;    // a worker task exists
+static String s_binUrl, s_shaUrl;                          // found by the last check
+static bool s_running = false;                             // a worker task exists
+static UpdateStatus s_prev;                                // status before an automatic check; restored when that check fails
+static uint32_t s_autoNextMs = UPDATE_AUTO_FIRST_DELAY_MS; // millis() when the next automatic check is due
 
 namespace
 {
@@ -264,6 +267,8 @@ static void doCheck()
     s_st.sizeBytes = size;
     s_st.error = "";
     s_st.percent = 0;
+    s_st.checkedMs = millis() ? millis() : 1; // 0 means "never"
+    s_autoNextMs = millis() + UPDATE_AUTO_CHECK_INTERVAL_MS;
     s_binUrl = binUrl;
     s_shaUrl = shaUrl;
     s_st.state = newer ? UpdateState::AVAILABLE : UpdateState::UP_TO_DATE;
@@ -444,10 +449,25 @@ static void doInstall()
 
 static void worker(void *arg)
 {
-    if ((intptr_t)arg == 0)
-        doCheck();
-    else
+    int mode = (int)(intptr_t)arg; // 0 manual check, 1 install, 2 automatic check
+    if (mode == 1)
         doInstall();
+    else
+    {
+        doCheck();
+        if (mode == 2)
+        {
+            // Nobody asked for this check, so a failure must not replace what the page showed
+            // before (e.g. "version X is ready"). Try again sooner than the normal interval.
+            Lock l;
+            if (s_st.state == UpdateState::FAILED)
+            {
+                Serial.printf("Update: automatic check failed (%s), retrying later\n", s_st.error.c_str());
+                s_st = s_prev;
+                s_autoNextMs = millis() + UPDATE_AUTO_RETRY_MS;
+            }
+        }
+    }
     {
         Lock l;
         s_running = false;
@@ -473,6 +493,46 @@ void update_init()
 {
     if (!s_mu)
         s_mu = xSemaphoreCreateMutex();
+}
+
+void update_tick()
+{
+#if UPDATE_AUTO_CHECK
+    uint32_t now = millis();
+    {
+        Lock l;
+        if ((int32_t)(now - s_autoNextMs) < 0)
+            return; // not due yet
+        if (s_running || s_st.state == UpdateState::DOWNLOADING || s_st.state == UpdateState::DONE)
+        {
+            s_autoNextMs = now + 60000; // a check or install is already running
+            return;
+        }
+    }
+    String err;
+    if (alarm_get_state() != AlarmState::IDLE || !preconditions(err))
+    {
+        // No WiFi / real time / memory yet, or the alarm is busy: ask again in a minute, silently.
+        Lock l;
+        s_autoNextMs = now + 60000;
+        return;
+    }
+    {
+        Lock l;
+        if (s_running)
+            return;
+        s_running = true;
+        s_prev = s_st;
+        s_st.state = UpdateState::CHECKING;
+        s_st.error = "";
+        s_autoNextMs = now + UPDATE_AUTO_RETRY_MS; // overwritten by the result
+    }
+    if (!startWorker(2, err))
+    {
+        Lock l;
+        s_st = s_prev; // startWorker marked it FAILED; an automatic check stays silent
+    }
+#endif
 }
 
 UpdateStatus update_status()

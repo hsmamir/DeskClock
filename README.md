@@ -111,8 +111,10 @@ The partition table (two 1.9 MB OTA slots, `partitions_ota_big.csv`) can only be
 Once a clock runs a firmware with this feature, it can update itself from the **Releases** of this repository,
 with no cable and no computer. It is always your decision:
 
-1. Open the settings page (`http://deskclock.local/`) and press **Check for updates** in *Firmware update*.
-   Nothing is downloaded yet.
+1. The clock looks for a new release **by itself, twice a day** (the first time a few minutes after it starts), and
+   you can press **Check for updates** in *Firmware update* on the settings page (`http://deskclock.local/`) at any
+   time. Either way nothing is downloaded yet. The diagnostics page shows the running **Version** and whether an
+   **Update** is ready, so you can see it on the clock itself.
 2. If a newer release exists for your display type, the page shows its version, size and a link to the release notes.
 3. Press **Install** and confirm. The clock downloads the file, checks it against the published SHA-256, writes it
    to the other OTA slot and reboots. The progress is shown on the clock's screen. It takes about a minute and
@@ -127,6 +129,8 @@ Details:
 - A file whose checksum does not match is never activated. There is **no automatic rollback**, though: a release
   that crashes at boot has to be fixed over USB. Maintainers: see [docs/releasing.md](docs/releasing.md).
 - Possible errors (no time yet, not enough memory, GitHub rate limit, no file for your variant, ...) are explained on the page.
+- The automatic check only reports; it never installs. Change `UPDATE_AUTO_CHECK_INTERVAL_MS` (once a day: 24 h) or set
+  `UPDATE_AUTO_CHECK 0` in `config.h` for manual checks only.
 - Forks: set `UPDATE_REPO` in `config.h` to your own `owner/repo`. `UPDATE_ENABLED 0` removes the feature.
 - The cable / `pio ... -ota` ways above keep working as before.
 
@@ -172,7 +176,8 @@ An unattended alarm stops by itself after 3 minutes. The next day's alarm is nev
   high / low, feels-like, humidity, wind (speed and arrow) and chance of rain. *Forecast*: hourly bars with the
   temperature and the chance of rain, plus sunrise, sunset, UV and pressure. Old readings are shown dimmed with
   their age.
-- **Diagnostics**: IP address, WiFi signal, free memory, last NTP sync and age of the weather reading.
+- **Diagnostics**: IP address, WiFi signal, free memory, last NTP sync, age of the weather reading, firmware version and
+  whether a newer release is available.
 
 ### Idle life
 
@@ -277,22 +282,23 @@ clips of one family at a similar loudness, since they share one volume setting.
 
 Almost everything is a `#define` in `include/config.h`, each with a comment. The most useful ones:
 
-| Setting                                                   | What it does                                                                    |
-| --------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| `WEB_HOSTNAME`, `WEB_UI_PASSWORD`, `OTA_PASSWORD`         | network name and passwords                                                      |
-| `DEFAULT_TZ_*`, `WEATHER_*`                               | factory timezone, city and refresh interval                                     |
-| `ALARM_*`                                                 | factory alarm, snooze length, snooze limit, auto-off, grace period              |
-| `NIGHT_FOLLOWS_SUN`, `NIGHT_START_HOUR`, `NIGHT_END_HOUR` | when night mode starts and ends                                                 |
-| `BACKLIGHT_*`                                             | how the screen is dimmed (drive strength or PWM)                                |
-| `PET_*`                                                   | streak lengths, purr time, rare-reaction chance                                 |
-| `PET_BOND_*`                                              | how fast the bond grows and fades, its levels, tint and self-started acts       |
-| `IDLE_*`, `SERVO_LOOK_*`                                  | thinking, glance, fly and yawn behaviours, how far the head follows the fly     |
-| `SERVO_*`                                                 | rest / pet / alarm angles and timings                                           |
-| `OCCASIONS_DEFAULT`, `OCC_*`                              | yearly occasion animations: default on / off and their dates                    |
-| `UI_SOUNDS_DEFAULT`                                       | feedback beeps when settings are changed                                        |
-| `UPDATE_ENABLED`, `UPDATE_REPO`, `UPDATE_MIN_FREE_HEAP`   | firmware update from GitHub Releases: on / off, which repository, memory needed |
-| `SCENE_*`, `AMBIENT_FX`, `WEATHER_*_ANIM`                 | the background and the animations - set to 0 to switch off                      |
-| `TASK_WDT_*`                                              | watchdog timeout                                                                |
+| Setting                                                   | What it does                                                                                      |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `WEB_HOSTNAME`, `WEB_UI_PASSWORD`, `OTA_PASSWORD`         | network name and passwords                                                                        |
+| `DEFAULT_TZ_*`, `WEATHER_*`                               | factory timezone, city and refresh interval                                                       |
+| `ALARM_*`                                                 | factory alarm, snooze length, snooze limit, auto-off, grace period                                |
+| `NIGHT_FOLLOWS_SUN`, `NIGHT_START_HOUR`, `NIGHT_END_HOUR` | when night mode starts and ends                                                                   |
+| `BACKLIGHT_*`                                             | how the screen is dimmed (drive strength or PWM)                                                  |
+| `PET_*`                                                   | streak lengths, purr time, rare-reaction chance                                                   |
+| `PET_BOND_*`                                              | how fast the bond grows and fades, its levels, tint and self-started acts                         |
+| `IDLE_*`, `SERVO_LOOK_*`                                  | thinking, glance, fly and yawn behaviours, how far the head follows the fly                       |
+| `SERVO_*`                                                 | rest / pet / alarm angles and timings                                                             |
+| `OCCASIONS_DEFAULT`, `OCC_*`                              | yearly occasion animations: default on / off and their dates                                      |
+| `UI_SOUNDS_DEFAULT`                                       | feedback beeps when settings are changed                                                          |
+| `UPDATE_ENABLED`, `UPDATE_REPO`, `UPDATE_MIN_FREE_HEAP`   | firmware update from GitHub Releases: on / off, which repository, memory needed                   |
+| `UPDATE_AUTO_CHECK`, `UPDATE_AUTO_CHECK_INTERVAL_MS`      | automatic check for a new release (default twice a day); installing still needs your confirmation |
+| `SCENE_*`, `AMBIENT_FX`, `WEATHER_*_ANIM`                 | the background and the animations - set to 0 to switch off                                        |
+| `TASK_WDT_*`                                              | watchdog timeout                                                                                  |
 
 ## Project layout
 
