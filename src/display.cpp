@@ -235,6 +235,8 @@ void display_tick()
         personaUpdate(pin);
     }
 
+    occasionUpdate(haveTime ? &ti : nullptr, now);
+
     updateLook(now, alarm, sleepy, reaction);
     updateBlink(now, sleepy);
     float exprP = updateExpression(now, !alarm && !happy && reaction != Reaction::WORRIED && persona.exprOk, sleepy);
@@ -272,9 +274,16 @@ void display_tick()
         gapPaint(pageSlideX); // coming back from a full-screen page: the strip between the cards turns into frame again
 
     TFT_eSPI &g = faceCv.begin();
+    uint16_t eyeTopSaved = C_EYE_TOP, eyeBotSaved = C_EYE_BOT; // emoUpdate() recomputes them every tick
+    if (!alarm)
+        occasionTintEyes();
     drawFace(g, now, alarm, happy, purr, sleepy, scn, reaction, exprP);
+    C_EYE_TOP = eyeTopSaved;
+    C_EYE_BOT = eyeBotSaved;
     if (persona.stage == PStage::RUN) // not over the black boot screen
     {
+        if (!alarm)
+            drawOccasionFront(g, now);
         drawStatusIcons(g, now);
         drawHoldRing(g);
     }

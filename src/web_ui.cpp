@@ -10,6 +10,7 @@
 #include "settings.h"
 #include "audio.h"
 #include "alarm_ctrl.h"
+#include "occasion.h"
 #include "boot_log.h"
 #include "pet.h"
 #include "weather.h"
@@ -62,9 +63,13 @@ static void sendSettings(int code)
     d["alarmDays"] = s.alarmDays;
     d["alarmSound"] = s.alarmSound;
     d["alarmVolume"] = s.alarmVolume;
-    d["soundCount"] = AUDIO_FILE_COUNT;
+    JsonArray snd = d["alarmSounds"].to<JsonArray>();
+    for (int i = 0; i < settings_alarm_sound_count(); i++)
+        snd.add(settings_alarm_sound_at(i));
     d["volume"] = s.volume;
     d["petReactions"] = s.petReactions;
+    d["uiSounds"] = s.uiSounds;
+    d["occasions"] = s.occasions;
     d["latitude"] = s.latitude;
     d["longitude"] = s.longitude;
     d["city"] = s.city;
@@ -92,6 +97,17 @@ static void handleGetSettings()
     if (!authorized())
         return;
     sendSettings(200);
+}
+
+// Short feedback beep for the settings page (clips 11 switched on / 12 switched off / 14 rejected).
+// Never while the alarm is ringing or snoozed (it would cut the alarm off); at night it follows
+// the pet volume rules (silent by default). `enabled` is passed in so that turning the beeps
+// off still gets its own "off" beep.
+static void uiBeep(bool enabled, uint16_t clip)
+{
+    if (!enabled || clip == 0 || alarm_get_state() != AlarmState::IDLE)
+        return;
+    audio_play_gentle(clip);
 }
 
 static void handlePostSettings()
@@ -126,6 +142,8 @@ static void handlePostSettings()
     s.alarmVolume = doc["alarmVolume"] | old.alarmVolume;
     s.volume = doc["volume"] | old.volume;
     s.petReactions = doc["petReactions"] | old.petReactions;
+    s.uiSounds = doc["uiSounds"] | old.uiSounds;
+    s.occasions = doc["occasions"] | old.occasions;
     s.latitude = doc["latitude"] | old.latitude;
     s.longitude = doc["longitude"] | old.longitude;
     copyString(s.city, sizeof(s.city), doc["city"]);
@@ -136,8 +154,20 @@ static void handlePostSettings()
     if (!settings_update(s, &err))
     {
         sendError(400, err);
+        uiBeep(old.uiSounds, SOUND_INDEX_UI_ERROR);
         return;
     }
+
+    // One beep per save (two beeps in a row would be dropped by the module's rate limit):
+    // "off" wins if anything was switched off, else "on" if anything was switched on.
+    bool turnedOff = (old.alarmEnabled && !s.alarmEnabled) || (old.petReactions && !s.petReactions) ||
+                     (old.uiSounds && !s.uiSounds);
+    bool turnedOn = (!old.alarmEnabled && s.alarmEnabled) || (!old.petReactions && s.petReactions) ||
+                    (!old.uiSounds && s.uiSounds);
+    if (turnedOff)
+        uiBeep(old.uiSounds, SOUND_INDEX_UI_OFF);
+    else if (turnedOn)
+        uiBeep(s.uiSounds, SOUND_INDEX_UI_ON);
 
     // No volume command here: every sound sets the volume it needs just before it
     // plays (pet = saved volume, alarm = saved alarm volume), so a changed value
@@ -174,6 +204,22 @@ static void handleTestSound()
     audio_play_preview((uint16_t)sound, (uint8_t)v); // volume + play as one sequence, with settle delay
     s_restoreVolume = true;
     s_restoreAtMs = millis() + PREVIEW_MS;
+    server.send(200, "application/json", "{\"ok\":true}");
+}
+
+// Shows a yearly occasion on the face for 25 s: /api/test-occasion?id=0..4 (0 = stop, 1 Halloween,
+// 2 Easter, 3 Christmas, 4 New Year's Eve with the countdown). Works whatever today's date is.
+static void handleTestOccasion()
+{
+    if (!authorized())
+        return;
+    int id = server.hasArg("id") ? server.arg("id").toInt() : 0;
+    if (id < 0 || id >= (int)Occasion::COUNT)
+    {
+        sendError(400, "id out of range");
+        return;
+    }
+    occasion_preview((uint8_t)id, 25000);
     server.send(200, "application/json", "{\"ok\":true}");
 }
 
@@ -296,6 +342,7 @@ static void startServer()
     server.on("/api/settings", HTTP_GET, handleGetSettings);
     server.on("/api/settings", HTTP_POST, handlePostSettings);
     server.on("/api/test-sound", HTTP_POST, handleTestSound);
+    server.on("/api/test-occasion", HTTP_POST, handleTestOccasion);
     server.on("/api/alarm", HTTP_GET, handleGetAlarm);
     server.on("/api/bootlog", HTTP_GET, handleGetBootLog);
     server.on("/api/pet", HTTP_GET, handleGetPet);

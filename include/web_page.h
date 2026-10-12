@@ -71,6 +71,15 @@ details{margin-top:10px}
 <h2>صدای نوازش</h2>
 <div class="row"><span>ولوم</span><input type="range" id="vol" min="0" max="30"><output id="volOut"></output></div>
 <button type="button" class="ghost" id="testBtn">پخش صدای نوازش</button>
+<div class="row"><span>تست همه‌ی صداها</span><select id="tSound"></select><button type="button" class="ghost" id="tSoundBtn">پخش</button></div>
+<label class="row"><span>بوق تنظیمات (روشن/خاموش/خطا)</span><input type="checkbox" id="uiOn"></label>
+</section>
+
+<section>
+<h2>مناسبت‌های سالانه</h2>
+<label class="row"><span>انیمیشن مناسبت‌ها</span><input type="checkbox" id="occOn"></label>
+<div class="row"><span>پیش‌نمایش</span><select id="occSel"><option value="1">هالووین</option><option value="2">عید پاک</option><option value="3">کریسمس</option><option value="4">شب سال نو میلادی</option><option value="0">توقف پیش‌نمایش</option></select><button type="button" class="ghost" id="occBtn">نمایش</button></div>
+<p class="mut">هالووین ۲۸ تا ۳۱ اکتبر، عید پاک از جمعه تا دوشنبه، کریسمس ۲۰ تا ۲۶ دسامبر، شب سال نو از ساعت ۱۸ روز ۳۱ دسامبر.</p>
 </section>
 
 <section>
@@ -177,17 +186,20 @@ const i=document.createElement('input');i.type='checkbox';i.dataset.d=d[0];
 const s=document.createElement('span');s.textContent=d[1];l.append(i,s);box.appendChild(l);});})();
 function setDays(m){document.querySelectorAll('#days input').forEach(i=>{i.checked=((m>>(+i.dataset.d))&1)===1;});}
 function getDays(){let m=0;document.querySelectorAll('#days input').forEach(i=>{if(i.checked)m|=1<<(+i.dataset.d);});return m;}
-function fillSounds(n,cur){const sel=$('aSound');sel.textContent='';
-for(let k=1;k<=n;k++){const o=document.createElement('option');o.value=k;o.textContent='صدای '+k;sel.appendChild(o);}sel.value=cur;}
+const SN=['آرام','اصلی','جیک نوازش','ملودیک','بلند','بویینگ','بیپ‌ها','خمیازه','زنگ ساعت','روشن‌شدن','UI روشن','UI خاموش','تیک‌تاک','UI خطا'];
+function sName(k){return k+' - '+(SN[k-1]||'');}
+function fillSounds(list,cur){const sel=$('aSound');sel.textContent='';
+list.forEach(k=>{const o=document.createElement('option');o.value=k;o.textContent=sName(k);sel.appendChild(o);});sel.value=cur;}
+(function(){const sel=$('tSound');for(let k=1;k<=SN.length;k++){const o=document.createElement('option');o.value=k;o.textContent=sName(k);sel.appendChild(o);}})();
 async function load(){
  try{
   const s=await (await fetch('/api/settings')).json();
   $('aEn').checked=s.alarmEnabled;
   $('aTime').value=String(s.alarmHour).padStart(2,'0')+':'+String(s.alarmMinute).padStart(2,'0');
-  setDays(s.alarmDays);fillSounds(s.soundCount,s.alarmSound);
+  setDays(s.alarmDays);fillSounds(s.alarmSounds,s.alarmSound);
   $('avol').value=s.alarmVolume;$('avOut').textContent=s.alarmVolume;
   $('vol').value=s.volume;$('volOut').textContent=s.volume;
-  $('petOn').checked=s.petReactions;
+  $('petOn').checked=s.petReactions;$('uiOn').checked=s.uiSounds;$('occOn').checked=s.occasions;
   setLoc(s.latitude,s.longitude,s.city);
   pickTz(s.tzName,s.tzPosix);
   $('now').textContent='ساعت دستگاه: '+(s.time||'هنوز همگام نشده');
@@ -200,7 +212,7 @@ async function save(){
  if(!days){msg('حداقل یک روز را برای زنگ انتخاب کنید',false);return;}
  const body={alarmEnabled:$('aEn').checked,alarmHour:+t.slice(0,2),alarmMinute:+t.slice(3,5),
   alarmDays:days,alarmSound:+$('aSound').value,alarmVolume:+$('avol').value,
-  volume:+$('vol').value,petReactions:$('petOn').checked,latitude:S.lat,longitude:S.lon,city:S.city,
+  volume:+$('vol').value,petReactions:$('petOn').checked,uiSounds:$('uiOn').checked,occasions:$('occOn').checked,latitude:S.lat,longitude:S.lon,city:S.city,
   tzName:$('tz').value,tzPosix:$('tzp').value.trim()};
  try{
   const r=await fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
@@ -238,7 +250,9 @@ async function preview(q){
   if(!r.ok){const j=await r.json();msg('خطا: '+(j.error||r.status),false);}else msg('',true);
  }catch(e){msg('ارتباط با ساعت برقرار نشد',false);}
 }
+$('occBtn').onclick=async()=>{try{const r=await fetch('/api/test-occasion?id='+$('occSel').value,{method:'POST'});if(!r.ok){const j=await r.json();msg('خطا: '+(j.error||r.status),false);}else msg('',true);}catch(e){msg('ارتباط با ساعت برقرار نشد',false);}};
 $('testBtn').onclick=()=>preview('volume='+$('vol').value);
+$('tSoundBtn').onclick=()=>preview('sound='+$('tSound').value+'&volume='+$('vol').value);
 $('aSoundBtn').onclick=()=>preview('sound='+$('aSound').value+'&volume='+$('avol').value);
 const AST={idle:'آماده (آلارم زنگ نمی‌زند)',ringing:'در حال زنگ‌زدن 🔔',snoozed:'اسنوز شده'};
 async function alarmState(){

@@ -10,6 +10,20 @@
 
 static const char *NVS_NAMESPACE = "deskclock";
 
+static const uint8_t kAlarmSounds[] = ALARM_SOUND_LIST;
+static_assert(sizeof(kAlarmSounds) > 0, "ALARM_SOUND_LIST must not be empty");
+
+bool settings_is_alarm_sound(int n)
+{
+    for (uint8_t k : kAlarmSounds)
+        if (k == n)
+            return true;
+    return false;
+}
+
+int settings_alarm_sound_count() { return (int)sizeof(kAlarmSounds); }
+int settings_alarm_sound_at(int i) { return kAlarmSounds[i]; }
+
 static_assert(ALARM_DAYS_MASK > 0 && ALARM_DAYS_MASK <= 0x7F, "ALARM_DAYS_MASK must be 1-127");
 static_assert(SOUND_INDEX_ALARM >= 1 && SOUND_INDEX_ALARM <= AUDIO_FILE_COUNT, "SOUND_INDEX_ALARM must be 1..AUDIO_FILE_COUNT");
 static_assert(AUDIO_ALARM_VOLUME >= 1 && AUDIO_ALARM_VOLUME <= 30, "AUDIO_ALARM_VOLUME must be 1-30");
@@ -34,6 +48,8 @@ static void loadDefaults(Settings &s)
     s.alarmVolume = AUDIO_ALARM_VOLUME;
     s.volume = AUDIO_VOLUME;
     s.petReactions = PET_REACTIONS_DEFAULT;
+    s.uiSounds = UI_SOUNDS_DEFAULT;
+    s.occasions = OCCASIONS_DEFAULT;
     s.latitude = (float)atof(WEATHER_LATITUDE);
     s.longitude = (float)atof(WEATHER_LONGITUDE);
     strlcpy(s.city, WEATHER_CITY_NAME, sizeof(s.city));
@@ -68,9 +84,9 @@ static bool validate(const Settings &s, const char **err)
         *err = "pick at least one alarm day";
         return false;
     }
-    if (s.alarmSound < 1 || s.alarmSound > AUDIO_FILE_COUNT)
+    if (!settings_is_alarm_sound(s.alarmSound))
     {
-        *err = "alarm sound out of range";
+        *err = "alarm sound must be one of the alarm clips";
         return false;
     }
     // written so that NaN fails too
@@ -121,6 +137,8 @@ void settings_init()
         s.alarmMinute = p.getUChar("aM", s.alarmMinute);
         s.volume = p.getUChar("vol", s.volume);
         s.petReactions = p.getBool("pRe", s.petReactions);
+        s.uiSounds = p.getBool("uiS", s.uiSounds);
+        s.occasions = p.getBool("occ", s.occasions);
         // Clocks updated from an older firmware have no "avol" yet: the alarm then
         // keeps the volume it used to have (the one shared volume), so nothing changes.
         if (p.isKey("avol"))
@@ -129,6 +147,8 @@ void settings_init()
             s.alarmVolume = s.volume < 1 ? 1 : s.volume;
         s.alarmDays = p.getUChar("aD", s.alarmDays);
         s.alarmSound = p.getUChar("aS", s.alarmSound);
+        if (!settings_is_alarm_sound(s.alarmSound))
+            s.alarmSound = SOUND_INDEX_ALARM; // saved clip is no longer an alarm tone: keep the other settings
         s.latitude = p.getFloat("lat", s.latitude);
         s.longitude = p.getFloat("lon", s.longitude);
         if (p.isKey("city"))
@@ -174,6 +194,8 @@ bool settings_update(const Settings &in, const char **err)
     ok &= p.putUChar("aM", (uint8_t)in.alarmMinute) > 0;
     ok &= p.putUChar("vol", (uint8_t)in.volume) > 0;
     ok &= p.putBool("pRe", in.petReactions) > 0;
+    ok &= p.putBool("uiS", in.uiSounds) > 0;
+    ok &= p.putBool("occ", in.occasions) > 0;
     ok &= p.putUChar("avol", (uint8_t)in.alarmVolume) > 0;
     ok &= p.putUChar("aD", (uint8_t)in.alarmDays) > 0;
     ok &= p.putUChar("aS", (uint8_t)in.alarmSound) > 0;

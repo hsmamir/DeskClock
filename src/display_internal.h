@@ -13,6 +13,7 @@
 #include "settings.h"
 #include "sun.h"
 #include "pet.h"
+#include "occasion.h"
 #include "alarm_ctrl.h"
 #include "display_fonts.h" // smooth (VLW) fonts, see tools/make_vlw.py
 
@@ -509,6 +510,20 @@ namespace disp
     void drawPortalScreen();
     void drawOtaScreen(int pct);
     void pollWifi(uint32_t now);
+    // ---- Yearly occasions: Halloween, Easter, Christmas, New Year's Eve (display_occasion.cpp) ----
+    struct OccState
+    {
+        Occasion kind;
+        int8_t countdown; // New Year's Eve: 10..1 in the last ten seconds, else 0
+        bool midnight;    // New Year's Eve: the first seconds of the new year
+        uint16_t year;    // the new year to show while `midnight`
+    };
+    extern OccState occ;
+    void occasionUpdate(const struct tm *ti, uint32_t now); // once per tick (ti = nullptr: time not known)
+    void occasionTintEyes();                                // call right before drawFace(); the caller restores C_EYE_*
+    void drawOccasionBack(TFT_eSPI &g, uint32_t now);       // behind the eyes
+    void drawOccasionFront(TFT_eSPI &g, uint32_t now);      // over the eyes (hats, ears, lights ...)
+
     void drawStatusIcons(TFT_eSPI &g, uint32_t now);
     void drawHoldRing(TFT_eSPI &g);
     void drawDiagScreen(uint32_t now);

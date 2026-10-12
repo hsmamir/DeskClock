@@ -361,19 +361,24 @@ static_assert(AMBIENT_MOTES >= 3 && AMBIENT_MOTES <= 5, "AMBIENT_MOTES must be 3
 //   holding the button ... purring (closed eyes, the servo trembles gently)
 // Everything can be switched off from the settings page (that setting is the default below).
 #define PET_REACTIONS_DEFAULT 1
-#define UI_SOUNDS_DEFAULT 1        // settings-page feedback beeps (clips 11/12/14); changeable from the settings page
-#define PET_STREAK_GAP_MS 3000     // taps closer together than this count as one streak
-#define PET_HEART_STREAK 4         // this many taps in a row -> heart eyes
-#define PET_DIZZY_STREAK 12        // ... dizzy spiral eyes
-#define PET_ANNOYED_STREAK 15      // ... "that's enough!" (until you pause)
-#define PET_PURR_HOLD_MS 1000      // hold the button this long -> purring
-#define PET_PURR_MAX_MS 8000       // purring stops by itself after this (keeps the servo/supply calm)
-#define PET_PURR_SERVO_DEG 3       // trembling amplitude around the rest angle while purring
-#define PET_MISSED_HOURS 6         // first tap after this many hours -> "missed you"
-#define PET_MORNING_FROM_H 5       // first tap of the day between these local hours -> yawn + happy
-#define PET_MORNING_TO_H 11        // (exclusive)
-#define PET_RARE_PERCENT 5         // chance (%) of a rare reaction instead of the usual one
-#define PET_SAVE_INTERVAL_MS 60000 // pet statistics are written to flash at most this often
+#define OCCASIONS_DEFAULT 1         // yearly occasion animations (Halloween, Easter, Christmas, New Year's Eve); settings page can switch them off
+#define OCC_HALLOWEEN_DAYS_BEFORE 3 // Halloween look from Oct 31 minus this many days (3 = Oct 28 .. 31)
+#define OCC_CHRISTMAS_FROM_DAY 20   // Christmas look Dec 20 .. 26
+#define OCC_NYE_FROM_HOUR 18        // New Year's Eve look from Dec 31 at this hour ...
+#define OCC_NYE_UNTIL_HOUR 3        // ... until Jan 1 at this hour (the 10..1 countdown and the new year at midnight are automatic)
+#define UI_SOUNDS_DEFAULT 1         // settings-page feedback beeps (clips 11/12/14); changeable from the settings page
+#define PET_STREAK_GAP_MS 3000      // taps closer together than this count as one streak
+#define PET_HEART_STREAK 4          // this many taps in a row -> heart eyes
+#define PET_DIZZY_STREAK 12         // ... dizzy spiral eyes
+#define PET_ANNOYED_STREAK 15       // ... "that's enough!" (until you pause)
+#define PET_PURR_HOLD_MS 1000       // hold the button this long -> purring
+#define PET_PURR_MAX_MS 8000        // purring stops by itself after this (keeps the servo/supply calm)
+#define PET_PURR_SERVO_DEG 3        // trembling amplitude around the rest angle while purring
+#define PET_MISSED_HOURS 6          // first tap after this many hours -> "missed you"
+#define PET_MORNING_FROM_H 5        // first tap of the day between these local hours -> yawn + happy
+#define PET_MORNING_TO_H 11         // (exclusive)
+#define PET_RARE_PERCENT 5          // chance (%) of a rare reaction instead of the usual one
+#define PET_SAVE_INTERVAL_MS 60000  // pet statistics are written to flash at most this often
 
 // ---- Bond (pet.cpp, display_persona.cpp, display_emotion.cpp) ----
 // A lasting "how much does he like you" value, 0..1000 (shown as 0..100 % on the settings page), kept in flash.
