@@ -16,6 +16,8 @@
 #include "weather.h"
 #include "reminders.h"
 #include "persian_text.h"
+#include "update_check.h"
+#include "version.h"
 #include "config.h"
 
 static WebServer server(80);
@@ -484,18 +486,108 @@ static void handleReminderDismiss()
     server.send(200, "application/json", "{\"ok\":true}");
 }
 
+// ---- Firmware update (update_check.cpp): status / check / install ----
+// The settings page polls GET /api/update; the two POSTs only start work (a check or the
+// install of the version the last check found) and the page watches the status afterwards.
+static const char *updateStateName(UpdateState s)
+{
+    switch (s)
+    {
+    case UpdateState::CHECKING:
+        return "checking";
+    case UpdateState::UP_TO_DATE:
+        return "uptodate";
+    case UpdateState::AVAILABLE:
+        return "available";
+    case UpdateState::DOWNLOADING:
+        return "downloading";
+    case UpdateState::DONE:
+        return "done";
+    case UpdateState::FAILED:
+        return "failed";
+    default:
+        return "idle";
+    }
+}
+
+static void handleGetUpdate()
+{
+    if (!authorized())
+        return;
+    JsonDocument d;
+#if defined(USE_WOKWI_WIFI) || !UPDATE_ENABLED
+    d["enabled"] = false; // same condition as update_check.cpp: the page hides its update card
+#else
+    UpdateStatus st = update_status();
+    d["enabled"] = true;
+    d["state"] = updateStateName(st.state);
+    d["current"] = FW_VERSION;
+    d["variant"] = FW_VARIANT;
+#if UPDATE_AUTO_CHECK
+    d["autoCheck"] = true;
+#else
+    d["autoCheck"] = false;
+#endif
+    d["latest"] = st.latest;
+    d["notes"] = st.notesUrl;
+    d["error"] = st.error;
+    d["sizeKb"] = (st.sizeBytes + 1023) / 1024;
+    d["percent"] = st.percent;
+    d["checkedAgoS"] = st.checkedMs ? (int32_t)((millis() - st.checkedMs) / 1000) : -1;
+#endif
+    sendJson(200, d);
+}
+
+static void handleUpdateCheck()
+{
+    if (!authorized() || !requireJsonPost())
+        return;
+    if (!update_request_check())
+    {
+        sendError(409, "busy");
+        return;
+    }
+    server.send(200, "application/json", "{\"ok\":true}");
+}
+
+static void handleUpdateInstall()
+{
+    JsonDocument doc;
+    if (!readJsonBody(doc))
+        return;
+    String err;
+    if (!update_request_install(String(doc["version"] | ""), err))
+    {
+        sendError(409, err.length() ? err.c_str() : "busy");
+        return;
+    }
+    server.send(200, "application/json", "{\"ok\":true}");
+}
+
+// The page only changes with the firmware, so the browser may keep its copy: on a repeat visit
+// it asks "still this version?" (If-None-Match) and gets an empty 304 instead of the whole page.
+// __DATE__/__TIME__ are those of this file's last build, which also reruns when web_page.h changes.
+static const char PAGE_ETAG[] = "\"" __DATE__ " " __TIME__ "\"";
+
 static void handleRoot()
 {
     if (!authorized())
         return;
+    server.sendHeader("Cache-Control", "no-cache");
+    server.sendHeader("ETag", PAGE_ETAG);
+    if (server.header("If-None-Match") == PAGE_ETAG)
+    {
+        server.send(304);
+        return;
+    }
     server.send_P(200, "text/html; charset=utf-8", PAGE_HTML);
 }
 
 static void startServer()
 {
-    // needed so handlePostSettings() can read the Content-Type header
-    static const char *keys[] = {"Content-Type"};
-    server.collectHeaders(keys, 1);
+    // needed so the POST handlers can read Content-Type and handleRoot() can read If-None-Match
+    static const char *keys[] = {"Content-Type", "If-None-Match"};
+    server.collectHeaders(keys, 2);
 
     server.on("/", HTTP_GET, handleRoot);
     server.on("/api/settings", HTTP_GET, handleGetSettings);
@@ -514,6 +606,9 @@ static void startServer()
     server.on("/api/reminders/sound", HTTP_POST, handleReminderSound);
     server.on("/api/reminders/test", HTTP_POST, handleReminderTest);
     server.on("/api/reminders/dismiss", HTTP_POST, handleReminderDismiss);
+    server.on("/api/update", HTTP_GET, handleGetUpdate);
+    server.on("/api/update/check", HTTP_POST, handleUpdateCheck);
+    server.on("/api/update/install", HTTP_POST, handleUpdateInstall);
     server.onNotFound([]()
                       { server.send(404, "text/plain", "not found"); });
     server.begin();
