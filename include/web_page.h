@@ -144,6 +144,19 @@ details{margin-top:10px}
 <input type="text" id="tzp" spellcheck="false"></details>
 </section>
 
+<section id="updSec">
+<h2>به‌روزرسانی نرم‌افزار</h2>
+<p class="mut">نسخه‌ی فعلی: <b id="uVer" dir="ltr">—</b> <span id="uVar" dir="ltr"></span></p>
+<p id="uMsg">…</p>
+<progress id="uProg" max="100" value="0" hidden style="width:100%"></progress>
+<div class="btns">
+<button type="button" id="uCheck">بررسی به‌روزرسانی</button>
+<button type="button" id="uInstall" hidden>نصب نسخه‌ی جدید</button>
+</div>
+<p class="mut"><a id="uNotes" href="#" target="_blank" rel="noopener" hidden>تغییرات این نسخه در GitHub</a></p>
+<p class="mut">نسخه‌ی جدید فقط از Releaseهای رسمی GitHub گرفته می‌شود و تا تأیید شما نصب نمی‌شود. فایل با checksum منتشرشده کنترل می‌شود و در صورت مغایرت نصب نمی‌شود. تنظیمات شما حفظ می‌ماند.</p>
+</section>
+
 <section>
 <h2>تشخیص و ریست‌ها</h2>
 <p class="mut" id="blSum">…</p>
@@ -322,6 +335,48 @@ async function petStats(){
   $('bondInfo').textContent=j.bondOn?('دلبستگی: '+j.bond+'٪ — '+(BL[j.bondLevel]||'')):'';
  }catch(e){$('petStats').textContent='ارتباط با ساعت برقرار نشد';}
 }
+const UERR={wifi:'ساعت به اینترنت وصل نیست',time:'ساعت هنوز زمان دقیق (NTP) را نگرفته؛ چند دقیقه بعد دوباره تلاش کنید',heap:'حافظه‌ی آزاد کافی نیست؛ کمی بعد دوباره تلاش کنید',tls:'اتصال امن برقرار نشد (گواهی GitHub تأیید نشد)',connect:'اتصال به GitHub برقرار نشد',rate_limit:'GitHub موقتاً درخواست‌ها را محدود کرده؛ بعداً دوباره تلاش کنید',no_release:'هنوز هیچ Releaseای منتشر نشده',no_asset:'این Release فایل مخصوص نمایشگر این ساعت را ندارد',too_big:'فایل از فضای به‌روزرسانی بزرگ‌تر است',bad_tag:'نسخه‌ی Release قابل خواندن نیست',json:'پاسخ GitHub قابل خواندن نیست',redirect:'آدرس دانلود نامعتبر است',size_mismatch:'اندازه‌ی فایل با Release نمی‌خواند',bad_checksum_file:'فایل checksum نامعتبر است',flash_begin:'شروع نوشتن در فلش ممکن نشد',download:'دانلود ناقص ماند؛ دوباره تلاش کنید',checksum:'checksum فایل درست نبود؛ چیزی نصب نشد',flash_end:'تأیید فایل نصب‌شده ناموفق بود؛ چیزی تغییر نکرد',busy:'عملیات دیگری در حال اجراست',alarm_busy:'آلارم در حال زنگ‌زدن یا اسنوز است',not_available:'ابتدا دوباره بررسی کنید',disabled:'این قابلیت در این نسخه غیرفعال است'};
+function uErr(c){c=String(c||'');return UERR[c]||(c.startsWith('http_')?'خطای HTTP '+c.slice(5):c);}
+let uTimer=null,uLast='';
+async function updateState(){
+ try{
+  const j=await (await fetch('/api/update')).json();
+  if(!j.enabled){$('updSec').style.display='none';return;}
+  $('uVer').textContent=j.current;$('uVar').textContent='('+j.variant+')';
+  const busy=j.state==='checking'||j.state==='downloading'||j.state==='done';
+  let t='';
+  switch(j.state){
+   case 'idle':t=(uLast==='downloading'||uLast==='done')?'به‌روزرسانی انجام شد. نسخه‌ی فعلی: '+j.current:(j.autoCheck?'هنوز بررسی نشده؛ ساعت خودش چند دقیقه بعد از روشن‌شدن بررسی می‌کند.':'هنوز بررسی نشده.');break;
+   case 'checking':t='در حال بررسی…';break;
+   case 'uptodate':t='آخرین نسخه ('+j.latest+') نصب است.';break;
+   case 'available':t='نسخه‌ی جدید '+j.latest+' ('+j.sizeKb+' کیلوبایت) آماده‌ی نصب است.';break;
+   case 'downloading':t='در حال دانلود و نصب… '+j.percent+'٪ — ساعت را از برق نکشید.';break;
+   case 'done':t='نصب شد؛ ساعت در حال ریستارت است…';break;
+   case 'failed':t='ناموفق: '+uErr(j.error);break;
+  }
+  if(j.checkedAgoS>=0&&(j.state==='uptodate'||j.state==='available')){const m=Math.floor(j.checkedAgoS/60);t+=' (آخرین بررسی: '+(m<1?'همین الان':m<60?m+' دقیقه پیش':Math.floor(m/60)+' ساعت پیش')+(j.autoCheck?'؛ ساعت خودش هم روزی دو بار بررسی می‌کند':'')+')';}
+  $('uMsg').textContent=t;$('uMsg').style.color=j.state==='failed'?'var(--err)':'';
+  $('uProg').hidden=j.state!=='downloading';$('uProg').value=j.percent;
+  $('uCheck').disabled=busy;$('uInstall').hidden=j.state!=='available';$('uInstall').dataset.v=j.latest;
+  const n=$('uNotes');n.hidden=!(j.notes&&(j.state==='available'||j.state==='uptodate'));n.href=j.notes||'#';
+  uLast=j.state;
+  if(busy&&!uTimer)uTimer=setInterval(updateState,1000);
+  if(!busy&&uTimer){clearInterval(uTimer);uTimer=null;}
+ }catch(e){
+  if(uLast==='downloading'||uLast==='done'){$('uMsg').textContent='ساعت در حال ریستارت است؛ چند ثانیه صبر کنید…';if(!uTimer)uTimer=setInterval(updateState,2000);}
+  else $('uMsg').textContent='ارتباط با ساعت برقرار نشد';
+ }
+}
+async function uPost(path,body){
+ try{const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});
+  if(!r.ok){const j=await r.json();msg('خطا: '+uErr(j.error||r.status),false);}else msg('',true);
+ }catch(e){msg('ارتباط با ساعت برقرار نشد',false);}
+ updateState();
+}
+$('uCheck').onclick=()=>uPost('/api/update/check');
+$('uInstall').onclick=()=>{const v=$('uInstall').dataset.v;if(confirm('نسخه‌ی '+v+' نصب شود؟\n\nدانلود و نصب حدود یک دقیقه طول می‌کشد. در این مدت آلارم زنگ نمی‌زند و ساعت دوباره راه‌اندازی می‌شود. ساعت را از برق نکشید.'))uPost('/api/update/install',{version:v});};
+updateState();
+setInterval(()=>{if(!document.hidden&&!uTimer)updateState();},30000); // picks up the clock's automatic checks
 setInterval(()=>{if(!document.hidden)alarmState();},2000);
 setInterval(()=>{if(!document.hidden)petStats();},10000);
 load();
