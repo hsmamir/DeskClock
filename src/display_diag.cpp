@@ -171,10 +171,12 @@ namespace disp
     // yOff = screen y of this canvas' top edge; all coordinates below are screen
     // coordinates, shifted into the canvas.
     //
-    // The page is two cards (face area on top, info area below) with a frame between them, so a row must
-    // never sit across the split. Rows are therefore placed in two groups, and none of them touches the split:
+    // The page is drawn into the two cards (face area on top, info area below) but is ONE page: no strip between
+    // them (see geometrySet), only the outer corners are rounded. A row must never sit across the join, so rows are
+    // placed in two groups, none of them touches it:
     //   Yt(v) = v px from the top of the upper card (reference 128x160 display; scaled by u()),
     //   Yb(v) = v px from the top of the lower card.
+    // Every row has the same pitch (13.5), also from the last upper row to the first lower one.
     // 9 rows + the IP line do not fit with a title line, so the page has no title (the accent bar on top
     // turns red when WiFi is down).
     static void drawDiagContent(TFT_eSPI &g, int16_t yOff, const DiagData &d)
@@ -209,33 +211,33 @@ namespace disp
             strcpy(buf, "--");
             c = C_RED;
         }
-        drawDiagRow(g, Yt(33), "Signal", buf, c);
+        drawDiagRow(g, Yt(35.5f), "Signal", buf, c);
 
         // free heap
         snprintf(buf, sizeof(buf), "%u KB", (unsigned)d.heapKb);
         c = d.heapKb < 30 ? C_RED : (d.heapKb < 60 ? C_AMBER : C_WHITE);
-        drawDiagRow(g, Yt(45.5f), "Heap", buf, c);
+        drawDiagRow(g, Yt(49), "Heap", buf, c);
 
         // last NTP sync (clock time + age)
-        drawDiagRow(g, Yt(58), "Sync", d.sync, d.syncOk ? C_WHITE : C_AMBER);
+        drawDiagRow(g, Yt(62.5f), "Sync", d.sync, d.syncOk ? C_WHITE : C_AMBER);
 
         // weather reading age
-        drawDiagRow(g, Yt(70.5f), "Weather", d.weather, d.weatherOk ? (d.weatherStale ? C_AMBER : C_WHITE) : C_AMBER);
+        drawDiagRow(g, Yt(76), "Weather", d.weather, d.weatherOk ? (d.weatherStale ? C_AMBER : C_WHITE) : C_AMBER);
 
         // ---- lower card ----
         // uptime
-        drawDiagRow(g, Yb(8), "Uptime", d.uptime, C_WHITE);
+        drawDiagRow(g, Yb(7.5f), "Uptime", d.uptime, C_WHITE);
 
         // why this boot happened (kept in flash; red = brownout / panic / watchdog)
-        drawDiagRow(g, Yb(20.5f), "Reset", d.reset, d.resetBad ? C_RED : C_WHITE);
+        drawDiagRow(g, Yb(21), "Reset", d.reset, d.resetBad ? C_RED : C_WHITE);
 
         // boot counter; "BO n" = brownouts so far (amber once there is one)
-        drawDiagRow(g, Yb(33), "Boots", d.boots, d.bootsWarn ? C_AMBER : C_WHITE);
+        drawDiagRow(g, Yb(34.5f), "Boots", d.boots, d.bootsWarn ? C_AMBER : C_WHITE);
 
         // firmware version, and whether a newer release is waiting (the owner installs it from the settings page)
-        drawDiagRow(g, Yb(45.5f), "Version", d.fw, C_WHITE);
+        drawDiagRow(g, Yb(48), "Version", d.fw, C_WHITE);
         uint16_t uc = d.updLevel == 1 ? C_AMBER : (d.updLevel == 2 ? C_RED : (d.updLevel == 3 ? C_SOFT : rgb(90, 230, 130)));
-        drawDiagRow(g, Yb(58), "Update", d.upd, uc);
+        drawDiagRow(g, Yb(61.5f), "Update", d.upd, uc);
     }
 
     void drawDiagScreen(uint32_t now)
@@ -246,12 +248,15 @@ namespace disp
         TFT_eSPI &gt = faceCv.begin();
         gt.fillRect(0, 0, W, faceH, C_BG);
         drawDiagContent(gt, 0, d);
-        faceCv.end();
+        faceCv.endAt(0, CORNERS_TOP); // outer corners only: one page, not two cards
 
         TFT_eSPI &gb = infoCv.begin();
         gb.fillRect(0, 0, W, infoH, C_BG);
         drawDiagContent(gb, faceH, d);
-        infoCv.end();
+        infoCv.endAt(0, CORNERS_BOT);
+
+        gapInvalidate();
+        gapIsFull = true; // one-piece page: the clock page then paints the strip between its cards again (see display.cpp)
     }
 
 } // namespace disp

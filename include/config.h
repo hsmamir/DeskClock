@@ -56,9 +56,7 @@ static_assert(MODE_HOLD_RING_DELAY_MS < MODE_LONG_PRESS_MS, "ring delay must be 
 // ---- Full-screen pages ----
 // Only the clock page shows the face (eyes). The Date and Weather pages use the whole screen:
 // the two cards are drawn as ONE page (the 3 px gap between them gets the page background).
-//   FULLPAGE_DIVIDER     thin line in that gap, between the upper and the lower half of the page
 //   CALENDAR_WEEK_START  first day of the week in the Date page's month calendar: 0 = Sunday, 1 = Monday, 6 = Saturday
-#define FULLPAGE_DIVIDER 1
 #define CALENDAR_WEEK_START 6
 static_assert(CALENDAR_WEEK_START >= 0 && CALENDAR_WEEK_START <= 6, "CALENDAR_WEEK_START must be 0-6");
 

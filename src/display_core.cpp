@@ -20,7 +20,8 @@ namespace disp
     // Layout - computed in cardsInit() from tft.width()/height()
     int16_t W, SW, H, faceH, infoH;
     int16_t cardX, cardGap, cardR, faceY, infoY;
-    float sc = 1.0f; // scale relative to the 128 px wide real display
+    int16_t cardGapBase = 0; // the gap of the clock layout; cardGap is 0 on the one-piece pages (see geometrySet)
+    float sc = 1.0f;         // scale relative to the 128 px wide real display
     bool frameDirty = false;
     bool fullLayout = false; // Date / Weather page: one full-screen page instead of face card + info card (display_pages.cpp)
 
@@ -67,7 +68,7 @@ namespace disp
         H = tft.height();
         sc = SW / 128.0f;
         cardX = imax(1, u(CARD_MARGIN));
-        cardGap = imax(1, u(CARD_GAP));
+        cardGapBase = cardGap = imax(1, u(CARD_GAP));
         cardR = imin(u(CARD_RADIUS), (int16_t)(MAX_R - 1));
         W = SW - 2 * cardX;
         int16_t avail = H - 2 * cardX - cardGap; // height left for the two cards
@@ -82,7 +83,7 @@ namespace disp
             dateFaceH = clockFaceH; // never taller than on the clock page
         dateInfoH = avail - dateFaceH;
         faceHMax = imax(clockFaceH, dateFaceH);
-        infoHMax = imax(clockInfoH, dateInfoH);
+        infoHMax = imax(clockInfoH, dateInfoH) + cardGapBase; // a one-piece page gives the strip to the lower card
         if (cardR > dateFaceH / 2)
             cardR = dateFaceH / 2;
         if (cardR > dateInfoH / 2)
@@ -104,21 +105,30 @@ namespace disp
     }
 
     // Switches the card split (faceH / infoH / infoY and the two canvases) between the clock layout and the Date
-    // page. Call it every tick, before anything is drawn: the clock, the Weather page and the diagnostics page
-    // always see the clock split, only the Date page sees the other one. Both splits add up to the same height,
-    // so the frame and the bottom edge never move.
-    void geometrySet(bool dateLayout)
+    // page, and between two cards with a frame strip between them (the clock page) and ONE page (seamless: the
+    // strip is given to the lower card, cardGap = 0, so lines of text can be spaced evenly right across the
+    // join). Call it every tick, before anything is drawn. All splits add up to the same height, so the frame
+    // and the bottom edge never move.
+    void geometrySet(bool dateLayout, bool seamless)
     {
         int16_t fh = dateLayout ? dateFaceH : clockFaceH;
-        if (fh == faceH)
+        int16_t ih = dateLayout ? dateInfoH : clockInfoH;
+        int16_t gp = cardGapBase;
+        if (seamless)
+        {
+            ih += gp;
+            gp = 0;
+        }
+        if (fh == faceH && gp == cardGap)
             return;
         faceH = fh;
-        infoH = dateLayout ? dateInfoH : clockInfoH;
+        infoH = ih;
+        cardGap = gp;
         infoY = faceY + faceH + cardGap;
         faceCv.h = faceH;
         infoCv.y0 = infoY;
         infoCv.h = infoH;
-        gapInvalidate();           // the strip between the cards is somewhere else now
+        gapInvalidate();           // the strip between the cards is somewhere else now (or gone)
         lastInfoSig = 0xFFFFFFFFu; // and the lower card has to be redrawn
     }
 
@@ -129,7 +139,7 @@ namespace disp
         tft.fillRect(0, faceY, cardX, H - 2 * faceY, C_FRAME);            // left
         tft.fillRect(SW - cardX, faceY, cardX, H - 2 * faceY, C_FRAME);   // right
         // Between the cards (the left / right fills above already cover the side margins of those rows). The strip
-        // is painted by gapPaint(): frame colour on the clock page, page background + thin line on a full-screen page.
+        // is painted by gapPaint(): frame colour on the clock page, no strip at all on a one-piece page.
         gapInvalidate();
         gapPaint(0);
     }

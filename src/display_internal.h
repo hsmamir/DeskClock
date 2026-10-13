@@ -51,7 +51,7 @@ namespace disp
     // screen. faceH / infoH = card heights; faceY / infoY = screen y of the cards' top edges.
     extern TFT_eSPI tft;
     extern int16_t W, SW, H, faceH, infoH;
-    extern int16_t cardX, cardGap, cardR, faceY, infoY;
+    extern int16_t cardX, cardGap, cardGapBase, cardR, faceY, infoY;
     extern float sc; // scale relative to the 128 px wide real display (from SW, not W)
 
     inline int16_t u(float v) { return (int16_t)(v * sc + 0.5f); }
@@ -135,11 +135,11 @@ namespace disp
     extern bool alarmFlashOn;
 
     // ---- Cards / frame (display_core.cpp) ----
-    void cardsInit();                  // computes the layout from the screen size, the corner table, C_FRAME
-    void geometrySet(bool dateLayout); // card split: the Date page has a shorter upper card (more room for the calendar)
-    extern int16_t faceHMax, infoHMax; // tallest the two cards ever get (= the sprite heights)
-    void frameUpdate();                // keeps the frame colour in step with the theme; repaints it when needed
-    extern bool frameDirty;            // a full-screen page (OTA, portal) overwrote the frame: repaint it
+    void cardsInit();                                         // computes the layout from the screen size, the corner table, C_FRAME
+    void geometrySet(bool dateLayout, bool seamless = false); // card split: the Date page has a shorter upper card; seamless = one page, no strip
+    extern int16_t faceHMax, infoHMax;                        // tallest the two cards ever get (= the sprite heights)
+    void frameUpdate();                                       // keeps the frame colour in step with the theme; repaints it when needed
+    extern bool frameDirty;                                   // a full-screen page (OTA, portal) overwrote the frame: repaint it
 
     // ---- State readers (display_core.cpp) ----
     struct WeatherDetail

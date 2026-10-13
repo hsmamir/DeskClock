@@ -112,10 +112,10 @@ namespace disp
         int dim = daysInMonth(ti.tm_year + 1900, ti.tm_mon);
         int weeks = (off + dim + 6) / 7;
 
-        // Rows get as much height as the card allows: the grid starts right under the top edge and runs down to
+        // Rows get as much height as the card allows: the grid starts right at the top edge and runs down to
         // just above the page dots. The pitch is a float so a 6-week month spreads its rows evenly (an integer
         // pitch lost up to a pixel per row, and 6 rows of 8 px left no gap between the digits).
-        int16_t gridTop = u(2);
+        int16_t gridTop = 0;               // the weekday header sits 6 px above the join, so the first row is one pitch below it
         int16_t gridBottom = infoH - u(9); // the page dots (radius <= 2.5 u) sit below
         float pitchF = (float)(gridBottom - gridTop) / weeks;
         if (pitchF > u(13))

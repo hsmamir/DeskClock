@@ -177,7 +177,11 @@ void display_tick()
     // Only the clock page shows the face (the eyes). Date and Weather are full-screen pages; an alarm always
     // brings the face and the clock back, whatever page was open. (The diagnostics page draws its own two cards.)
     fullLayout = !alarm && isFullPage(mode);
-    geometrySet(fullLayout && mode == DisplayMode::DATE); // the Date page has its own card split
+    // The Date / Weather / diagnostics / reminder pages are ONE page: no strip between the two cards (seamless).
+    ReminderView rvNow;
+    const bool reminderOn = !alarm && reminder_get_active(rvNow);
+    const bool seamless = reminderOn || fullLayout || (!alarm && mode == DisplayMode::DIAG);
+    geometrySet(fullLayout && mode == DisplayMode::DATE && !reminderOn, seamless); // the Date page has its own card split
 
     struct tm ti;
     bool haveTime = timeSynced && getLocalTime(&ti, 0);
@@ -291,7 +295,7 @@ void display_tick()
         if (!alarm && reminder_get_active(rv))
         {
             fullLayout = false;
-            geometrySet(false); // the clock split, whatever page was open
+            geometrySet(false, true); // the clock split (one piece), whatever page was open
             if (REMINDER_FULL_BRIGHT)
                 backlightUpdate(false, true);
             lastMode = DisplayMode::DIAG; // so the page change back is noticed (and does not slide)
@@ -307,9 +311,9 @@ void display_tick()
     if (mode == DisplayMode::DIAG && !alarm)
     {
         lastMode = DisplayMode::DIAG; // so the page change is noticed on the way out
-        if (gapIsFull)
-            gapPaint(0); // coming from a full-screen page: the strip between the cards is frame colour again
-        if (!diagShown || now - lastDiagDrawMs >= 500)
+        // drawDiagScreen() paints the strip between the cards as page background and sets gapIsFull; if something
+        // repainted it as frame colour meanwhile (gapIsFull false) the page is redrawn at once
+        if (!diagShown || !gapIsFull || now - lastDiagDrawMs >= 500)
         {
             lastDiagDrawMs = now;
             diagShown = true;

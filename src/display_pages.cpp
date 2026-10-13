@@ -75,17 +75,15 @@ namespace disp
     }
 
     // ---- The strip between the two cards ----
-    // Clock layout: frame colour (two separate cards). Full-screen page: the page background, with a thin line
-    // in the middle, so the two halves read as one page. dx = how far the page is still to slide in: only the part
+    // Clock layout: frame colour (two separate cards). Full-screen page: the page background (no divider line), so
+    // the two halves read as one page. dx = how far the page is still to slide in: only the part
     // the new page already covers is repainted.
     //
-    // No flicker: the strip is repainted only when its look really changed (layout, background, frame or line
-    // colour), not on every redraw of the page, and every pixel is written once, straight in its final colour
-    // (the old "fill the strip, then draw the line over it" showed the bare strip for a moment, most visibly at
-    // the two ends of the line).
+    // No flicker: the strip is repainted only when its look really changed (layout, background or frame colour),
+    // not on every redraw of the page, and every pixel is written once, straight in its final colour.
     static bool gapSigOk = false; // what is on screen in the strip right now is described by the values below
     static bool gapSigFull = false;
-    static uint16_t gapSigBg = 0, gapSigFrame = 0, gapSigLine = 0;
+    static uint16_t gapSigBg = 0, gapSigFrame = 0;
     static int16_t gapSigY = 0;
 
     void gapInvalidate()
@@ -100,41 +98,12 @@ namespace disp
             int16_t gy = faceY + faceH;
             int16_t x = cardX + (dx > 0 ? dx : 0);
             int16_t right = cardX + W;
-            uint16_t lineCol = tint(C_SOFT, 0.3f);
             bool same = gapSigOk && gapSigFull == fullLayout && gapSigBg == C_BG && gapSigFrame == C_FRAME &&
-                        gapSigLine == lineCol && gapSigY == gy;
+                        gapSigY == gy;
             if (x < right && !same)
             {
                 if (fullLayout)
-                {
-                    bool line = false;
-#if FULLPAGE_DIVIDER
-                    line = cardGap >= 3;
-#endif
-                    if (!line)
-                        tft.fillRect(x, gy, right - x, cardGap, C_BG);
-                    else
-                    {
-                        int16_t ly = gy + cardGap / 2; // the row of the line
-                        int16_t x1 = imax(x, (int16_t)(cardX + u(8)));
-                        int16_t x2 = (int16_t)(right - u(8));
-                        tft.startWrite();
-                        if (ly > gy)
-                            tft.fillRect(x, gy, right - x, ly - gy, C_BG); // above the line
-                        if (x2 > x1)
-                        {
-                            if (x1 > x)
-                                tft.fillRect(x, ly, x1 - x, 1, C_BG);    // left of the line
-                            tft.drawFastHLine(x1, ly, x2 - x1, lineCol); // the line
-                            tft.fillRect(x2, ly, right - x2, 1, C_BG);   // right of the line
-                        }
-                        else
-                            tft.fillRect(x, ly, right - x, 1, C_BG);
-                        if (gy + cardGap > ly + 1)
-                            tft.fillRect(x, ly + 1, right - x, gy + cardGap - (ly + 1), C_BG); // below the line
-                        tft.endWrite();
-                    }
-                }
+                    tft.fillRect(x, gy, right - x, cardGap, C_BG);
                 else
                     tft.fillRect(x, gy, right - x, cardGap, C_FRAME);
             }
@@ -144,7 +113,6 @@ namespace disp
                 gapSigFull = fullLayout;
                 gapSigBg = C_BG;
                 gapSigFrame = C_FRAME;
-                gapSigLine = lineCol;
                 gapSigY = gy;
             }
         }

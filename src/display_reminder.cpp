@@ -124,7 +124,7 @@ namespace disp
             return;
         }
 
-        // compact: every line has the same pitch, the strip between the cards just sits between two of them. Line k-1 is
+        // compact: every line has the same pitch, also across the join of the two cards (there is no strip, see geometrySet). Line k-1 is
         // the last one in the upper card (its slot ends at the card's bottom edge), line k the first one in the lower
         // card (its slot starts at the card's top edge). k is the split that keeps the block closest to the centre.
         const int16_t topCap = topCapC(), botCap = botCapC();
@@ -302,10 +302,8 @@ namespace disp
         }
         if (drew)
         {
-            // the strip between the cards: page background, no divider line, so the two halves read as one screen
             gapInvalidate();
-            tft.fillRect(cardX, faceY + faceH, W, cardGap, C_BG);
-            gapIsFull = true; // the clock page then repaints it as frame colour again (see display.cpp)
+            gapIsFull = true; // one-piece page: the clock page then paints the strip between its cards again (see display.cpp)
         }
     }
 
