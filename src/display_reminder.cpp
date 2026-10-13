@@ -38,14 +38,20 @@ namespace disp
     static RLayout L;
 
     // ---- geometry shared by layout and drawing ----
-    static int16_t compactHeaderH() { return u(30); }
+    static int16_t compactHeaderH() { return u(32); }
     static int16_t botTextTop() { return u(3); }
     static int16_t botTextBottom() { return infoH - u(9); } // the countdown bar sits below
     static int16_t textWidthMax() { return W - 2 * u(7); }
 
-    // How many lines of font f fit in the lower card / in both cards (compact layout).
+    // How many lines of font f fit in the lower card (hero layout) / in each card (compact layout).
+    // In the compact layout the text is ONE block of equally spaced lines that continues across the strip between the
+    // cards, so each card may use its full height: the upper one from under the header to its bottom edge, the lower
+    // one from its top edge down to the countdown bar.
     static int slotsBottom(int f) { return (botTextBottom() - botTextTop()) / FONT_PITCH[f]; }
-    static int slotsTop(int f) { return (faceH - compactHeaderH() - u(3)) / FONT_PITCH[f]; }
+    static int16_t topCapC() { return faceH - (compactHeaderH() + u(3)); }
+    static int16_t botCapC() { return botTextBottom(); }
+    static int slotsTopC(int f) { return topCapC() / FONT_PITCH[f]; }
+    static int slotsBottomC(int f) { return botCapC() / FONT_PITCH[f]; }
 
     // ---- measuring: one font is loaded on tft at a time while the layout is worked out ----
     static int s_loaded = -1;
@@ -67,7 +73,7 @@ namespace disp
         size_t len = strlen(text);
         int slotsTotal[NFONTS];
         for (int f = 0; f < NFONTS; f++)
-            slotsTotal[f] = slotsBottom(f) + slotsTop(f);
+            slotsTotal[f] = slotsBottomC(f) + slotsTopC(f);
 
         fa::Span spans[MAX_LINES];
         fa::FitResult fr = fa::fit(text, len, textWidthMax(), NFONTS, slotsTotal, measureCb, nullptr, spans, MAX_LINES);
@@ -103,24 +109,44 @@ namespace disp
             fa::visual(buf, n, L.vis[i], LINE_BYTES, dir);
         }
 
-        // hero when every line fits in the lower card, else compact: the first lines go to the upper card
-        L.compact = fr.lines > slotsBottom(fr.font);
-        L.topLines = L.compact ? fr.lines - slotsBottom(fr.font) : 0;
-        if (L.topLines > slotsTop(fr.font))
-            L.topLines = slotsTop(fr.font);
-        const int botLines = fr.lines - L.topLines;
+        // hero when every line fits in the lower card, else compact: the block is split between the two cards
+        const int n = fr.lines;
         const int16_t ascent = (int16_t)(pitch * 0.74f); // baseline below the top of a line slot
+        L.compact = n > slotsBottom(fr.font);
+        L.topLines = 0;
+        if (!L.compact)
+        {
+            // hero: the block is centred in the lower card
+            int16_t areaH = botTextBottom() - botTextTop();
+            int16_t y0 = botTextTop() + (areaH - n * pitch) / 2;
+            for (int i = 0; i < n; i++)
+                L.baseline[i] = y0 + i * pitch + ascent;
+            return;
+        }
 
-        // each block is centred in its card (the upper one below the header row)
-        const int16_t topArea0 = compactHeaderH() + u(3), topAreaH = faceH - u(3) - topArea0;
-        const int16_t topY = topArea0 + (topAreaH - L.topLines * pitch) / 2;
-        for (int i = 0; i < L.topLines; i++)
-            L.baseline[i] = topY + i * pitch + ascent;
-        int16_t areaH = botTextBottom() - botTextTop();
-        int16_t blockH = botLines * pitch;
-        int16_t y0 = botTextTop() + (areaH - blockH) / 2;
-        for (int i = 0; i < botLines; i++)
-            L.baseline[L.topLines + i] = y0 + i * pitch + ascent;
+        // compact: every line has the same pitch, the strip between the cards just sits between two of them. Line k-1 is
+        // the last one in the upper card (its slot ends at the card's bottom edge), line k the first one in the lower
+        // card (its slot starts at the card's top edge). k is the split that keeps the block closest to the centre.
+        const int16_t topCap = topCapC(), botCap = botCapC();
+        const int sTop = slotsTopC(fr.font), sBot = slotsBottomC(fr.font);
+        const int kMin = imax(0, n - sBot), kMax = imin(n, sTop);
+        const int16_t wantStart = (topCap + botCap - n * pitch) / 2; // block start if both cards were one tall card
+        int bestK = kMin;
+        int bestCost = 32000;
+        for (int k = kMin; k <= kMax; k++)
+        {
+            int cost = abs(wantStart + k * pitch - topCap); // where the split would fall vs where the strip is
+            if (cost < bestCost)
+            {
+                bestCost = cost;
+                bestK = k;
+            }
+        }
+        L.topLines = bestK;
+        for (int i = 0; i < bestK; i++) // upper card: counted back from its bottom edge
+            L.baseline[i] = faceH - (bestK - i) * pitch + ascent;
+        for (int j = 0; bestK + j < n; j++) // lower card: counted down from its top edge
+            L.baseline[bestK + j] = j * pitch + ascent;
     }
 
     // ---- drawing ----
@@ -197,14 +223,14 @@ namespace disp
         {
             // Header: bell on the left, then a small "Reminder" label with the time under it (two rows). They used to sit
             // side by side in one row and the label (right-aligned) ran into the time digits on the 128 px display.
-            const int16_t cy = u(15);
+            const int16_t cy = u(16);
             drawBigBell(g, u(13), cy, u(5), dx, swing / 2, bell);
             char tm[8];
             snprintf(tm, sizeof(tm), "%02u:%02u", (unsigned)rv.hour, (unsigned)rv.minute);
             const int16_t tx = u(28);
             g.setTextDatum(TL_DATUM);
             g.drawString("Reminder", tx, u(4), 1); // built-in 6x8 font: stays clear of the "+N" counter (top right)
-            smoothText(g, ClockSm18, CLOCKSM18_CAPH, tm, tx, u(21), L_BASELINE, C_AMBER, C_BG);
+            smoothText(g, ClockSm18, CLOCKSM18_CAPH, tm, tx, u(22), L_BASELINE, C_AMBER, C_BG);
             g.drawFastHLine(u(6), compactHeaderH(), W - 2 * u(6), tint(C_SOFT, 0.31f));
             for (int i = 0; i < L.topLines; i++)
                 drawText(g, FONTS[L.font], L.vis[i], W / 2, L.baseline[i], C_BASELINE, C_WHITE);
