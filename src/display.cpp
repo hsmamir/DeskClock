@@ -161,6 +161,12 @@ void display_tick()
         lastInfoSig = 0xFFFFFFFFu; // the new sprites are empty: the info panel has to be drawn again
     }
 
+    // No sprites while a TLS connection is open: drawing the face straight on the panel is what made the screen
+    // flicker at every weather fetch / update check. The panel keeps showing the last finished frame, so simply
+    // hold it (a second or two) and carry on when the sprites are back. An alarm and the setup portal still draw.
+    if (spritesReleased && tlsActive && mood != Mood::ALARM_ALERT && !readPortalActive())
+        return;
+
     // While the WiFi setup portal is open, show how to join it instead of the face.
     if (readPortalActive())
     {
