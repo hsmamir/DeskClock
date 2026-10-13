@@ -18,6 +18,7 @@
 #include "web_ui.h"
 #include "reminders.h"
 #include "ota.h"
+#include "update_check.h"
 
 AppState g_state;
 SemaphoreHandle_t g_stateMutex;
@@ -154,6 +155,7 @@ static void timeTask(void *pvParameters)
     for (;;)
     {
         time_sync_tick();
+        update_tick(); // automatic firmware-update check (first one UPDATE_AUTO_FIRST_DELAY_MS after boot)
         vTaskDelay(tickDelay);
     }
 }
@@ -181,7 +183,7 @@ static void alarmTask(void *pvParameters)
     {
         alarm_tick();
         reminders_tick(); // due reminders: queue, sound, time-out
-        audio_tick(); // yawn / chime / boot sounds queued by the display (gentle, muted at night)
+        audio_tick();     // yawn / chime / boot sounds queued by the display (gentle, muted at night)
 #if TASK_WDT_SELFTEST
         // Pretend this task hung: stop reporting in. The watchdog must reset the chip
         // TASK_WDT_TIMEOUT_S seconds later ("Reset reason: TASK_WDT" on the next boot).
@@ -227,6 +229,7 @@ void setup()
 
     g_stateMutex = xSemaphoreCreateMutex();
     settings_init();           // load NVS settings + apply timezone before any task reads them
+    update_init();             // creates the update mutex; update_status() (display) and update_tick() need it
     pet_init();                // pet button statistics (needs the mutexes above)
     reminders_init();          // user reminders from flash (needs g_stateMutex)
     time_restore_from_flash(); // approximate clock from flash so the alarm works before/without WiFi

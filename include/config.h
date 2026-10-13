@@ -563,3 +563,22 @@ static inline bool isNightHour(int hour)
 #define REMINDER_REPEATS 2
 #define REMINDER_REPEAT_S 25
 #define REMINDER_FULL_BRIGHT 1
+
+// ---- Firmware update from GitHub Releases (update_check.cpp, "System" tab of the settings page) ----
+// The clock only ever installs a release YOU confirm on the page; see docs/releasing.md.
+//   UPDATE_ENABLED               1 = feature on, 0 = removed (the page then hides its update card).
+//                                Always off in the Wokwi build.
+//   UPDATE_REPO                  "owner/repo" of the GitHub repository whose Releases are checked.
+//                                Forks: change this to your own repository.
+//   UPDATE_MIN_FREE_HEAP         bytes of free heap needed before a check/install starts (TLS needs a lot)
+//   UPDATE_AUTO_CHECK            1 = the clock also checks by itself (never installs by itself)
+//   UPDATE_AUTO_FIRST_DELAY_MS   first automatic check this long after boot (WiFi + NTP must be ready)
+//   UPDATE_AUTO_CHECK_INTERVAL_MS time between automatic checks (12 h = twice a day)
+//   UPDATE_AUTO_RETRY_MS         after an automatic check that did not finish, ask again after this long
+#define UPDATE_ENABLED 1
+#define UPDATE_REPO "hsmamir/esp32-project"
+#define UPDATE_MIN_FREE_HEAP 60000
+#define UPDATE_AUTO_CHECK 1
+#define UPDATE_AUTO_FIRST_DELAY_MS (5UL * 60 * 1000)
+#define UPDATE_AUTO_CHECK_INTERVAL_MS (12UL * 60 * 60 * 1000)
+#define UPDATE_AUTO_RETRY_MS (30UL * 60 * 1000)
