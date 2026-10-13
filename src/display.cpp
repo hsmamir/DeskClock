@@ -17,9 +17,9 @@ static uint32_t happyUntilMs = 0;
 static bool portalScreenShown = false;
 static bool otaScreenShown = false;
 
-// While a firmware update runs only the progress screen is drawn, and the update needs every byte of heap:
-// a TLS connection with certificate checking wants ~60 KB at once, the three off-screen sprites below hold
-// 40-50 KB permanently. So they are released for the duration of the update and created again afterwards
+// A TLS connection (the weather fetch, the update check and the update itself) wants ~60 KB of contiguous heap
+// at once, the three off-screen sprites below hold 40-50 KB permanently. So they are released for as long as a
+// TLS connection is open (g_state.tlsUsers, see tls_lock.h) or an update runs, and created again afterwards
 // (Canvas::begin() already falls back to drawing straight on the screen when a sprite is missing).
 static bool spritesReleased = false;
 static int16_t digSprW = 0, digSprH = 0;
@@ -33,7 +33,7 @@ static void releaseSprites()
     digSpr.deleteSprite();
     digSprOk = false;
     spritesReleased = true;
-    Serial.printf("display: sprites released for the update (free heap %u, largest block %u)\n",
+    Serial.printf("display: sprites released for TLS / the update (free heap %u, largest block %u)\n",
                   (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMaxAllocHeap());
 }
 
@@ -131,12 +131,16 @@ void display_tick()
     DisplayMode mode = readDisplayMode();
     bool timeSynced = readTimeSynced();
 
+    // Memory for a TLS connection: while one is open (or a task waits for its turn) the sprites are freed and the
+    // normal screens are drawn straight on the display. The guard in tls_lock.cpp waits for this.
+    const bool tlsActive = readTlsActive();
+
     // A firmware update owns the screen: full brightness, progress only.
     int otaPct = readOtaPercent();
+    if ((otaPct >= 0 || tlsActive) && !spritesReleased)
+        releaseSprites();
     if (otaPct >= 0)
     {
-        if (!spritesReleased)
-            releaseSprites();
         backlightUpdate(false, true);
         drawOtaScreen(otaPct);
         otaScreenShown = true;
@@ -145,13 +149,16 @@ void display_tick()
     if (otaScreenShown)
     {
         // update failed (on success the clock reboots): back to normal
-        if (spritesReleased)
-            restoreSprites();
         tft.fillScreen(C_BG);
         frameDirty = true;
         otaScreenShown = false;
         otaDrawnPct = -1;
         lastInfoSig = 0xFFFFFFFFu;
+    }
+    if (spritesReleased && !tlsActive)
+    {
+        restoreSprites();
+        lastInfoSig = 0xFFFFFFFFu; // the new sprites are empty: the info panel has to be drawn again
     }
 
     // While the WiFi setup portal is open, show how to join it instead of the face.

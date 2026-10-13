@@ -32,6 +32,7 @@ struct AppState
     bool wifiPortalActive = false;    // WiFiManager setup portal is open (real hardware)
     volatile uint8_t modeHoldPct = 0; // Mode button held toward the diagnostics page: 0 = not shown, 1-100 = ring progress
     int8_t otaPercent = -1;           // OTA update progress 0-100; -1 = no update running
+    uint8_t tlsUsers = 0;             // tasks holding or waiting for a TLS connection (tls_lock.h); while > 0 the display frees its sprites
 
     // Weather cache, refreshed periodically by weather_tick()
     bool weatherValid = false;

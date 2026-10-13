@@ -324,6 +324,14 @@ namespace disp
         return p;
     }
 
+    bool readTlsActive()
+    {
+        xSemaphoreTake(g_stateMutex, portMAX_DELAY);
+        bool t = g_state.tlsUsers > 0;
+        xSemaphoreGive(g_stateMutex);
+        return t;
+    }
+
     void readWeather(bool &valid, float &tempC, int &code, uint32_t &updatedMs)
     {
         xSemaphoreTake(g_stateMutex, portMAX_DELAY);

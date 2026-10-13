@@ -163,6 +163,7 @@ namespace disp
     bool readTimeSynced();
     bool readPortalActive();
     int readOtaPercent();
+    bool readTlsActive(); // a TLS connection is open or about to be (weather, update): free the sprites
     void readWeather(bool &valid, float &tempC, int &code, uint32_t &updatedMs);
     void readWeatherDetail(WeatherDetail &d);
     void fmtAge(char *out, size_t n, uint32_t ageMs);

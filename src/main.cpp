@@ -70,7 +70,8 @@ static inline void watchdogFeed()
 // ---- Stack / heap report ----
 // Stack sizes below are in BYTES (arduino-esp32). Every STACK_REPORT_INTERVAL_S seconds the
 // Serial log shows how much stack each task has never used ("free min"). If a number
-// gets close to 0 the task is about to overflow: raise its stack in setup().
+// gets close to 0 the task is about to overflow: raise its stack in setup(). The same line shows the heap:
+// free now, largest free block now and lowest free ever.
 // 0 = no report.
 #ifndef STACK_REPORT_INTERVAL_S
 #define STACK_REPORT_INTERVAL_S 300
@@ -103,7 +104,10 @@ static void reportStacks()
     Serial.print("Stack free min (bytes):");
     for (uint8_t i = 0; i < s_taskCount; i++)
         Serial.printf(" %s=%u", s_tasks[i].name, (unsigned)uxTaskGetStackHighWaterMark(s_tasks[i].handle));
-    Serial.printf(" | heap free %u, lowest ever %u\n", (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMinFreeHeap());
+    // largest block = the biggest single allocation that would succeed now (a TLS session needs ~60 KB of it);
+    // lowest ever = the least total free heap since boot
+    Serial.printf(" | heap free %u, largest block %u, lowest free ever %u\n", (unsigned)ESP.getFreeHeap(),
+                  (unsigned)ESP.getMaxAllocHeap(), (unsigned)ESP.getMinFreeHeap());
 }
 #endif
 
