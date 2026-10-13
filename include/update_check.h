@@ -41,9 +41,6 @@ struct UpdateStatus
     uint32_t checkedMs = 0; // millis() of the last successful check (manual or automatic); 0 = none yet
 };
 
-// Call once from setup(), before the tasks start.
-void update_init();
-
 // Call every few seconds from any task: starts the automatic check when it is due
 // (UPDATE_AUTO_CHECK_INTERVAL_MS) and the clock is ready for it (WiFi, real time, memory).
 void update_tick();

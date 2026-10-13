@@ -6,7 +6,6 @@
 #if defined(USE_WOKWI_WIFI) || !UPDATE_ENABLED
 
 // The simulator (or a build with UPDATE_ENABLED 0) has no update feature.
-void update_init() {}
 void update_tick() {}
 UpdateStatus update_status() { return UpdateStatus(); }
 bool update_request_check() { return false; }
@@ -33,7 +32,13 @@ bool update_request_install(const String &, String &err)
 #include "update_certs.h"
 #include "tls_lock.h"
 
-static SemaphoreHandle_t s_mu = nullptr;
+// Created on first use (thread-safe function-local static, same pattern as tls_lock.cpp), so it does
+// not matter which task asks first and no init call is needed in setup().
+static SemaphoreHandle_t updateMutex()
+{
+    static SemaphoreHandle_t m = xSemaphoreCreateMutex();
+    return m;
+}
 static UpdateStatus s_st;
 static String s_binUrl, s_shaUrl;                          // found by the last check
 static bool s_running = false;                             // a worker task exists
@@ -44,8 +49,8 @@ namespace
 {
     struct Lock
     {
-        Lock() { xSemaphoreTake(s_mu, portMAX_DELAY); }
-        ~Lock() { xSemaphoreGive(s_mu); }
+        Lock() { xSemaphoreTake(updateMutex(), portMAX_DELAY); }
+        ~Lock() { xSemaphoreGive(updateMutex()); }
     };
 }
 
@@ -691,12 +696,6 @@ static bool startWorker(int mode, String &err)
         return false;
     }
     return true;
-}
-
-void update_init()
-{
-    if (!s_mu)
-        s_mu = xSemaphoreCreateMutex();
 }
 
 void update_tick()

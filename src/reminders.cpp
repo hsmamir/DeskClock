@@ -47,8 +47,18 @@ namespace
         char text[REMINDER_TEXT_MAX];
     };
 
-    SemaphoreHandle_t s_mtx = nullptr;     // list, queue, NVS
-    SemaphoreHandle_t s_viewMtx = nullptr; // s_view only (the display reads it every frame; never held long)
+    // Both mutexes are created on first use (thread-safe function-local statics, same pattern as
+    // tls_lock.cpp), so it does not matter which task asks first and reminders_init() does not create them.
+    SemaphoreHandle_t mtx() // list, queue, NVS
+    {
+        static SemaphoreHandle_t m = xSemaphoreCreateMutex();
+        return m;
+    }
+    SemaphoreHandle_t viewMtx() // s_view only (the display reads it every frame; never held long)
+    {
+        static SemaphoreHandle_t m = xSemaphoreCreateMutex();
+        return m;
+    }
     Entry s_e[REMINDER_MAX];
     int s_n = 0;
     uint8_t s_nextId = 1;
@@ -105,7 +115,7 @@ namespace
     }
 
     // ---- NVS ----
-    bool persist() // caller holds s_mtx
+    bool persist() // caller holds mtx()
     {
         Packed *pk = (Packed *)calloc(REMINDER_MAX, sizeof(Packed));
         if (!pk)
@@ -206,16 +216,16 @@ namespace
     }
 
     // ---- queue / view ----
-    void enqueue(uint8_t id, bool test, uint8_t hour, uint8_t minute, const char *text) // caller holds s_mtx
+    void enqueue(uint8_t id, bool test, uint8_t hour, uint8_t minute, const char *text) // caller holds mtx()
     {
         if (!test)
         {
             for (int i = 0; i < s_qn; i++)
                 if (s_q[i].id == id)
                     return; // already waiting
-            xSemaphoreTake(s_viewMtx, portMAX_DELAY);
+            xSemaphoreTake(viewMtx(), portMAX_DELAY);
             bool showing = s_view.active && s_view.id == id && !s_view.test;
-            xSemaphoreGive(s_viewMtx);
+            xSemaphoreGive(viewMtx());
             if (showing)
                 return;
         }
@@ -232,7 +242,7 @@ namespace
         strlcpy(p.text, text, sizeof(p.text));
     }
 
-    void scanDue(time_t nowT) // caller holds s_mtx
+    void scanDue(time_t nowT) // caller holds mtx()
     {
         struct tm ti;
         localtime_r(&nowT, &ti);
@@ -292,8 +302,6 @@ namespace
 
 void reminders_init()
 {
-    s_mtx = xSemaphoreCreateMutex();
-    s_viewMtx = xSemaphoreCreateMutex();
     s_n = 0;
     s_qn = 0;
     memset(&s_view, 0, sizeof(s_view));
@@ -335,7 +343,7 @@ void reminders_init()
 
 int reminders_list(Reminder *out, int cap)
 {
-    Lock l(s_mtx);
+    Lock l(mtx());
     int n = s_n < cap ? s_n : cap;
     for (int i = 0; i < n; i++)
         out[i] = s_e[i].r;
@@ -344,7 +352,7 @@ int reminders_list(Reminder *out, int cap)
 
 bool reminders_add(Reminder &r, const char **err)
 {
-    Lock l(s_mtx);
+    Lock l(mtx());
     if (s_n >= REMINDER_MAX)
     {
         *err = "too many reminders";
@@ -378,7 +386,7 @@ bool reminders_add(Reminder &r, const char **err)
 
 bool reminders_update(const Reminder &in, const char **err)
 {
-    Lock l(s_mtx);
+    Lock l(mtx());
     int idx = -1;
     for (int i = 0; i < s_n; i++)
         if (s_e[i].r.id == in.id)
@@ -405,7 +413,7 @@ bool reminders_update(const Reminder &in, const char **err)
 
 bool reminders_remove(uint8_t id)
 {
-    Lock l(s_mtx);
+    Lock l(mtx());
     for (int i = 0; i < s_n; i++)
     {
         if (s_e[i].r.id != id)
@@ -421,27 +429,27 @@ bool reminders_remove(uint8_t id)
 
 bool reminders_get_sound()
 {
-    Lock l(s_mtx);
+    Lock l(mtx());
     return s_sound;
 }
 
 void reminders_set_sound(bool on)
 {
-    Lock l(s_mtx);
+    Lock l(mtx());
     s_sound = on;
     persist();
 }
 
 bool reminder_get_active(ReminderView &v)
 {
-    Lock l(s_viewMtx);
+    Lock l(viewMtx());
     v = s_view;
     return v.active;
 }
 
 void reminder_dismiss()
 {
-    Lock l(s_viewMtx);
+    Lock l(viewMtx());
     if (s_view.active)
     {
         s_view.active = false;
@@ -453,7 +461,7 @@ bool reminder_consume_press()
 {
     if (alarm_get_state() == AlarmState::RINGING)
         return false;
-    Lock l(s_viewMtx);
+    Lock l(viewMtx());
     if (!s_view.active)
         return false;
     s_view.active = false;
@@ -469,7 +477,7 @@ bool reminder_request_test(const char *text)
     time_t nowT = time(nullptr);
     struct tm ti;
     localtime_r(&nowT, &ti);
-    Lock l(s_mtx);
+    Lock l(mtx());
     enqueue(0, true, (uint8_t)ti.tm_hour, (uint8_t)ti.tm_min, clean);
     return true;
 }
@@ -479,7 +487,7 @@ void reminders_tick()
     uint32_t now = millis();
 
     // 1. the visible one: time out, repeat the sound
-    xSemaphoreTake(s_viewMtx, portMAX_DELAY);
+    xSemaphoreTake(viewMtx(), portMAX_DELAY);
     bool active = s_view.active;
     if (active && s_view.timeoutMs && (uint32_t)(now - s_view.shownMs) >= s_view.timeoutMs)
     {
@@ -487,7 +495,7 @@ void reminders_tick()
         s_gapUntilMs = now + GAP_MS;
         Serial.println("Reminders: closed by itself");
     }
-    xSemaphoreGive(s_viewMtx);
+    xSemaphoreGive(viewMtx());
     if (active && s_repeatsLeft && (int32_t)(now - s_nextRepeatMs) >= 0 && alarm_get_state() != AlarmState::RINGING)
     {
         s_repeatsLeft--;
@@ -495,7 +503,7 @@ void reminders_tick()
         playSound();
     }
 
-    Lock l(s_mtx);
+    Lock l(mtx());
 
     // 2. once a second: which reminders are due?
     time_t nowT = time(nullptr);
@@ -506,7 +514,7 @@ void reminders_tick()
     }
 
     // 3. bring the next one up when the screen is free and the alarm is quiet
-    xSemaphoreTake(s_viewMtx, portMAX_DELAY);
+    xSemaphoreTake(viewMtx(), portMAX_DELAY);
     active = s_view.active;
     if (!active && s_qn > 0 && (int32_t)(now - s_gapUntilMs) >= 0 && alarm_get_state() != AlarmState::RINGING)
     {
@@ -528,11 +536,11 @@ void reminders_tick()
         s_nextRepeatMs = now + (uint32_t)REMINDER_REPEAT_S * 1000UL;
         Serial.printf("Reminders: showing #%u\n", (unsigned)p.id);
         s_view.waiting = (uint8_t)s_qn;
-        xSemaphoreGive(s_viewMtx);
+        xSemaphoreGive(viewMtx());
         playSound();
         return;
     }
     if (active)
         s_view.waiting = (uint8_t)s_qn;
-    xSemaphoreGive(s_viewMtx);
+    xSemaphoreGive(viewMtx());
 }

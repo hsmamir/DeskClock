@@ -229,7 +229,6 @@ void setup()
 
     g_stateMutex = xSemaphoreCreateMutex();
     settings_init();           // load NVS settings + apply timezone before any task reads them
-    update_init();             // creates the update mutex; update_status() (display) and update_tick() need it
     pet_init();                // pet button statistics (needs the mutexes above)
     reminders_init();          // user reminders from flash (needs g_stateMutex)
     time_restore_from_flash(); // approximate clock from flash so the alarm works before/without WiFi
