@@ -14,6 +14,19 @@
 #define WOKWI_WIFI_PASSWORD ""
 #define WIFI_CONNECT_TIMEOUT_MS 15000
 
+// ---- Power / brownout ----
+// A brownout reset means the 3.3 V rail dipped below the chip's threshold, usually when the servo
+// starts, the speaker plays and the WiFi radio transmits at the same moment. These two settings
+// lower the chip's own peak current; they do not replace a separate servo supply and a bulk
+// capacitor (470-1000 uF) next to the ESP32.
+// CPU_FREQ_MHZ: 80, 160 or 240. WiFi needs at least 80. 160 draws clearly less than 240; the
+// display (SPI on the 80 MHz APB clock) and the servo PWM are not affected by it.
+#define CPU_FREQ_MHZ 160
+// WIFI_TX_POWER: a wifi_power_t value, e.g. WIFI_POWER_19_5dBm (the default of the core),
+// WIFI_POWER_15dBm, WIFI_POWER_11dBm, WIFI_POWER_8_5dBm. Lower = shorter range: if the clock starts
+// losing the router or the update/weather TLS requests fail more often, go one step up.
+#define WIFI_TX_POWER WIFI_POWER_11dBm
+
 // ---- NTP ----
 #define NTP_SERVER "pool.ntp.org"
 #define NTP_RESYNC_INTERVAL_MS (6UL * 60 * 60 * 1000) // resync every 6h

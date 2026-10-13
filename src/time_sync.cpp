@@ -168,11 +168,21 @@ static void connectWifi()
 
 #else
 
+// Lower radio transmit power = lower current peaks (brownout, see config.h). Needs the WiFi driver to be
+// started, so it is called after WiFi.mode() and again after WiFiManager is done: the portal switches
+// the mode (AP+STA) and may restart the driver.
+static void applyWifiTxPower()
+{
+    bool ok = WiFi.setTxPower(WIFI_TX_POWER);
+    Serial.printf("WiFi: TX power %s, now %.1f dBm\n", ok ? "set" : "NOT set", WiFi.getTxPower() / 4.0f);
+}
+
 // Real hardware: WiFiManager tries the saved network first and only opens the
 // setup portal (blocking, up to WIFI_PORTAL_TIMEOUT_SEC) if that fails.
 static void connectWifi()
 {
     WiFi.mode(WIFI_STA);
+    applyWifiTxPower();
 
     WiFiManager wm;
     wm.setConfigPortalTimeout(WIFI_PORTAL_TIMEOUT_SEC);
@@ -192,6 +202,7 @@ static void connectWifi()
 
     wm.autoConnect(WIFI_PORTAL_AP_NAME);
     setPortalActive(false);
+    applyWifiTxPower();
 }
 
 #endif

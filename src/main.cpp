@@ -224,6 +224,8 @@ static void webTask(void *pvParameters)
 
 void setup()
 {
+    // Before Serial.begin(): the UART baud divider is computed from the clock that is running then.
+    setCpuFrequencyMhz(CPU_FREQ_MHZ); // lower peak current (see "Power / brownout" in config.h)
     Serial.begin(115200);
     boot_log_init(); // counts the boot + keeps the reset reason in flash (and prints it)
 
