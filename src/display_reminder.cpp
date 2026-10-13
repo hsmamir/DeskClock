@@ -1,7 +1,10 @@
-// display_reminder.cpp - the full-screen reminder: a bell, the time it was set for and the text, in Persian (Vazirmatn) or any
-// other language the font has.
+// display_reminder.cpp - the full-screen reminder: a bell, the time it was set for and the text. Everything the clock itself
+// writes here is English ("Reminder", the digits); the only Persian (Vazirmatn) or other-language text on this screen is the
+// text the user typed for the reminder.
 //
-// Like the diagnostics page it is drawn into the two existing cards, so it needs no extra RAM. Two layouts, picked by the
+// It is drawn into the two existing cards (no extra RAM) but looks like ONE page: the strip between the cards gets the page
+// background (no frame colour, no divider line) and only the outer corners are rounded, like the Date / Weather pages.
+// Two layouts, picked by the
 // length of the text:
 //   hero     (short text)  upper card: bell, label, big time.   lower card: the text, centred.
 //   compact  (long text)   upper card: one header row, then the first lines.   lower card: the rest of the lines.
@@ -181,23 +184,27 @@ namespace disp
         }
         const uint16_t bell = C_AMBER;
         const uint16_t labelCol = mixColor(C_SOFT, C_WHITE, 0.5f);
-        char lab[48];
-        fa::visual("یادآوری", strlen("یادآوری"), lab, sizeof(lab), fa::DIR_RTL);
+        g.setTextColor(labelCol, C_BG);
 
         if (!L.compact)
         {
             drawBigBell(g, W / 2, u(20), u(7), dx, swing, bell);
-            drawText(g, Vazir14, lab, W / 2, u(44), C_BASELINE, labelCol);
+            g.setTextDatum(MC_DATUM);
+            g.drawString("Reminder", W / 2, u(41), 2);
             drawBigTime(g, W / 2, u(51), u(26), rv.hour, rv.minute, C_AMBER);
         }
         else
         {
-            const int16_t cy = u(17);
-            drawBigBell(g, u(15), cy, u(5), dx, swing / 2, bell);
+            // Header: bell on the left, then a small "Reminder" label with the time under it (two rows). They used to sit
+            // side by side in one row and the label (right-aligned) ran into the time digits on the 128 px display.
+            const int16_t cy = u(15);
+            drawBigBell(g, u(13), cy, u(5), dx, swing / 2, bell);
             char tm[8];
             snprintf(tm, sizeof(tm), "%02u:%02u", (unsigned)rv.hour, (unsigned)rv.minute);
-            smoothText(g, ClockSm18, CLOCKSM18_CAPH, tm, u(30), cy + 1, L_BASELINE, C_AMBER, C_BG);
-            drawText(g, Vazir14, lab, W - u(7), cy + 6, R_BASELINE, labelCol);
+            const int16_t tx = u(28);
+            g.setTextDatum(TL_DATUM);
+            g.drawString("Reminder", tx, u(4), 1); // built-in 6x8 font: stays clear of the "+N" counter (top right)
+            smoothText(g, ClockSm18, CLOCKSM18_CAPH, tm, tx, u(21), L_BASELINE, C_AMBER, C_BG);
             g.drawFastHLine(u(6), compactHeaderH(), W - 2 * u(6), tint(C_SOFT, 0.31f));
             for (int i = 0; i < L.topLines; i++)
                 drawText(g, FONTS[L.font], L.vis[i], W / 2, L.baseline[i], C_BASELINE, C_WHITE);
@@ -252,17 +259,27 @@ namespace disp
 
         const uint32_t sec = rv.timeoutMs ? (now - rv.shownMs) / 1000 : 0;
         const uint32_t sig = (rv.seq << 12) ^ (sec & 0xFFF) ^ ((uint32_t)rv.waiting << 24);
+        bool drew = false;
         if (reentered || sig != botSig)
         {
             botSig = sig;
             drawBottomCard(infoCv.begin(), rv, now);
-            infoCv.end();
+            infoCv.endAt(0, CORNERS_BOT); // outer corners only: one page, not two cards
+            drew = true;
         }
         if (reentered || now - lastTopMs >= 80)
         {
             lastTopMs = now;
             drawTopCard(faceCv.begin(), rv, now);
-            faceCv.end();
+            faceCv.endAt(0, CORNERS_TOP);
+            drew = true;
+        }
+        if (drew)
+        {
+            // the strip between the cards: page background, no divider line, so the two halves read as one screen
+            gapInvalidate();
+            tft.fillRect(cardX, faceY + faceH, W, cardGap, C_BG);
+            gapIsFull = true; // the clock page then repaints it as frame colour again (see display.cpp)
         }
     }
 
