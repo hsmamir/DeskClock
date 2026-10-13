@@ -1,4 +1,5 @@
 #pragma once
+#include <stdint.h>
 #include <time.h>
 
 // Real sunrise / sunset from the saved coordinates (Settings.latitude/longitude)
@@ -30,6 +31,18 @@ bool sun_is_day(const struct tm &local);
 // (+SUN_NIGHT_END_AFTER_SUNRISE_H). Otherwise / if the sun can't be computed: the
 // fixed NIGHT_START_HOUR..NIGHT_END_HOUR window.
 bool sun_is_night(const struct tm &local);
+
+// ---- Eyes sleep schedule (fixed hours from config.h, independent of the sun) ----
+//   AWAKE: EYES_WAKE_HOUR .. EYES_DROWSY_START_HOUR  (normal daytime eyes)
+//   DROWSY: EYES_DROWSY_START_HOUR .. EYES_SLEEP_START_HOUR  (sleepy, half-closed lids)
+//   SLEEP: EYES_SLEEP_START_HOUR .. EYES_WAKE_HOUR next morning (fast asleep)
+enum class EyePhase : uint8_t
+{
+    AWAKE,
+    DROWSY,
+    SLEEP
+};
+EyePhase eyes_phase(const struct tm &local);
 
 // ---- Moon phase ----
 // Age of the moon as a fraction of the synodic month for a UTC time:

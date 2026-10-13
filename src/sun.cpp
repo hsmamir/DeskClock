@@ -199,3 +199,13 @@ bool sun_is_night(const struct tm &local)
 }
 
 #endif // ARDUINO
+
+EyePhase eyes_phase(const struct tm &local)
+{
+    const int h = local.tm_hour;
+    if (h >= EYES_SLEEP_START_HOUR || h < EYES_WAKE_HOUR)
+        return EyePhase::SLEEP;
+    if (h >= EYES_DROWSY_START_HOUR)
+        return EyePhase::DROWSY;
+    return EyePhase::AWAKE;
+}

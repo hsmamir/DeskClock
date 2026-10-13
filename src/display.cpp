@@ -195,8 +195,10 @@ void display_tick()
     themeUpdate(haveTime, ti, now); // background / accent follow the time of day
     frameUpdate();                  // the frame around the cards follows the card background
 
-    bool night = haveTime && sun_is_night(ti);
-    bool sleepy = night && !alarm;
+    bool night = haveTime && sun_is_night(ti); // backlight dimming, muted sound: still follows the sun
+    // The eyes follow their own fixed schedule: normal until 21:00, drowsy 21-23, asleep 23 -> morning.
+    const EyePhase eyePhase = haveTime ? eyes_phase(ti) : EyePhase::AWAKE;
+    bool sleepy = eyePhase != EyePhase::AWAKE && !alarm;
 
     // Dim at night; an alarm always gets full brightness, immediately.
     backlightUpdate(night && !alarm, alarm);
@@ -274,6 +276,8 @@ void display_tick()
         pin.ti = haveTime ? &ti : nullptr;
         pin.night = night;
         pin.sleepy = sleepy;
+        pin.drowsyWin = eyePhase == EyePhase::DROWSY;
+        pin.sleepWin = eyePhase == EyePhase::SLEEP;
         pin.sunny = scn.day && scn.weatherKnown && scn.code == 0 && scn.arc >= 0.25f && scn.arc <= 0.75f;
         pin.sunrise = ambientSunriseFlash(now) > 0.001f;
         pin.offline = offline;

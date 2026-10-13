@@ -101,24 +101,11 @@ namespace disp
         actDurMs = dur;
     }
 
-    // Minutes until night mode starts (same rule as sun_is_night); < 0 when there is no such moment today.
+    // Minutes until the eyes get drowsy (EYES_DROWSY_START_HOUR); negative once that hour has passed today.
     static float minutesToNight(const struct tm &ti)
     {
-        float startH;
-        if (!NIGHT_FOLLOWS_SUN || !SUN_ENABLED)
-            startH = (float)NIGHT_START_HOUR;
-        else
-        {
-            SunTimes s = sun_today(ti);
-            if (!s.valid)
-                startH = (float)NIGHT_START_HOUR;
-            else if (s.polarNight || s.midnightSun)
-                return -1.0f;
-            else
-                startH = s.setH + (float)SUN_NIGHT_START_AFTER_SUNSET_H;
-        }
         float nowH = ti.tm_hour + ti.tm_min / 60.0f;
-        return (startH - nowH) * 60.0f;
+        return ((float)EYES_DROWSY_START_HOUR - nowH) * 60.0f;
     }
 
     static float clampGaze(float v)
@@ -339,13 +326,16 @@ namespace disp
 
         // ---------- 3. sleep ----------
         const bool stayAwake = (int32_t)(now - stayAwakeUntilMs) < 0;
-        const bool wantSleep = in.night && in.haveTime && !in.alarm && !snoozed && !preAlarm && !sulking && !stayAwake;
+        // Fixed schedule: drowsy from EYES_DROWSY_START_HOUR, fast asleep from EYES_SLEEP_START_HOUR.
+        const bool canRest = in.haveTime && !in.alarm && !snoozed && !preAlarm && !sulking && !stayAwake;
+        const bool wantDrowsy = (in.drowsyWin || in.sleepWin) && canRest;
+        const bool wantSleep = in.sleepWin && canRest;
         if (in.alarm || preAlarm)
             slp = Sleep::AWAKE;
         switch (slp)
         {
         case Sleep::AWAKE:
-            if (wantSleep)
+            if (wantDrowsy)
             {
                 slp = Sleep::DROWSY;
                 slpStartMs = now;
@@ -367,13 +357,13 @@ namespace disp
                 yawnsDone = 2;
                 exprForce(Expr::YAWN, now, 2200);
             }
-            if (!wantSleep)
+            if (!wantDrowsy)
             {
                 slp = Sleep::WAKING;
                 slpStartMs = now;
                 wakeFrom = P.lidBias;
             }
-            else if (t >= SLEEP_RAMP_MS)
+            else if (t >= SLEEP_RAMP_MS && wantSleep) // before 23:00 the lids just stay half closed
             {
                 slp = Sleep::SETTLING;
                 slpStartMs = now;
@@ -439,7 +429,7 @@ namespace disp
 
         // yawns: in the last stretch before night mode, and once when he is kept awake at night
         bool evening = false;
-        if (IDLE_YAWN_ENABLED && in.haveTime && in.ti && !in.night)
+        if (IDLE_YAWN_ENABLED && in.haveTime && in.ti && !in.drowsyWin && !in.sleepWin)
         {
             float toNight = minutesToNight(*in.ti);
             evening = toNight > 0 && toNight <= (float)IDLE_YAWN_EVENING_MIN;
@@ -451,9 +441,9 @@ namespace disp
             eveningArmed = true;
             nextYawnAtMs = now + (uint32_t)random(IDLE_YAWN_MIN_MIN, IDLE_YAWN_MAX_MIN + 1) * 60000UL / 2; // the first one comes sooner
         }
-        if (!(in.night && stayAwake))
+        if (!((in.drowsyWin || in.sleepWin) && stayAwake))
             lateYawnDone = false;
-        const bool lateYawn = IDLE_YAWN_ENABLED && in.night && stayAwake && !lateYawnDone &&
+        const bool lateYawn = IDLE_YAWN_ENABLED && (in.drowsyWin || in.sleepWin) && stayAwake && !lateYawnDone &&
                               (int32_t)(stayAwakeUntilMs - now) <= (int32_t)(SLEEP_STAY_AWAKE_S * 1000UL - IDLE_YAWN_LATE_S * 1000UL);
 
         if (canAct)

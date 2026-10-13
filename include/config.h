@@ -326,7 +326,7 @@ static_assert(AMBIENT_MOTES >= 3 && AMBIENT_MOTES <= 5, "AMBIENT_MOTES must be 3
 #define SERVO_LOOK_DEG 14
 #define SERVO_LOOK_DIR 1
 #define IDLE_YAWN_ENABLED 1
-#define IDLE_YAWN_EVENING_MIN 90
+#define IDLE_YAWN_EVENING_MIN 0 // 0 = no yawns before EYES_DROWSY_START_HOUR (eyes stay "daytime" until then)
 #define IDLE_YAWN_MIN_MIN 12
 #define IDLE_YAWN_MAX_MIN 26
 #define IDLE_YAWN_LATE_S 25
@@ -446,6 +446,24 @@ static_assert(AMBIENT_MOTES >= 3 && AMBIENT_MOTES <= 5, "AMBIENT_MOTES must be 3
 #ifndef NIGHT_END_HOUR
 #define NIGHT_END_HOUR 6 // up to 05:59
 #endif
+
+// ---- Eyes sleep schedule (fixed clock hours, NOT tied to sunset) ----
+// The eyes behave exactly like in the daytime until EYES_DROWSY_START_HOUR. From then until
+// EYES_SLEEP_START_HOUR they are drowsy (lids sink and stay half closed, two yawns). From
+// EYES_SLEEP_START_HOUR until EYES_WAKE_HOUR the next morning they are fast asleep.
+// (Backlight dimming, muted sound and the sky / colour theme still follow NIGHT_* above.)
+#ifndef EYES_DROWSY_START_HOUR
+#define EYES_DROWSY_START_HOUR 21 // 21:00
+#endif
+#ifndef EYES_SLEEP_START_HOUR
+#define EYES_SLEEP_START_HOUR 23 // 23:00
+#endif
+#ifndef EYES_WAKE_HOUR
+#define EYES_WAKE_HOUR 6 // 06:00 next morning
+#endif
+static_assert(EYES_WAKE_HOUR < EYES_DROWSY_START_HOUR && EYES_DROWSY_START_HOUR < EYES_SLEEP_START_HOUR &&
+                  EYES_SLEEP_START_HOUR <= 24,
+              "need EYES_WAKE_HOUR < EYES_DROWSY_START_HOUR < EYES_SLEEP_START_HOUR <= 24");
 
 // How the backlight is dimmed at night:
 //   0 = NO PWM. The pin stays steady HIGH and only its drive strength is

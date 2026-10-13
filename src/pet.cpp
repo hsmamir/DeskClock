@@ -201,7 +201,7 @@ void pet_on_press(uint32_t now)
     struct tm ti;
     bool timeOk = synced && getLocalTime(&ti, 0);
     bool exact = timeOk && !approx; // a clock restored from flash may be behind: don't trust it for "morning" / "missed you"
-    bool night = timeOk && sun_is_night(ti);
+    bool night = timeOk && eyes_phase(ti) != EyePhase::AWAKE; // sleepy-pet reaction only when the eyes are sleepy
     time_t epoch = timeOk ? time(nullptr) : 0;
     bool weatherOk = wv && (uint32_t)(now - wMs) <= SCENE_WEATHER_MAX_AGE_MS;
 

@@ -353,7 +353,9 @@ namespace disp
         bool haveTime;
         const struct tm *ti;
         bool night;          // sun_is_night
-        bool sleepy;         // night && !alarm (the old "tired eyes" flag)
+        bool sleepy;         // eyes drowsy or asleep (fixed schedule) && !alarm
+        bool drowsyWin;      // inside EYES_DROWSY_START_HOUR .. EYES_SLEEP_START_HOUR
+        bool sleepWin;       // inside EYES_SLEEP_START_HOUR .. EYES_WAKE_HOUR
         bool sunny;          // bright clear day around noon
         bool sunrise;        // the warm sunrise flash is running
         bool offline;        // WiFi gone long enough for the worried eyes
