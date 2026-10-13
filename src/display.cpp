@@ -17,6 +17,42 @@ static uint32_t happyUntilMs = 0;
 static bool portalScreenShown = false;
 static bool otaScreenShown = false;
 
+// While a firmware update runs only the progress screen is drawn, and the update needs every byte of heap:
+// a TLS connection with certificate checking wants ~60 KB at once, the three off-screen sprites below hold
+// 40-50 KB permanently. So they are released for the duration of the update and created again afterwards
+// (Canvas::begin() already falls back to drawing straight on the screen when a sprite is missing).
+static bool spritesReleased = false;
+static int16_t digSprW = 0, digSprH = 0;
+
+static void releaseSprites()
+{
+    faceCv.spr.deleteSprite();
+    faceCv.ok = false;
+    infoCv.spr.deleteSprite();
+    infoCv.ok = false;
+    digSpr.deleteSprite();
+    digSprOk = false;
+    spritesReleased = true;
+    Serial.printf("display: sprites released for the update (free heap %u, largest block %u)\n",
+                  (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMaxAllocHeap());
+}
+
+static void restoreSprites()
+{
+    faceCv.spr.setColorDepth(16);
+    faceCv.ok = (faceCv.spr.createSprite(faceCv.w, faceCv.sh) != nullptr);
+    infoCv.spr.setColorDepth(16);
+    infoCv.ok = (infoCv.spr.createSprite(infoCv.w, infoCv.sh) != nullptr);
+    if (CLOCK_DIGIT_ANIM && infoCv.ok && digSprW > 0)
+    {
+        digSpr.setColorDepth(16);
+        digSprOk = (digSpr.createSprite(digSprW, digSprH) != nullptr);
+    }
+    spritesReleased = false;
+    Serial.printf("display: sprites restored: face=%s info=%s digit=%s (free heap %u)\n", faceCv.ok ? "ok" : "fallback",
+                  infoCv.ok ? "ok" : "fallback", digSprOk ? "ok" : "off", (unsigned)ESP.getFreeHeap());
+}
+
 // How far the sun (by day, 0 = sunrise .. 1 = sunset) or the moon (by night, 0 = sunset ..
 // 1 = next sunrise) has travelled along its path across the sky. -1 = no sensible value
 // (polar day / night): the scene then keeps the sun / moon in the corner.
@@ -76,8 +112,10 @@ void display_init()
     {
         int16_t dw, dh;
         clockMetrics(dw, dh);
+        digSprW = dw + 2 * DIG_PAD;
+        digSprH = dh + 2 * DIG_PAD;
         digSpr.setColorDepth(16);
-        digSprOk = (digSpr.createSprite(dw + 2 * DIG_PAD, dh + 2 * DIG_PAD) != nullptr);
+        digSprOk = (digSpr.createSprite(digSprW, digSprH) != nullptr);
     }
     Serial.printf("display sprites: face=%s info=%s digit=%s (free heap %u)\n",
                   f ? "ok" : "fallback", i ? "ok" : "fallback", digSprOk ? "ok" : "off",
@@ -97,6 +135,8 @@ void display_tick()
     int otaPct = readOtaPercent();
     if (otaPct >= 0)
     {
+        if (!spritesReleased)
+            releaseSprites();
         backlightUpdate(false, true);
         drawOtaScreen(otaPct);
         otaScreenShown = true;
@@ -105,6 +145,8 @@ void display_tick()
     if (otaScreenShown)
     {
         // update failed (on success the clock reboots): back to normal
+        if (spritesReleased)
+            restoreSprites();
         tft.fillScreen(C_BG);
         frameDirty = true;
         otaScreenShown = false;

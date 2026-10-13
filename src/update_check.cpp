@@ -175,6 +175,9 @@ static bool openUrl(WiFiClientSecure &client, HTTPClient &http, String url, bool
     {
         if (!allowedUrl(url))
         {
+            // only the host is logged: the rest of a download URL carries a temporary signature
+            Serial.printf("Update: refusing a redirect to %s (host not on the GitHub allow-list)\n",
+                          url.startsWith("https://") ? hostOf(url).c_str() : "a non-https address");
             err = "redirect";
             return false;
         }
@@ -204,6 +207,8 @@ static bool openUrl(WiFiClientSecure &client, HTTPClient &http, String url, bool
                 break;
             char msg[100] = {0};
             int tlsErr = client.lastError(msg, sizeof(msg));
+            for (char *c = msg; *c; c++)
+                *c = tolower((unsigned char)*c); // "Memory allocation failed" / "Allocation of memory failed"
             if (tlsErr == 0 || strstr(msg, "allocation") == nullptr)
                 break; // some other connection problem: not worth repeating
             Serial.printf("Update: out of memory during the TLS handshake (%s), heap free %u, largest block %u; retry %d\n",
@@ -212,18 +217,25 @@ static bool openUrl(WiFiClientSecure &client, HTTPClient &http, String url, bool
             client.stop();
             vTaskDelay(pdMS_TO_TICKS(2500));
         }
+        Serial.printf("Update: %s -> HTTP %d\n", hostOf(url).c_str(), code);
         if (code == 200)
             return true;
         if (code == 301 || code == 302 || code == 303 || code == 307 || code == 308)
         {
             String loc = http.header("Location");
+            String from = hostOf(url);
             http.end();
             client.stop();
             if (loc.length() == 0)
             {
+                Serial.println("Update: redirect without a Location header");
                 err = "redirect";
                 return false;
             }
+            if (loc.startsWith("/")) // relative redirect: same host
+                loc = "https://" + from + loc;
+            Serial.printf("Update: redirect to %s (%u characters)\n",
+                          loc.startsWith("https://") ? hostOf(loc).c_str() : "a non-https address", (unsigned)loc.length());
             url = loc;
             continue;
         }
@@ -538,6 +550,13 @@ static void doInstall()
         return;
     }
     setOtaPercent(0);
+
+    // The display task frees its off-screen sprites now that only the progress screen is shown (see
+    // display.cpp). Give it a moment: the TLS handshake needs that memory at once.
+    for (int waited = 0; waited < 3000 && ESP.getMaxAllocHeap() < 60000; waited += 100)
+        vTaskDelay(pdMS_TO_TICKS(100));
+    Serial.printf("Update: memory for the download: heap free %u, largest block %u\n", (unsigned)ESP.getFreeHeap(),
+                  (unsigned)ESP.getMaxAllocHeap());
 
     // 1) the published SHA-256 of the file (64 hex characters, as written by `sha256sum`)
     String expected;
