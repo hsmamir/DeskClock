@@ -7,6 +7,7 @@
 #include "alarm_ctrl.h"
 #include "pet.h"
 #include "settings.h"
+#include "reminders.h"
 
 // Each button wires one leg to its GPIO and the other leg to GND.
 // INPUT_PULLUP holds the pin HIGH when idle, so a press reads LOW.
@@ -78,10 +79,11 @@ static void triggerPetHappy()
 // An alarm replaces the mood by itself, so it always wins.
 static uint32_t petPressedAtMs = 0;
 static bool petPurrHandled = false; // this hold already purred (or was not allowed to)
+static bool petSwallow = false;     // this press closed a reminder: it is used up (no pet reaction, no purr)
 
 static void updatePurr(uint32_t now)
 {
-    bool held = btnPet.lastStable;
+    bool held = btnPet.lastStable && !petSwallow;
     uint32_t heldMs = (uint32_t)(now - petPressedAtMs);
 
     if (!held)
@@ -149,11 +151,23 @@ static void toggleDiagPage()
 // holding MODE_LONG_PRESS_MS acts while still held. Returns true on any activity.
 static uint32_t modePressedAtMs = 0;
 static bool modeLongHandled = false;
+static bool modeSwallow = false; // this press closed a reminder
 
 static bool handleModeButton()
 {
     BtnEvent ev = pollButton(btnMode);
     uint32_t now = millis();
+
+    // A visible reminder: this press closes it and is used up (no page change, no hold ring) until released.
+    if (ev == BtnEvent::PRESSED && reminder_consume_press())
+        modeSwallow = true;
+    if (modeSwallow)
+    {
+        g_state.modeHoldPct = 0;
+        if (ev == BtnEvent::RELEASED)
+            modeSwallow = false;
+        return true;
+    }
 
     // progress ring for the display task (only when the hold would OPEN the diagnostics
     // page; on that page a plain tap already leaves it)
@@ -245,6 +259,8 @@ static bool handleAlarmButton()
         xSemaphoreGive(g_stateMutex);
         if (ringing)
             alarm_request_snooze();
+        else if (reminder_consume_press())
+            alarmLongHandled = true; // closed a reminder: holding on must not also switch the alarm off
         return true;
     }
     else if (btnAlarm.lastStable && !alarmLongHandled &&
@@ -267,11 +283,19 @@ void touch_init()
 void touch_tick()
 {
     bool activity = false;
-    if (pollButton(btnPet) == BtnEvent::PRESSED)
+    BtnEvent petEv = pollButton(btnPet);
+    if (petEv == BtnEvent::RELEASED)
+        petSwallow = false;
+    if (petEv == BtnEvent::PRESSED)
     {
-        petPressedAtMs = millis();
-        petPurrHandled = false;
-        triggerPetHappy();
+        if (reminder_consume_press())
+            petSwallow = true; // closes a visible reminder, nothing else
+        else
+        {
+            petPressedAtMs = millis();
+            petPurrHandled = false;
+            triggerPetHappy();
+        }
         activity = true;
     }
     updatePurr(millis());

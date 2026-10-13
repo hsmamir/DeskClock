@@ -15,6 +15,7 @@
 #include "pet.h"
 #include "occasion.h"
 #include "alarm_ctrl.h"
+#include "reminders.h"
 #include "display_fonts.h" // smooth (VLW) fonts, see tools/make_vlw.py
 
 namespace disp
@@ -527,6 +528,8 @@ namespace disp
     void drawStatusIcons(TFT_eSPI &g, uint32_t now);
     void drawHoldRing(TFT_eSPI &g);
     void drawDiagScreen(uint32_t now);
+    // The full-screen reminder (display_reminder.cpp): drawn into the two cards like the diagnostics page.
+    void drawReminderScreen(const ReminderView &rv, uint32_t now);
     void backlightInit();
     void backlightUpdate(bool night, bool jump);
 

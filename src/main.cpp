@@ -16,9 +16,8 @@
 #include "settings.h"
 #include "pet.h"
 #include "web_ui.h"
+#include "reminders.h"
 #include "ota.h"
-#include "update_check.h"
-#include "version.h"
 
 AppState g_state;
 SemaphoreHandle_t g_stateMutex;
@@ -170,7 +169,6 @@ static void weatherTask(void *pvParameters)
     for (;;)
     {
         weather_tick();
-        update_tick(); // automatic update check (only when due; installing still needs the owner's OK)
         vTaskDelay(tickDelay);
     }
 }
@@ -182,6 +180,7 @@ static void alarmTask(void *pvParameters)
     for (;;)
     {
         alarm_tick();
+        reminders_tick(); // due reminders: queue, sound, time-out
         audio_tick(); // yawn / chime / boot sounds queued by the display (gentle, muted at night)
 #if TASK_WDT_SELFTEST
         // Pretend this task hung: stop reporting in. The watchdog must reset the chip
@@ -224,13 +223,12 @@ static void webTask(void *pvParameters)
 void setup()
 {
     Serial.begin(115200);
-    Serial.printf("DeskClock %s (%s)\n", FW_VERSION, FW_VARIANT);
     boot_log_init(); // counts the boot + keeps the reset reason in flash (and prints it)
 
     g_stateMutex = xSemaphoreCreateMutex();
-    update_init();             // mutex for the update-check status (the worker tasks are created on demand)
     settings_init();           // load NVS settings + apply timezone before any task reads them
     pet_init();                // pet button statistics (needs the mutexes above)
+    reminders_init();          // user reminders from flash (needs g_stateMutex)
     time_restore_from_flash(); // approximate clock from flash so the alarm works before/without WiFi
     audio_init();
     watchdogInit(); // before the tasks start; each watched task subscribes itself
@@ -242,15 +240,10 @@ void setup()
     startTask(displayTask, "display", 8192, 2, 1);
     startTask(touchTask, "touch", 4096, 3, 1);
     startTask(servoTask, "servo", 3072, 2, 1);
-    startTask(alarmTask, "alarm", 5120, 2, 1); // audio_tick() reaches audio -> sun -> Serial.printf like the touch task
+    startTask(alarmTask, "alarm", 6144, 2, 1); // audio_tick() reaches audio -> sun -> Serial.printf like the touch task; reminders_tick() writes NVS
     startTask(timeTask, "time", 8192, 1, 0);
     startTask(weatherTask, "weather", 10240, 1, 0);
-    // Priority 0 = same as the core-0 idle task, on purpose. WebServer reads a request with
-    // readStringUntil(), which busy-waits up to 5 s per call without ever blocking; when a client
-    // cannot be served (e.g. no memory for its 1436-byte receive buffer while a TLS update check
-    // runs) that adds up to 10 s. At priority 1 the idle task never ran meanwhile and the task
-    // watchdog (it watches IDLE0) reset the chip. At priority 0 the two simply share the CPU.
-    startTask(webTask, "web", 8192, tskIDLE_PRIORITY, 0);
+    startTask(webTask, "web", 8192, 1, 0);
     startTask(otaTask, "ota", 6144, 1, 0);
 }
 

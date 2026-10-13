@@ -14,8 +14,8 @@
 #include "boot_log.h"
 #include "pet.h"
 #include "weather.h"
-#include "update_check.h"
-#include "version.h"
+#include "reminders.h"
+#include "persian_text.h"
 #include "config.h"
 
 static WebServer server(80);
@@ -327,59 +327,160 @@ static void handleGetPet()
     sendJson(200, d);
 }
 
-// ---- Firmware update (update_check.cpp): the user always confirms the install ----
-static void handleGetUpdate()
+// ---- Reminders (reminders.cpp): list / add / edit / delete from the settings page ----
+static void sendReminders(int code)
+{
+    Reminder list[REMINDER_MAX];
+    int n = reminders_list(list, REMINDER_MAX);
+    JsonDocument d;
+    d["max"] = REMINDER_MAX;
+    d["textMax"] = REMINDER_TEXT_MAX - 1; // bytes of UTF-8 (a Persian letter is 2)
+    d["sound"] = reminders_get_sound();
+    ReminderView v;
+    d["showing"] = reminder_get_active(v);
+    JsonArray arr = d["items"].to<JsonArray>();
+    for (int i = 0; i < n; i++)
+    {
+        JsonObject o = arr.add<JsonObject>();
+        o["id"] = list[i].id;
+        o["enabled"] = list[i].enabled;
+        o["hour"] = list[i].hour;
+        o["minute"] = list[i].minute;
+        o["days"] = list[i].days;
+        char date[12] = "";
+        if (list[i].date)
+            snprintf(date, sizeof(date), "%04u-%02u-%02u", (unsigned)(list[i].date / 10000),
+                     (unsigned)((list[i].date / 100) % 100), (unsigned)(list[i].date % 100));
+        o["date"] = date;
+        o["text"] = list[i].text;
+    }
+    sendJson(code, d);
+}
+
+static void handleGetReminders()
 {
     if (!authorized())
         return;
-    static const char *const NAMES[] = {"idle", "checking", "uptodate", "available", "downloading", "done", "failed"};
-    UpdateStatus u = update_status();
-    JsonDocument d;
-    d["enabled"] = (bool)UPDATE_ENABLED;
-    d["state"] = NAMES[(int)u.state];
-    d["current"] = FW_VERSION;
-    d["variant"] = FW_VARIANT;
-    d["latest"] = u.latest;
-    d["notes"] = u.notesUrl;
-    d["sizeKb"] = (u.sizeBytes + 512) / 1024;
-    d["percent"] = u.percent;
-    d["error"] = u.error;
-    d["autoCheck"] = (bool)UPDATE_AUTO_CHECK;
-    // seconds since the last successful check (manual or automatic), -1 = none yet
-    d["checkedAgoS"] = u.checkedMs ? (int32_t)((millis() - u.checkedMs) / 1000) : -1;
-    sendJson(200, d);
+    sendReminders(200);
 }
 
-static void handleUpdateCheck()
+// Reads the JSON body of a POST; false = an error was already sent.
+static bool readJsonBody(JsonDocument &doc)
 {
     if (!authorized() || !requireJsonPost())
-        return;
-    if (!update_request_check())
+        return false;
+    if (deserializeJson(doc, server.arg("plain")) != DeserializationError::Ok)
     {
-        sendError(409, "busy");
+        sendError(400, "bad JSON");
+        return false;
+    }
+    return true;
+}
+
+// Text typed on the page -> a cleaned UTF-8 string that fits Reminder::text. false = error sent.
+static bool readReminderText(JsonVariantConst v, char *out, size_t cap)
+{
+    if (!v.is<const char *>())
+    {
+        sendError(400, "text missing");
+        return false;
+    }
+    char tmp[256];
+    int n = fa::sanitize(v.as<const char *>(), tmp, sizeof(tmp));
+    if (n == -1)
+        sendError(400, "text is not valid UTF-8");
+    else if (n == -2 || n >= (int)cap)
+        sendError(400, "text too long");
+    else if (n == 0)
+        sendError(400, "text is empty");
+    else
+    {
+        memcpy(out, tmp, (size_t)n + 1);
+        return true;
+    }
+    return false;
+}
+
+// POST {id?, enabled, hour, minute, days, date:"YYYY-MM-DD"|"", text}: id missing / 0 = add, else edit.
+static void handlePostReminder()
+{
+    JsonDocument doc;
+    if (!readJsonBody(doc))
+        return;
+    Reminder r = {};
+    r.id = doc["id"] | 0;
+    r.enabled = doc["enabled"] | true;
+    r.hour = doc["hour"] | 0;
+    r.minute = doc["minute"] | 0;
+    r.days = doc["days"] | 0;
+    const char *ds = doc["date"] | "";
+    if (*ds)
+    {
+        unsigned y = 0, m = 0, dd = 0;
+        if (sscanf(ds, "%4u-%2u-%2u", &y, &m, &dd) != 3)
+        {
+            sendError(400, "bad date");
+            return;
+        }
+        r.date = y * 10000 + m * 100 + dd;
+    }
+    if (!readReminderText(doc["text"], r.text, sizeof(r.text)))
+        return;
+    const char *err = "invalid reminder";
+    bool ok = r.id == 0 ? reminders_add(r, &err) : reminders_update(r, &err);
+    if (!ok)
+    {
+        sendError(400, err);
         return;
     }
+    sendReminders(200);
+}
+
+static void handleDeleteReminder()
+{
+    JsonDocument doc;
+    if (!readJsonBody(doc))
+        return;
+    if (!reminders_remove(doc["id"] | 0))
+    {
+        sendError(404, "no such reminder");
+        return;
+    }
+    sendReminders(200);
+}
+
+static void handleReminderSound()
+{
+    JsonDocument doc;
+    if (!readJsonBody(doc))
+        return;
+    reminders_set_sound(doc["on"] | true);
+    sendReminders(200);
+}
+
+// Shows the typed text on the clock right now, so Persian text can be checked on the real display.
+static void handleReminderTest()
+{
+    JsonDocument doc;
+    if (!readJsonBody(doc))
+        return;
+    char text[REMINDER_TEXT_MAX];
+    if (!readReminderText(doc["text"], text, sizeof(text)))
+        return;
+    if (alarm_get_state() == AlarmState::RINGING)
+    {
+        sendError(409, "alarm is ringing");
+        return;
+    }
+    reminder_request_test(text);
     server.send(200, "application/json", "{\"ok\":true}");
 }
 
-// Body: {"version":"v1.3.0"} - must be the version the last check found, so a stale page can't install
-// something the user did not see.
-static void handleUpdateInstall()
+static void handleReminderDismiss()
 {
     if (!authorized() || !requireJsonPost())
         return;
-    JsonDocument doc;
-    if (deserializeJson(doc, server.arg("plain")) != DeserializationError::Ok)
-    {
-        sendError(400, "bad json");
-        return;
-    }
-    String err;
-    if (!update_request_install(String(doc["version"] | ""), err))
-    {
-        sendError(409, err.c_str());
-        return;
-    }
+    reminder_dismiss();
     server.send(200, "application/json", "{\"ok\":true}");
 }
 
@@ -407,9 +508,12 @@ static void startServer()
     server.on("/api/alarm/test", HTTP_POST, handleAlarmTest);
     server.on("/api/alarm/snooze", HTTP_POST, handleAlarmSnooze);
     server.on("/api/alarm/dismiss", HTTP_POST, handleAlarmDismiss);
-    server.on("/api/update", HTTP_GET, handleGetUpdate);
-    server.on("/api/update/check", HTTP_POST, handleUpdateCheck);
-    server.on("/api/update/install", HTTP_POST, handleUpdateInstall);
+    server.on("/api/reminders", HTTP_GET, handleGetReminders);
+    server.on("/api/reminders", HTTP_POST, handlePostReminder);
+    server.on("/api/reminders/delete", HTTP_POST, handleDeleteReminder);
+    server.on("/api/reminders/sound", HTTP_POST, handleReminderSound);
+    server.on("/api/reminders/test", HTTP_POST, handleReminderTest);
+    server.on("/api/reminders/dismiss", HTTP_POST, handleReminderDismiss);
     server.onNotFound([]()
                       { server.send(404, "text/plain", "not found"); });
     server.begin();

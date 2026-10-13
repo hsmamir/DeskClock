@@ -17,42 +17,6 @@ static uint32_t happyUntilMs = 0;
 static bool portalScreenShown = false;
 static bool otaScreenShown = false;
 
-// While a firmware update runs only the progress screen is drawn, and the update needs every byte of heap:
-// a TLS connection with certificate checking wants ~60 KB at once, the three off-screen sprites below hold
-// 40-50 KB permanently. So they are released for the duration of the update and created again afterwards
-// (Canvas::begin() already falls back to drawing straight on the screen when a sprite is missing).
-static bool spritesReleased = false;
-static int16_t digSprW = 0, digSprH = 0;
-
-static void releaseSprites()
-{
-    faceCv.spr.deleteSprite();
-    faceCv.ok = false;
-    infoCv.spr.deleteSprite();
-    infoCv.ok = false;
-    digSpr.deleteSprite();
-    digSprOk = false;
-    spritesReleased = true;
-    Serial.printf("display: sprites released for the update (free heap %u, largest block %u)\n",
-                  (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMaxAllocHeap());
-}
-
-static void restoreSprites()
-{
-    faceCv.spr.setColorDepth(16);
-    faceCv.ok = (faceCv.spr.createSprite(faceCv.w, faceCv.sh) != nullptr);
-    infoCv.spr.setColorDepth(16);
-    infoCv.ok = (infoCv.spr.createSprite(infoCv.w, infoCv.sh) != nullptr);
-    if (CLOCK_DIGIT_ANIM && infoCv.ok && digSprW > 0)
-    {
-        digSpr.setColorDepth(16);
-        digSprOk = (digSpr.createSprite(digSprW, digSprH) != nullptr);
-    }
-    spritesReleased = false;
-    Serial.printf("display: sprites restored: face=%s info=%s digit=%s (free heap %u)\n", faceCv.ok ? "ok" : "fallback",
-                  infoCv.ok ? "ok" : "fallback", digSprOk ? "ok" : "off", (unsigned)ESP.getFreeHeap());
-}
-
 // How far the sun (by day, 0 = sunrise .. 1 = sunset) or the moon (by night, 0 = sunset ..
 // 1 = next sunrise) has travelled along its path across the sky. -1 = no sensible value
 // (polar day / night): the scene then keeps the sun / moon in the corner.
@@ -112,10 +76,8 @@ void display_init()
     {
         int16_t dw, dh;
         clockMetrics(dw, dh);
-        digSprW = dw + 2 * DIG_PAD;
-        digSprH = dh + 2 * DIG_PAD;
         digSpr.setColorDepth(16);
-        digSprOk = (digSpr.createSprite(digSprW, digSprH) != nullptr);
+        digSprOk = (digSpr.createSprite(dw + 2 * DIG_PAD, dh + 2 * DIG_PAD) != nullptr);
     }
     Serial.printf("display sprites: face=%s info=%s digit=%s (free heap %u)\n",
                   f ? "ok" : "fallback", i ? "ok" : "fallback", digSprOk ? "ok" : "off",
@@ -135,8 +97,6 @@ void display_tick()
     int otaPct = readOtaPercent();
     if (otaPct >= 0)
     {
-        if (!spritesReleased)
-            releaseSprites();
         backlightUpdate(false, true);
         drawOtaScreen(otaPct);
         otaScreenShown = true;
@@ -145,8 +105,6 @@ void display_tick()
     if (otaScreenShown)
     {
         // update failed (on success the clock reboots): back to normal
-        if (spritesReleased)
-            restoreSprites();
         tft.fillScreen(C_BG);
         frameDirty = true;
         otaScreenShown = false;
@@ -282,6 +240,26 @@ void display_tick()
     updateLook(now, alarm, sleepy, reaction);
     updateBlink(now, sleepy);
     float exprP = updateExpression(now, !alarm && !happy && reaction != Reaction::WORRIED && persona.exprOk, sleepy);
+
+    // A reminder that is due: full screen, replaces whatever page is open (also the diagnostics page).
+    // An alarm always wins (the reminder comes back after it). Drawn like the diagnostics page, in the two
+    // cards, so leaving it simply falls back to the normal drawing below.
+    {
+        ReminderView rv;
+        if (!alarm && reminder_get_active(rv))
+        {
+            fullLayout = false;
+            geometrySet(false); // the clock split, whatever page was open
+            if (REMINDER_FULL_BRIGHT)
+                backlightUpdate(false, true);
+            lastMode = DisplayMode::DIAG; // so the page change back is noticed (and does not slide)
+            diagShown = false;
+            if (gapIsFull)
+                gapPaint(0);
+            drawReminderScreen(rv, now);
+            return;
+        }
+    }
 
     // Diagnostics page: full screen, replaces face + info panel. An alarm
     // always wins (it falls through to the normal clock/face drawing below).

@@ -47,6 +47,12 @@ button:disabled{opacity:.4;cursor:default}
 details{margin-top:10px}
 #tzp{width:100%;direction:ltr;margin-top:8px}
 #msg{min-height:1.6em;text-align:center}
+.rem{border:1px solid var(--bd);border-radius:10px;padding:8px 12px;margin:8px 0}
+.rem.off{opacity:.5}
+.rem .t{font-size:1.15rem;font-weight:600;direction:ltr;display:inline-block;color:var(--acc)}
+.rem .x{margin:2px 0;word-break:break-word}
+.rem .btns{margin:6px 0 0}.rem .btns button{min-width:64px;padding:6px 10px;font-size:.9rem}
+#rText{width:100%;flex:none}
 #bl{width:100%;border-collapse:collapse;direction:ltr;font-size:.92rem}
 #bl td,#bl th{padding:4px 6px;text-align:left;border-bottom:1px solid var(--bd)}
 #bl .bad{color:var(--err);font-weight:600}
@@ -103,6 +109,27 @@ details{margin-top:10px}
 </section>
 
 <section>
+<h2>یادآورها</h2>
+<div id="rList"></div>
+<p class="mut" id="rEmpty">هنوز یادآوری اضافه نشده.</p>
+<label class="row"><span>صدای یادآور</span><input type="checkbox" id="rSnd"></label>
+<h2 id="rFormTitle" style="margin-top:16px">یادآور جدید</h2>
+<input type="text" id="rText" dir="auto" placeholder="مثلاً: قرص‌هایت را بخور" autocomplete="off">
+<p class="mut" id="rCount"></p>
+<div class="row"><span>ساعت</span><input type="time" id="rTime" value="09:00"></div>
+<div class="row"><span>تکرار</span><select id="rMode"><option value="once">فقط یک‌بار</option><option value="week">هفتگی</option></select></div>
+<div class="row" id="rDateRow"><span>تاریخ</span><input type="date" id="rDate"></div>
+<div id="rDaysBox" style="display:none"><div class="mut">روزها</div><div class="days" id="rDays"></div></div>
+<label class="row"><span>فعال</span><input type="checkbox" id="rEn" checked></label>
+<div class="btns">
+<button type="button" id="rSave">افزودن</button>
+<button type="button" class="ghost" id="rTest">نمایش روی ساعت</button>
+<button type="button" class="ghost" id="rCancel" style="display:none">لغو ویرایش</button>
+</div>
+<p class="mut">سر ساعت مقرر، متن تمام‌صفحه روی ساعت نشان داده می‌شود و تا فشردن <b>هر یک از دکمه‌ها</b> می‌ماند (حداکثر چند دقیقه). متن فارسی و انگلیسی پشتیبانی می‌شود. «نمایش روی ساعت» همین الان متن را روی نمایشگر می‌آورد تا خوانایی را ببینید. یادآورِ «یک‌بار» بعد از نمایش پاک می‌شود. شبِ صدا خاموش است (مثل صدای نوازش).</p>
+</section>
+
+<section>
 <h2>شهر (برای آب‌وهوا)</h2>
 <div class="row"><input type="text" id="q" placeholder="نام شهر…"><button type="button" id="findBtn">جستجو</button></div>
 <div class="res" id="results"></div>
@@ -115,19 +142,6 @@ details{margin-top:10px}
 <p class="mut">تغییر ساعت تابستانی به‌صورت خودکار اعمال می‌شود.</p>
 <details><summary class="mut">پیشرفته: قاعده‌ی POSIX</summary>
 <input type="text" id="tzp" spellcheck="false"></details>
-</section>
-
-<section id="updSec">
-<h2>به‌روزرسانی نرم‌افزار</h2>
-<p class="mut">نسخه‌ی فعلی: <b id="uVer" dir="ltr">—</b> <span id="uVar" dir="ltr"></span></p>
-<p id="uMsg">…</p>
-<progress id="uProg" max="100" value="0" hidden style="width:100%"></progress>
-<div class="btns">
-<button type="button" id="uCheck">بررسی به‌روزرسانی</button>
-<button type="button" id="uInstall" hidden>نصب نسخه‌ی جدید</button>
-</div>
-<p class="mut"><a id="uNotes" href="#" target="_blank" rel="noopener" hidden>تغییرات این نسخه در GitHub</a></p>
-<p class="mut">نسخه‌ی جدید فقط از Releaseهای رسمی GitHub گرفته می‌شود و تا تأیید شما نصب نمی‌شود. فایل با checksum منتشرشده کنترل می‌شود و در صورت مغایرت نصب نمی‌شود. تنظیمات شما حفظ می‌ماند.</p>
 </section>
 
 <section>
@@ -308,54 +322,85 @@ async function petStats(){
   $('bondInfo').textContent=j.bondOn?('دلبستگی: '+j.bond+'٪ — '+(BL[j.bondLevel]||'')):'';
  }catch(e){$('petStats').textContent='ارتباط با ساعت برقرار نشد';}
 }
-const UERR={wifi:'ساعت به اینترنت وصل نیست',time:'ساعت هنوز زمان دقیق (NTP) را نگرفته؛ چند دقیقه بعد دوباره تلاش کنید',heap:'حافظه‌ی آزاد کافی نیست؛ کمی بعد دوباره تلاش کنید',tls:'اتصال امن برقرار نشد (گواهی GitHub تأیید نشد)',connect:'اتصال به GitHub برقرار نشد',rate_limit:'GitHub موقتاً درخواست‌ها را محدود کرده؛ بعداً دوباره تلاش کنید',no_release:'هنوز هیچ Releaseای منتشر نشده',no_asset:'این Release فایل مخصوص نمایشگر این ساعت را ندارد',too_big:'فایل از فضای به‌روزرسانی بزرگ‌تر است',bad_tag:'نسخه‌ی Release قابل خواندن نیست',json:'پاسخ GitHub قابل خواندن نیست',redirect:'آدرس دانلود نامعتبر است',size_mismatch:'اندازه‌ی فایل با Release نمی‌خواند',bad_checksum_file:'فایل checksum نامعتبر است',flash_begin:'شروع نوشتن در فلش ممکن نشد',download:'دانلود ناقص ماند؛ دوباره تلاش کنید',checksum:'checksum فایل درست نبود؛ چیزی نصب نشد',flash_end:'تأیید فایل نصب‌شده ناموفق بود؛ چیزی تغییر نکرد',busy:'عملیات دیگری در حال اجراست',alarm_busy:'آلارم در حال زنگ‌زدن یا اسنوز است',not_available:'ابتدا دوباره بررسی کنید',disabled:'این قابلیت در این نسخه غیرفعال است'};
-function uErr(c){c=String(c||'');return UERR[c]||(c.startsWith('http_')?'خطای HTTP '+c.slice(5):c);}
-let uTimer=null,uLast='';
-async function updateState(){
- try{
-  const j=await (await fetch('/api/update')).json();
-  if(!j.enabled){$('updSec').style.display='none';return;}
-  $('uVer').textContent=j.current;$('uVar').textContent='('+j.variant+')';
-  const busy=j.state==='checking'||j.state==='downloading'||j.state==='done';
-  let t='';
-  switch(j.state){
-   case 'idle':t=(uLast==='downloading'||uLast==='done')?'به‌روزرسانی انجام شد. نسخه‌ی فعلی: '+j.current:(j.autoCheck?'هنوز بررسی نشده؛ ساعت خودش چند دقیقه بعد از روشن‌شدن بررسی می‌کند.':'هنوز بررسی نشده.');break;
-   case 'checking':t='در حال بررسی…';break;
-   case 'uptodate':t='آخرین نسخه ('+j.latest+') نصب است.';break;
-   case 'available':t='نسخه‌ی جدید '+j.latest+' ('+j.sizeKb+' کیلوبایت) آماده‌ی نصب است.';break;
-   case 'downloading':t='در حال دانلود و نصب… '+j.percent+'٪ — ساعت را از برق نکشید.';break;
-   case 'done':t='نصب شد؛ ساعت در حال ریستارت است…';break;
-   case 'failed':t='ناموفق: '+uErr(j.error);break;
-  }
-  if(j.checkedAgoS>=0&&(j.state==='uptodate'||j.state==='available')){const m=Math.floor(j.checkedAgoS/60);t+=' (آخرین بررسی: '+(m<1?'همین الان':m<60?m+' دقیقه پیش':Math.floor(m/60)+' ساعت پیش')+(j.autoCheck?'؛ ساعت خودش هم روزی دو بار بررسی می‌کند':'')+')';}
-  $('uMsg').textContent=t;$('uMsg').style.color=j.state==='failed'?'var(--err)':'';
-  $('uProg').hidden=j.state!=='downloading';$('uProg').value=j.percent;
-  $('uCheck').disabled=busy;$('uInstall').hidden=j.state!=='available';$('uInstall').dataset.v=j.latest;
-  const n=$('uNotes');n.hidden=!(j.notes&&(j.state==='available'||j.state==='uptodate'));n.href=j.notes||'#';
-  uLast=j.state;
-  if(busy&&!uTimer)uTimer=setInterval(updateState,1000);
-  if(!busy&&uTimer){clearInterval(uTimer);uTimer=null;}
- }catch(e){
-  if(uLast==='downloading'||uLast==='done'){$('uMsg').textContent='ساعت در حال ریستارت است؛ چند ثانیه صبر کنید…';if(!uTimer)uTimer=setInterval(updateState,2000);}
-  else $('uMsg').textContent='ارتباط با ساعت برقرار نشد';
- }
-}
-async function uPost(path,body){
- try{const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});
-  if(!r.ok){const j=await r.json();msg('خطا: '+uErr(j.error||r.status),false);}else msg('',true);
- }catch(e){msg('ارتباط با ساعت برقرار نشد',false);}
- updateState();
-}
-$('uCheck').onclick=()=>uPost('/api/update/check');
-$('uInstall').onclick=()=>{const v=$('uInstall').dataset.v;if(confirm('نسخه‌ی '+v+' نصب شود؟\n\nدانلود و نصب حدود یک دقیقه طول می‌کشد. در این مدت آلارم زنگ نمی‌زند و ساعت دوباره راه‌اندازی می‌شود. ساعت را از برق نکشید.'))uPost('/api/update/install',{version:v});};
-updateState();
-setInterval(()=>{if(!document.hidden&&!uTimer)updateState();},30000); // picks up the clock's automatic checks
 setInterval(()=>{if(!document.hidden)alarmState();},2000);
 setInterval(()=>{if(!document.hidden)petStats();},10000);
 load();
 alarmState();
 bootLog();
 petStats();
+
+// ---- reminders ----
+let RS={items:[],max:12,textMax:79,sound:true},rEdit=0;
+const byteLen=t=>new TextEncoder().encode(t).length;
+function todayStr(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+(function(){const box=$('rDays');DAYS.forEach(d=>{const l=document.createElement('label');l.title=d[2];
+const i=document.createElement('input');i.type='checkbox';i.dataset.d=d[0];i.checked=true;
+const s=document.createElement('span');s.textContent=d[1];l.append(i,s);box.appendChild(l);});})();
+function rGetDays(){let m=0;document.querySelectorAll('#rDays input').forEach(i=>{if(i.checked)m|=1<<(+i.dataset.d);});return m;}
+function rSetDays(m){document.querySelectorAll('#rDays input').forEach(i=>{i.checked=((m>>(+i.dataset.d))&1)===1;});}
+function rMode(){const once=$('rMode').value==='once';$('rDateRow').style.display=once?'':'none';$('rDaysBox').style.display=once?'none':'';}
+function rCount(){const n=byteLen($('rText').value.trim());const c=$('rCount');c.textContent=n+' / '+RS.textMax+' بایت';c.style.color=n>RS.textMax?'var(--err)':'';}
+function dayText(m){if(m===127)return 'هر روز';return DAYS.filter(d=>(m>>d[0])&1).map(d=>d[2]).join('، ');}
+function two(n){return String(n).padStart(2,'0');}
+function rRender(){
+ const box=$('rList');box.textContent='';
+ const items=RS.items.slice().sort((a,b)=>(a.hour*60+a.minute)-(b.hour*60+b.minute));
+ $('rEmpty').style.display=items.length?'none':'';
+ $('rSnd').checked=RS.sound;
+ items.forEach(r=>{
+  const d=document.createElement('div');d.className='rem'+(r.enabled?'':' off');
+  const t=document.createElement('span');t.className='t';t.textContent=two(r.hour)+':'+two(r.minute);
+  const sch=document.createElement('span');sch.className='mut';sch.textContent=' — '+(r.days?dayText(r.days):('یک‌بار، '+r.date));
+  const x=document.createElement('div');x.className='x';x.dir='auto';x.textContent=r.text;
+  const b=document.createElement('div');b.className='btns';
+  const bt=document.createElement('button');bt.className='ghost';bt.textContent=r.enabled?'غیرفعال':'فعال';bt.onclick=()=>rPost('/api/reminders',Object.assign({},r,{enabled:!r.enabled}));
+  const be=document.createElement('button');be.className='ghost';be.textContent='ویرایش';be.onclick=()=>rStartEdit(r);
+  const bd=document.createElement('button');bd.className='danger';bd.textContent='حذف';bd.onclick=()=>{if(confirm('حذف شود؟'))rPost('/api/reminders/delete',{id:r.id});};
+  b.append(bt,be,bd);d.append(t,sch,x,b);box.appendChild(d);
+ });
+}
+async function rPost(url,body,okMsg){
+ try{
+  const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const j=await r.json();
+  if(!r.ok){msg('خطا: '+(j.error||r.status),false);return false;}
+  if(j.items){RS=j;rRender();rCount();}
+  if(okMsg)msg(okMsg,true);
+  return true;
+ }catch(e){msg('ارتباط با ساعت برقرار نشد',false);return false;}
+}
+async function rLoad(){
+ try{RS=await (await fetch('/api/reminders')).json();rRender();rCount();}catch(e){}
+}
+function rReset(){
+ rEdit=0;$('rText').value='';$('rTime').value='09:00';$('rMode').value='once';$('rDate').value=todayStr();$('rEn').checked=true;rSetDays(127);
+ $('rFormTitle').textContent='یادآور جدید';$('rSave').textContent='افزودن';$('rCancel').style.display='none';rMode();rCount();
+}
+function rStartEdit(r){
+ rEdit=r.id;$('rText').value=r.text;$('rTime').value=two(r.hour)+':'+two(r.minute);$('rEn').checked=r.enabled;
+ $('rMode').value=r.days?'week':'once';$('rDate').value=r.date||todayStr();rSetDays(r.days||127);
+ $('rFormTitle').textContent='ویرایش یادآور';$('rSave').textContent='ذخیرهٔ تغییرات';$('rCancel').style.display='';rMode();rCount();
+ $('rText').scrollIntoView({behavior:'smooth',block:'center'});
+}
+$('rMode').onchange=rMode;
+$('rText').oninput=rCount;
+$('rCancel').onclick=rReset;
+$('rSnd').onchange=()=>rPost('/api/reminders/sound',{on:$('rSnd').checked});
+$('rTest').onclick=()=>{const t=$('rText').value.trim();if(!t){msg('متن را وارد کنید',false);return;}rPost('/api/reminders/test',{text:t},'روی ساعت نمایش داده شد؛ برای بستن یک دکمه را بزنید');};
+$('rSave').onclick=async()=>{
+ const text=$('rText').value.trim();
+ if(!text){msg('متن را وارد کنید',false);return;}
+ if(byteLen(text)>RS.textMax){msg('متن خیلی بلند است',false);return;}
+ const tm=$('rTime').value;if(!tm){msg('ساعت را وارد کنید',false);return;}
+ const once=$('rMode').value==='once';
+ const days=once?0:rGetDays();
+ if(!once&&!days){msg('حداقل یک روز را انتخاب کنید',false);return;}
+ if(once&&!$('rDate').value){msg('تاریخ را انتخاب کنید',false);return;}
+ const ok=await rPost('/api/reminders',{id:rEdit,enabled:$('rEn').checked,hour:+tm.slice(0,2),minute:+tm.slice(3,5),days:days,date:once?$('rDate').value:'',text:text},rEdit?'ذخیره شد ✓':'اضافه شد ✓');
+ if(ok)rReset();
+};
+setInterval(()=>{if(!document.hidden&&!rEdit&&!$('rText').value)rLoad();},15000);
+rReset();rLoad();
 </script>
 </body>
 </html>)HTML";

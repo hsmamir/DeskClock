@@ -137,8 +137,8 @@ static_assert(WEATHER_BARS >= 2 && WEATHER_BARS <= 8, "WEATHER_BARS must be 2-8"
 // All of them go through audio_play_gentle(): at night they follow AUDIO_NIGHT_PET_VOLUME (silent by default).
 #define SOUND_INDEX_PET_B 6
 #define SOUND_INDEX_PET_C 7
-#define SOUND_INDEX_YAWN 8
-#define SOUND_INDEX_CHIME 9
+#define SOUND_INDEX_YAWN 0  // set to 8 if you upload the yawn_servo clip to the module
+#define SOUND_INDEX_CHIME 0 // hourly chime OFF (was 9 = 09_hour_chime); set back to 9 to re-enable
 #define SOUND_INDEX_BOOT 10
 
 // UI beeps (not wired to any feature yet — use these numbers when you add them):
@@ -367,20 +367,19 @@ static_assert(AMBIENT_MOTES >= 3 && AMBIENT_MOTES <= 5, "AMBIENT_MOTES must be 3
 #define OCC_CHRISTMAS_FROM_DAY 20   // Christmas look Dec 20 .. 26
 #define OCC_NYE_FROM_HOUR 18        // New Year's Eve look from Dec 31 at this hour ...
 #define OCC_NYE_UNTIL_HOUR 3        // ... until Jan 1 at this hour (the 10..1 countdown and the new year at midnight are automatic)
-
-#define UI_SOUNDS_DEFAULT 1        // settings-page feedback beeps (clips 11/12/14); changeable from the settings page
-#define PET_STREAK_GAP_MS 3000     // taps closer together than this count as one streak
-#define PET_HEART_STREAK 4         // this many taps in a row -> heart eyes
-#define PET_DIZZY_STREAK 12        // ... dizzy spiral eyes
-#define PET_ANNOYED_STREAK 15      // ... "that's enough!" (until you pause)
-#define PET_PURR_HOLD_MS 1000      // hold the button this long -> purring
-#define PET_PURR_MAX_MS 8000       // purring stops by itself after this (keeps the servo/supply calm)
-#define PET_PURR_SERVO_DEG 3       // trembling amplitude around the rest angle while purring
-#define PET_MISSED_HOURS 6         // first tap after this many hours -> "missed you"
-#define PET_MORNING_FROM_H 5       // first tap of the day between these local hours -> yawn + happy
-#define PET_MORNING_TO_H 11        // (exclusive)
-#define PET_RARE_PERCENT 5         // chance (%) of a rare reaction instead of the usual one
-#define PET_SAVE_INTERVAL_MS 60000 // pet statistics are written to flash at most this often
+#define UI_SOUNDS_DEFAULT 1         // settings-page feedback beeps (clips 11/12/14); changeable from the settings page
+#define PET_STREAK_GAP_MS 3000      // taps closer together than this count as one streak
+#define PET_HEART_STREAK 4          // this many taps in a row -> heart eyes
+#define PET_DIZZY_STREAK 12         // ... dizzy spiral eyes
+#define PET_ANNOYED_STREAK 15       // ... "that's enough!" (until you pause)
+#define PET_PURR_HOLD_MS 1000       // hold the button this long -> purring
+#define PET_PURR_MAX_MS 8000        // purring stops by itself after this (keeps the servo/supply calm)
+#define PET_PURR_SERVO_DEG 3        // trembling amplitude around the rest angle while purring
+#define PET_MISSED_HOURS 6          // first tap after this many hours -> "missed you"
+#define PET_MORNING_FROM_H 5        // first tap of the day between these local hours -> yawn + happy
+#define PET_MORNING_TO_H 11         // (exclusive)
+#define PET_RARE_PERCENT 5          // chance (%) of a rare reaction instead of the usual one
+#define PET_SAVE_INTERVAL_MS 60000  // pet statistics are written to flash at most this often
 
 // ---- Bond (pet.cpp, display_persona.cpp, display_emotion.cpp) ----
 // A lasting "how much does he like you" value, 0..1000 (shown as 0..100 % on the settings page), kept in flash.
@@ -514,24 +513,6 @@ static inline bool isNightHour(int hour)
 // CHANGE IT: "" would let anyone on your WiFi flash the clock.
 #define OTA_PASSWORD "change-me-ota"
 
-// ---- Firmware update from GitHub Releases (update_check.h / update_check.cpp) ----
-// "Check for updates" on the settings page looks for the latest release of this repository; the
-// user confirms before anything is installed. Forks: put your own "owner/repo" here.
-// UPDATE_ENABLED 0 removes the feature (about 12 KB of root certificates and the code).
-#define UPDATE_ENABLED 1
-#define UPDATE_REPO "hsmamir/esp32-project"
-// An update (TLS handshake + download) needs free heap. Below this the page says "not enough
-// memory, try again". See the free memory on the diagnostics page before changing it.
-#define UPDATE_MIN_FREE_HEAP 55000
-// Automatic check: the clock looks for a new release by itself (twice a day by default) and only
-// REPORTS it (settings page + diagnostics page). Installing always needs the owner's confirmation.
-// The manual "Check for updates" button keeps working; a manual check also restarts this timer.
-// UPDATE_AUTO_CHECK 0 = manual checks only.
-#define UPDATE_AUTO_CHECK 1
-#define UPDATE_AUTO_CHECK_INTERVAL_MS (12UL * 60 * 60 * 1000) // 12 h = twice a day (24 h = once a day)
-#define UPDATE_AUTO_FIRST_DELAY_MS (3UL * 60 * 1000)          // first check this long after boot (WiFi + NTP need time)
-#define UPDATE_AUTO_RETRY_MS (30UL * 60 * 1000)               // after a failed automatic check (no network, GitHub down)
-
 // ---- Time-of-day colour theme ----
 // Background + accent colour (clock digits, accent lines, progress bars, eyes)
 // follow the time of day and blend smoothly between four looks:
@@ -568,3 +549,19 @@ static inline bool isNightHour(int hour)
 #define THEME_PREVIEW 0
 #endif
 #define THEME_PREVIEW_DAY_MS 48000UL
+
+// ---- Reminders (reminders.cpp, display_reminder.cpp; added on the settings page) ----
+//   REMINDER_GRACE_MIN        a weekly reminder whose minute was missed (reboot, no clock yet) still shows this many minutes late
+//   REMINDER_ONESHOT_LATE_MIN a one-time reminder shows up to this late (clock was off); older ones are dropped
+//   REMINDER_SHOW_S           a reminder closes by itself after this many seconds without a button press (0 = stays)
+//   SOUND_INDEX_REMINDER      clip played when one appears (0 = silent). Goes through audio_play_gentle(): pet volume,
+//                             silent at night (AUDIO_NIGHT_PET_VOLUME). Can be switched off on the settings page too.
+//   REMINDER_REPEATS / _S     the clip is played again this many times, every REMINDER_REPEAT_S seconds, while unanswered
+//   REMINDER_FULL_BRIGHT      1 = full backlight while a reminder is up, also at night
+#define REMINDER_GRACE_MIN 5
+#define REMINDER_ONESHOT_LATE_MIN 720
+#define REMINDER_SHOW_S 180
+#define SOUND_INDEX_REMINDER 4
+#define REMINDER_REPEATS 2
+#define REMINDER_REPEAT_S 25
+#define REMINDER_FULL_BRIGHT 1
