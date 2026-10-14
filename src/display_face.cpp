@@ -492,6 +492,7 @@ namespace disp
         eyesSetFast(antic);
         eyesSetDecor(decor);
         eyesSetLidBias(persona.lidBias);
+        eyesSetCross(persona.cross * R * IDLE_FLYLAND_CROSS);
         eyesSetTargets(mood, moodR, scale, lookX * u(5) + lookTremX, lookY * u(4) + lookTremY, lookX, R);
         eyesStep(now);
 

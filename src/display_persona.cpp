@@ -58,12 +58,13 @@ namespace disp
         SQUINT,
         RELIEF,
         OH,
-        THINK,  // "hmm": up and to the right, dots, sometimes an idea
-        GLANCE, // looks at the digits, they glow once
-        FLY,    // a fly buzzes across; eyes (and head) follow
-        YAWN,   // evening / late-night yawn
-        SNEEZE, // "ah ... ah ... choo!" (rare; likelier in rain / snow / cold)
-        HICCUP  // 3-4 small hops of the eyes, a "hic" beside the face, a head jolt; ends with a surprised look (rare)
+        THINK,    // "hmm": up and to the right, dots, sometimes an idea
+        GLANCE,   // looks at the digits, they glow once
+        FLY,      // a fly buzzes across; eyes (and head) follow
+        FLY_LAND, // the fly lands between the eyes: cross-eyed, head shake, it flies off
+        YAWN,     // evening / late-night yawn
+        SNEEZE,   // "ah ... ah ... choo!" (rare; likelier in rain / snow / cold)
+        HICCUP    // 3-4 small hops of the eyes, a "hic" beside the face, a head jolt; ends with a surprised look (rare)
     };
     static Act act = Act::NONE;
     static uint32_t actStartMs = 0, actDurMs = 0;
@@ -72,11 +73,13 @@ namespace disp
 
     // ---- idle life ----
     static uint32_t nextYawnAtMs = 0;
-    static bool eveningArmed = false; // the evening window was entered and the first yawn is scheduled
-    static bool lateYawnDone = false; // already yawned during this "kept awake at night" spell
-    static float flySide = 1.0f;      // +1: enters on the right, -1: on the left
-    static float flyPhase = 0;        // makes every flight different
-    static bool thinkIdea = false;    // this "hmm" ends with an "oh!"
+    static bool eveningArmed = false;                                                   // the evening window was entered and the first yawn is scheduled
+    static bool lateYawnDone = false;                                                   // already yawned during this "kept awake at night" spell
+    static float flySide = 1.0f;                                                        // +1: enters on the right, -1: on the left
+    static float flyPhase = 0;                                                          // makes every flight different
+    static bool flyLandBuzzIn = false, flyLandBuzzOut = false, flyLandShakeSnd = false; // sounds already played
+    static const float FLYLAND_Y = 0.18f;                                               // where the fly sits (flyY): just below the eye line, between the eyes
+    static bool thinkIdea = false;                                                      // this "hmm" ends with an "oh!"
     static bool thinkIdeaShown = false;
     static bool sneezeBurstDone = false; // the burst's blink / sound was already triggered in this sneeze
     static const uint8_t HICCUP_MAX = 4;
@@ -256,6 +259,8 @@ namespace disp
         P.frown = (int32_t)(now - frownUntilMs) < 0;
         P.digitPulse = 0;
         P.flyOn = false;
+        P.flyLanded = false;
+        P.cross = 0;
         P.sneezeJerk = 0;
         P.sneezeSpray = 0;
         P.sneezeMouth = false;
@@ -565,7 +570,13 @@ namespace disp
                 {
                     flySide = random(0, 2) ? 1.0f : -1.0f;
                     flyPhase = random(0, 628) / 100.0f;
-                    startAct(Act::FLY, now, IDLE_FLY_MS);
+                    if (IDLE_FLYLAND_PERCENT > 0 && random(0, 100) < IDLE_FLYLAND_PERCENT)
+                    {
+                        flyLandBuzzIn = flyLandBuzzOut = flyLandShakeSnd = false;
+                        startAct(Act::FLY_LAND, now, IDLE_FLYLAND_MS);
+                    }
+                    else
+                        startAct(Act::FLY, now, IDLE_FLY_MS);
                 }
                 else
                     startAct(Act::ROLL, now, 1100);
@@ -684,6 +695,104 @@ namespace disp
                 setGaze(clampGaze(fx), clampGaze(fy), true);
                 if (IDLE_FLY_HEAD)
                     servo_look(clampGaze(fx));
+                break;
+            }
+            case Act::FLY_LAND: // in, lands between the eyes, they cross, head shake, the fly leaves
+            {
+                // phases as fractions of the whole act: ..0.18 it comes in, ..0.27 lands and the eyes cross, ..0.51 he
+                // stares at it (the fly cleans its legs), ..0.68 head shake (eyes uncross, lids squint), the fly takes
+                // off at 0.54 and is gone by 0.82 (the eyes follow it from 0.62), then back to the middle
+                const float tn = t / (float)actDurMs;
+                float fx, fy, gx = 0, gy = 0, headX = 0, cross = 0, lid = 0;
+                bool followHead = false;
+                P.exprOk = false;
+                if (tn < 0.18f)
+                {
+                    const float k = tn / 0.18f;
+                    const float e = 1.0f - (1.0f - k) * (1.0f - k); // brakes as it arrives
+                    const float wob = (1.0f - e);
+                    fx = flySide * 1.25f * (1.0f - e) + 0.30f * sinf(6.2832f * 2.0f * k + flyPhase) * wob;
+                    fy = -0.35f + (FLYLAND_Y + 0.35f) * e + 0.25f * sinf(6.2832f * 3.0f * k + flyPhase * 0.7f) * wob;
+                    gx = clampGaze(fx);
+                    gy = clampGaze(fy);
+                    followHead = true;
+                    if (!flyLandBuzzIn)
+                    {
+                        flyLandBuzzIn = true;
+                        audio_play_async(SOUND_INDEX_FLY);
+                    }
+                }
+                else if (tn < 0.54f)
+                {
+                    fx = 0;
+                    fy = FLYLAND_Y;
+                    P.flyLanded = true;
+                    gx = 0;
+                    gy = 0.25f;
+                }
+                else
+                {
+                    const float k = (tn - 0.54f) / 0.28f; // 0..1 over the fly's exit
+                    const float kk = k > 1.0f ? 1.0f : k;
+                    fx = flySide * (0.10f * sinf(40.0f * kk) + 1.35f * kk * kk);
+                    fy = FLYLAND_Y - 1.15f * kk * sqrtf(kk) + 0.10f * sinf(33.0f * kk);
+                    if (!flyLandBuzzOut)
+                    {
+                        flyLandBuzzOut = true;
+                        audio_play_async(SOUND_INDEX_FLY);
+                    }
+                    if (tn < 0.62f)
+                    {
+                        gx = 0;
+                        gy = 0.25f;
+                    }
+                    else if (tn < 0.82f)
+                    {
+                        gx = clampGaze(fx);
+                        gy = clampGaze(fy);
+                        followHead = true;
+                    }
+                    else
+                    {
+                        gx = 0;
+                        gy = 0;
+                    }
+                }
+                // the eyes cross while it sits there (a nervous quiver), and uncross when the shake starts
+                if (tn < 0.18f)
+                    cross = 0;
+                else if (tn < 0.27f)
+                    cross = sstep((tn - 0.18f) / 0.09f);
+                else if (tn < 0.51f)
+                    cross = 1.0f + 0.05f * sinf(t / 85.0f);
+                else if (tn < 0.58f)
+                    cross = 1.0f - sstep((tn - 0.51f) / 0.07f);
+                if (tn >= 0.18f && tn < 0.51f)
+                    lid = 0.08f;
+                if (tn >= 0.51f && tn < 0.68f)
+                {
+                    // head shake: 2 swings each way, a little smaller towards the end; lids squint while it lasts
+                    const float kk = (tn - 0.51f) / 0.17f;
+                    const float amp = IDLE_FLYLAND_HEAD ? (IDLE_FLYLAND_SHAKE_DEG / (float)SERVO_LOOK_DEG) : 0.0f;
+                    headX = amp * (1.0f - 0.4f * kk) * sinf(6.2832f * 2.0f * kk);
+                    lid = 0.40f * sinf(3.14159f * kk);
+                    if (!flyLandShakeSnd)
+                    {
+                        flyLandShakeSnd = true;
+                        audio_play_async(SOUND_INDEX_FLY_SHAKE);
+                    }
+                }
+                if (tn < 0.82f)
+                {
+                    P.flyOn = true;
+                    P.flyX = fx;
+                    P.flyY = fy;
+                }
+                P.cross = cross;
+                P.lidBias = lid;
+                setGaze(gx, gy, true);
+                if (IDLE_FLYLAND_HEAD)
+                    servo_look(followHead ? clampGaze(IDLE_FLY_HEAD ? gx : 0.0f) : headX);
                 break;
             }
             case Act::SNEEZE: // inhale, inhale, hold, CHOO, a sheepish glance away
@@ -815,7 +924,7 @@ namespace disp
             }
         }
 
-        if (act != Act::FLY && !(act == Act::SNEEZE && IDLE_SNEEZE_HEAD) && !(act == Act::HICCUP && IDLE_HICCUP_HEAD))
+        if (act != Act::FLY && !(act == Act::FLY_LAND && IDLE_FLYLAND_HEAD) && !(act == Act::SNEEZE && IDLE_SNEEZE_HEAD) && !(act == Act::HICCUP && IDLE_HICCUP_HEAD))
             servo_look_end(); // the head drifts back to rest
 
         // ---------- 5. longer moods (no act running) ----------
@@ -965,7 +1074,14 @@ namespace disp
             int16_t fx = W / 2 + (int16_t)(persona.flyX * (W / 2));
             int16_t fy = cy + (int16_t)(persona.flyY * (faceH * 0.36f));
             const int16_t r = imax(1, u(1.4f));
-            const int16_t wy = ((now / 45) & 1) ? -imax(1, u(1.8f)) : -imax(1, u(0.8f)); // the wings flick up and down
+            // flying: the wings flick up and down; landed: folded on the back, now and then a quick twitch
+            int16_t wy = ((now / 45) & 1) ? -imax(1, u(1.8f)) : -imax(1, u(0.8f));
+            if (persona.flyLanded)
+            {
+                wy = -imax(1, u(0.4f));
+                if ((now / 350) % 4 == 0) // the legs rub: a small jiggle of the whole fly
+                    fx += ((now / 60) & 1) ? 1 : -1;
+            }
             const uint16_t wing = rgb(200, 215, 230);
             g.fillCircle(fx - u(1.8f), fy + wy, r, wing);
             g.fillCircle(fx + u(1.8f), fy + wy, r, wing);

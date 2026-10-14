@@ -523,6 +523,9 @@ namespace disp
 
     void eyesSetLidBias(float v) { lidBiasV = clamp01(v); }
 
+    static float crossPxV = 0; // cross-eyed: the left eye moves this far right, the right eye the same far left
+    void eyesSetCross(float px) { crossPxV = px; }
+
     void eyesSetTargets(EyeMood left, EyeMood right, float scale, float lookPxX, float lookPxY, float gazeN, int16_t R)
     {
         const EyeMood mood[2] = {left, right};
@@ -538,7 +541,8 @@ namespace disp
             sp[P_SLANT].target = p.slant;
             sp[P_LID_BOT].target = p.lidBot;
             // the gaze is not sprung: the saccade curve in updateLook() already is the motion
-            sp[P_X].x = sp[P_X].target = lookPxX;
+            const float cx = i == 0 ? crossPxV : -crossPxV; // i = 0 is the left eye
+            sp[P_X].x = sp[P_X].target = lookPxX + cx;
             sp[P_Y].x = sp[P_Y].target = lookPxY;
             sp[P_X].v = sp[P_Y].v = 0;
             if (!rigInit) // first frame: start in the pose, no grow-in from zero

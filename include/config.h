@@ -148,10 +148,12 @@ static_assert(WEATHER_BARS >= 2 && WEATHER_BARS <= 8, "WEATHER_BARS must be 2-8"
 // All of them go through audio_play_gentle(): at night they follow AUDIO_NIGHT_PET_VOLUME (silent by default).
 #define SOUND_INDEX_PET_B 6
 #define SOUND_INDEX_PET_C 7
-#define SOUND_INDEX_YAWN 0   // set to 8 if you upload the yawn_servo clip to the module
-#define SOUND_INDEX_SNEEZE 0 // the sneeze (idle life); 0 = silent. Set it to the index of a clip you upload yourself
-#define SOUND_INDEX_HICCUP 0 // one short "hic" per hiccup (idle life); 0 = silent. Set it to the index of a clip you upload yourself
-#define SOUND_INDEX_CHIME 0  // hourly chime OFF (was 9 = 09_hour_chime); set back to 9 to re-enable
+#define SOUND_INDEX_YAWN 0      // set to 8 if you upload the yawn_servo clip to the module
+#define SOUND_INDEX_SNEEZE 0    // the sneeze (idle life); 0 = silent. Set it to the index of a clip you upload yourself
+#define SOUND_INDEX_FLY 0       // the fly buzzing in / away (idle life); 0 = silent. Set it to the index of a clip you upload yourself
+#define SOUND_INDEX_FLY_SHAKE 0 // the head shake when the fly sits on his nose; 0 = silent
+#define SOUND_INDEX_HICCUP 0    // one short "hic" per hiccup (idle life); 0 = silent. Set it to the index of a clip you upload yourself
+#define SOUND_INDEX_CHIME 0     // hourly chime OFF (was 9 = 09_hour_chime); set back to 9 to re-enable
 #define SOUND_INDEX_BOOT 10
 
 // UI beeps (not wired to any feature yet — use these numbers when you add them):
@@ -317,6 +319,12 @@ static_assert(AMBIENT_MOTES >= 3 && AMBIENT_MOTES <= 5, "AMBIENT_MOTES must be 3
 //   GLANCE: looks down at the digits for a moment and they glow once, as if checking the time.
 //   FLY:    a small fly buzzes in from one side, loops around and leaves on the other. The eyes follow it and, with
 //           IDLE_FLY_HEAD, the head turns a little (SERVO_LOOK_DEG at most; SERVO_LOOK_DIR = -1 if it turns the wrong way).
+//   FLY_LAND: a variant of FLY (IDLE_FLYLAND_PERCENT % of the fly picks): the fly lands between the eyes, they cross
+//           (IDLE_FLYLAND_CROSS = how far each eye moves towards the middle, as a fraction of the eye radius; keep it
+//           below ~0.9 or they touch), he shakes his head (IDLE_FLYLAND_SHAKE_DEG degrees each way through servo_look(),
+//           0 or IDLE_FLYLAND_HEAD 0 keeps the head still) and the fly is gone. IDLE_FLYLAND_MS is the whole act (the
+//           phases scale with it; keep >= 6000 so the head can keep up). Sounds: SOUND_INDEX_FLY (buzz when it arrives
+//           and when it takes off) and SOUND_INDEX_FLY_SHAKE (the shake); 0 = silent.
 //   YAWN:   in the last IDLE_YAWN_EVENING_MIN minutes before night mode he yawns every IDLE_YAWN_MIN_MIN..MAX_MIN minutes;
 //           and if you wake him at night he yawns once IDLE_YAWN_LATE_S seconds after the touch if you keep him up.
 //   SNEEZE: "ah ... ah ... choo!": the eyes squint and look up twice, then the burst - eyes shut, a kick, a small spray,
@@ -335,6 +343,11 @@ static_assert(AMBIENT_MOTES >= 3 && AMBIENT_MOTES <= 5, "AMBIENT_MOTES must be 3
 #define IDLE_FLY_ENABLED 1
 #define IDLE_FLY_MS 6500
 #define IDLE_FLY_HEAD 1
+#define IDLE_FLYLAND_PERCENT 35 // % of the fly visits where the fly lands between the eyes (0 = never)
+#define IDLE_FLYLAND_MS 8200
+#define IDLE_FLYLAND_HEAD 1
+#define IDLE_FLYLAND_SHAKE_DEG 9
+#define IDLE_FLYLAND_CROSS 0.80f
 #define SERVO_LOOK_DEG 14
 #define SERVO_LOOK_DIR 1
 #define IDLE_YAWN_ENABLED 1

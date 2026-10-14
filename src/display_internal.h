@@ -276,6 +276,7 @@ namespace disp
     // Preset -> spring targets. scale multiplies w/h/radius (1.25 = flinch, 0 = eyes shrink away for a decoration).
     // gazeN = -1..1 gaze direction (for the parallax); lookPx = gaze offset in px (not sprung).
     void eyesSetTargets(EyeMood left, EyeMood right, float scale, float lookPxX, float lookPxY, float gazeN, int16_t R);
+    void eyesSetCross(float px);            // both eyes move px towards the middle (left +, right -): cross-eyed
     void eyesSetFast(bool on);              // anticipation: much stiffer springs for a moment
     void eyesSetBreath(float f);            // eye height factor (breathing), ~0.98..1.02
     void eyeCloseLid(EyeShape &s, float k); // bring the upper lid down by k (0..1)
@@ -337,6 +338,8 @@ namespace disp
         float digitPulse = 0;     // 0..1 the clock digits flash (top of the hour)
         float relief = 0;         // 0..1 progress of the sigh when WiFi came back (0 = none)
         bool flyOn = false;       // the virtual fly is on screen (drawPersonaExtras)
+        bool flyLanded = false;   // the fly sits still (wings folded) between the eyes
+        float cross = 0;          // 0..1: cross-eyed, both eyes move towards the middle (display_face.cpp -> eyesSetCross)
         float flyX = 0, flyY = 0; // where: x -1..1 across the card (beyond = off screen), y -1 (up) .. 1 (down)
         float sneezeJerk = 0;     // 0..1 the kick of the sneeze (display_face.cpp pushes the eyes down / aside by it)
         float sneezeSpray = 0;    // 0..1 progress of the spray after the sneeze (0 = none, drawPersonaExtras)
