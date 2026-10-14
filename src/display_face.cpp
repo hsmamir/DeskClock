@@ -484,6 +484,8 @@ namespace disp
                 wantMouth = MouthKind::OPEN_O; // the sigh
             else if (persona.sneezeMouth)
                 wantMouth = MouthKind::OPEN_O; // "ah ... choo!"
+            else if (persona.hiccupHop > 0.3f)
+                wantMouth = MouthKind::OPEN_O; // the "hic"
         }
         eyesSetMouth(wantMouth);
         int16_t mouthY = cy + eyeH / 2 + u(10); // ~y 76 on the 128x88 face
@@ -542,6 +544,8 @@ namespace disp
             cyE += (int16_t)(persona.sneezeJerk * u(5)); // the sneeze kicks the eyes down and to one side
             shiver += (int16_t)(-persona.sneezeJerk * u(3));
         }
+        if (persona.hiccupHop > 0)
+            cyE -= (int16_t)(persona.hiccupHop * u(3)); // the hiccup lifts the eyes in a quick little jump
 
         // one-off idle expressions
         float squeeze = 0;

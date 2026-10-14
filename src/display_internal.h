@@ -341,6 +341,9 @@ namespace disp
         float sneezeJerk = 0;     // 0..1 the kick of the sneeze (display_face.cpp pushes the eyes down / aside by it)
         float sneezeSpray = 0;    // 0..1 progress of the spray after the sneeze (0 = none, drawPersonaExtras)
         bool sneezeMouth = false; // mouth open for the "ah ... ah ..." and the burst
+        float hiccupHop = 0;      // 0..1 the jump of the eyes at each hiccup (display_face.cpp lifts the eyes by it)
+        float hiccupText = 0;     // 0..1 progress of the "hic" beside the face (0 = none, drawPersonaExtras)
+        int8_t hiccupSide = 1;    // +1: the "hic" is above the right eye, -1: above the left one
         bool celestOk = false;    // the sun / moon is up there: a share of idle looks goes to it
         float celestX = 0, celestY = 0;
         bool gazeOn = false;     // the persona decides where to look

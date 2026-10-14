@@ -191,10 +191,13 @@ While nothing else is happening (daytime, no reaction showing) he does a small t
 | Fly       | a small fly enters on one side, loops around for about 6.5 s and leaves on the other; the eyes follow it and the head turns a little                                                       |
 | Yawn      | in the last 90 minutes before night mode starts, a yawn every 12-26 minutes; at night, if you wake him and keep him up, one yawn 25 s after the touch                                      |
 | Sneeze    | rare: "ah ... ah ... choo!" - eyes squint and look up twice, then the burst (eyes shut, a kick, a small spray, the head snaps aside) and a sheepish glance; likelier in rain, snow or cold |
+| Hiccups   | rare: 3-4 small hops of the eyes, each with a "hic" beside the face (alternating sides) and a tiny jolt of the head; at the end the eyes look surprised                                    |
 
 If the head turns the wrong way for the fly, set `SERVO_LOOK_DIR` to `-1` in `config.h`; `IDLE_FLY_HEAD 0` keeps the head
 still. Every behaviour has an `IDLE_*_ENABLED` switch. The sneeze is a rare pick (`IDLE_SNEEZE_PERCENT`, plus `IDLE_SNEEZE_WEATHER_BONUS` in
 rain / snow / cold), `IDLE_SNEEZE_HEAD 0` keeps the head still, and `SOUND_INDEX_SNEEZE` plays a clip of your own (0 = silent).
+The hiccups are rare too (`IDLE_HICCUP_PERCENT`); `IDLE_HICCUP_HEAD 0` keeps the head still, `IDLE_HICCUP_HEAD_DEG` sets the size of the jolt,
+and `SOUND_INDEX_HICCUP` plays one short clip of your own per hiccup (0 = silent).
 
 ### Pet reactions
 
@@ -293,7 +296,7 @@ Almost everything is a `#define` in `include/config.h`, each with a comment. The
 | `BACKLIGHT_*`                                             | how the screen is dimmed (drive strength or PWM)                                                  |
 | `PET_*`                                                   | streak lengths, purr time, rare-reaction chance                                                   |
 | `PET_BOND_*`                                              | how fast the bond grows and fades, its levels, tint and self-started acts                         |
-| `IDLE_*`, `SERVO_LOOK_*`                                  | thinking, glance, fly, yawn and sneeze behaviours, how far the head follows the fly               |
+| `IDLE_*`, `SERVO_LOOK_*`                                  | thinking, glance, fly, yawn, sneeze and hiccup behaviours, how far the head follows the fly       |
 | `SERVO_*`                                                 | rest / pet / alarm angles and timings                                                             |
 | `OCCASIONS_DEFAULT`, `OCC_*`                              | yearly occasion animations: default on / off and their dates                                      |
 | `UI_SOUNDS_DEFAULT`                                       | feedback beeps when settings are changed                                                          |

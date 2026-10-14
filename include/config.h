@@ -150,6 +150,7 @@ static_assert(WEATHER_BARS >= 2 && WEATHER_BARS <= 8, "WEATHER_BARS must be 2-8"
 #define SOUND_INDEX_PET_C 7
 #define SOUND_INDEX_YAWN 0   // set to 8 if you upload the yawn_servo clip to the module
 #define SOUND_INDEX_SNEEZE 0 // the sneeze (idle life); 0 = silent. Set it to the index of a clip you upload yourself
+#define SOUND_INDEX_HICCUP 0 // one short "hic" per hiccup (idle life); 0 = silent. Set it to the index of a clip you upload yourself
 #define SOUND_INDEX_CHIME 0  // hourly chime OFF (was 9 = 09_hour_chime); set back to 9 to re-enable
 #define SOUND_INDEX_BOOT 10
 
@@ -323,6 +324,11 @@ static_assert(AMBIENT_MOTES >= 3 && AMBIENT_MOTES <= 5, "AMBIENT_MOTES must be 3
 //           IDLE_SNEEZE_PERCENT is the chance (in %) each time one is due, IDLE_SNEEZE_WEATHER_BONUS is added when it is
 //           raining / snowing or cold (REACT_COLD_C). IDLE_SNEEZE_MS is the whole act (the phases scale with it).
 //           IDLE_SNEEZE_HEAD 0 keeps the head still. Sound: SOUND_INDEX_SNEEZE.
+//   HICCUP: 3-4 small hops of the eyes upwards, each with a "hic" beside the face (alternating sides), a tiny jolt of the
+//           head and, if you set SOUND_INDEX_HICCUP, a short sound; at the end the eyes look surprised. It is a rare pick:
+//           IDLE_HICCUP_PERCENT is the chance (in %) each time an idle act is due. IDLE_HICCUP_HEAD 0 keeps the head still,
+//           IDLE_HICCUP_HEAD_DEG is the size of the jolt in degrees (it moves through servo_look(), so it never exceeds
+//           SERVO_LOOK_DEG). To see it quickly while testing: IDLE_HICCUP_PERCENT 100 and MICRO_MIN_S / MICRO_MAX_S 5.
 // Set a switch to 0 to remove that behaviour.
 #define IDLE_THINK_ENABLED 1
 #define IDLE_GLANCE_ENABLED 1
@@ -341,6 +347,10 @@ static_assert(AMBIENT_MOTES >= 3 && AMBIENT_MOTES <= 5, "AMBIENT_MOTES must be 3
 #define IDLE_SNEEZE_WEATHER_BONUS 10
 #define IDLE_SNEEZE_MS 2800
 #define IDLE_SNEEZE_HEAD 1
+#define IDLE_HICCUP_ENABLED 1
+#define IDLE_HICCUP_PERCENT 6
+#define IDLE_HICCUP_HEAD 1
+#define IDLE_HICCUP_HEAD_DEG 3
 
 // ---- Servo motion ----
 // Visible movements are eased in SERVO_STEP_MS steps instead of jumping, and start SERVO_FOLLOW_DELAY_MS after

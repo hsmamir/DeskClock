@@ -1,7 +1,7 @@
 // display_persona.cpp - behaviours that last longer than one frame and tie the clock's world to its character:
 //   boot wake-up, going to sleep step by step, the hourly chime, the minute before the alarm, snooze / dismiss,
 //   sulking after "that's enough!", looking at the sun / moon, and small idle moods (peek-a-boo, eye roll,
-//   squint, a sigh of relief when WiFi is back, "oh!" at the first rain or snow).
+//   squint, a sigh of relief when WiFi is back, "oh!" at the first rain or snow, a fit of hiccups).
 // personaUpdate() decides, once per tick, what each of them wants and fills `persona` (display_internal.h);
 // the drawing and the gaze / lid machines elsewhere only read it.
 #include "display_internal.h"
@@ -62,7 +62,8 @@ namespace disp
         GLANCE, // looks at the digits, they glow once
         FLY,    // a fly buzzes across; eyes (and head) follow
         YAWN,   // evening / late-night yawn
-        SNEEZE  // "ah ... ah ... choo!" (rare; likelier in rain / snow / cold)
+        SNEEZE, // "ah ... ah ... choo!" (rare; likelier in rain / snow / cold)
+        HICCUP  // 3-4 small hops of the eyes, a "hic" beside the face, a head jolt; ends with a surprised look (rare)
     };
     static Act act = Act::NONE;
     static uint32_t actStartMs = 0, actDurMs = 0;
@@ -78,6 +79,14 @@ namespace disp
     static bool thinkIdea = false;    // this "hmm" ends with an "oh!"
     static bool thinkIdeaShown = false;
     static bool sneezeBurstDone = false; // the burst's blink / sound was already triggered in this sneeze
+    static const uint8_t HICCUP_MAX = 4;
+    static const float HICCUP_HOP_MS = 260.0f;  // one hop of the eyes
+    static const float HICCUP_TEXT_MS = 420.0f; // the "hic" stays this long (and fades)
+    static uint8_t hiccupN = 0;                 // hiccups in this fit (3..4)
+    static uint16_t hicAt[HICCUP_MAX];          // when each one comes, ms after the act started
+    static uint16_t hicSurpriseAt = 0;          // when the surprised look starts
+    static uint8_t hicSoundNext = 0;            // the next hiccup whose sound is still due
+    static bool hicSurpriseDone = false;
     static uint32_t pulseStartMs = 0;
     static bool pulseOn = false;
 
@@ -101,6 +110,22 @@ namespace disp
         act = a;
         actStartMs = now;
         actDurMs = dur;
+    }
+
+    // A fit of hiccups: 3..4 of them, never evenly spaced, then a short pause before the surprised look.
+    static void startHiccup(uint32_t now)
+    {
+        hiccupN = (uint8_t)random(3, HICCUP_MAX + 1);
+        uint16_t t = 450;
+        for (uint8_t i = 0; i < hiccupN; i++)
+        {
+            hicAt[i] = t;
+            t += (uint16_t)random(520, 760);
+        }
+        hicSurpriseAt = hicAt[hiccupN - 1] + 520;
+        hicSoundNext = 0;
+        hicSurpriseDone = false;
+        startAct(Act::HICCUP, now, (uint32_t)hicSurpriseAt + 1250);
     }
 
     // Minutes until the eyes get drowsy (EYES_DROWSY_START_HOUR); negative once that hour has passed today.
@@ -234,6 +259,8 @@ namespace disp
         P.sneezeJerk = 0;
         P.sneezeSpray = 0;
         P.sneezeMouth = false;
+        P.hiccupHop = 0;
+        P.hiccupText = 0;
 
         // ---------- 1. wake-up at boot ----------
         if (!bootInit)
@@ -508,11 +535,16 @@ namespace disp
                         chance += IDLE_SNEEZE_WEATHER_BONUS;
                     sneezeNow = random(0, 100) < chance;
                 }
+                bool hiccupNow = false;
+                if (!sneezeNow && IDLE_HICCUP_ENABLED)
+                    hiccupNow = random(0, 100) < IDLE_HICCUP_PERCENT;
                 if (sneezeNow)
                 {
                     sneezeBurstDone = false;
                     startAct(Act::SNEEZE, now, IDLE_SNEEZE_MS);
                 }
+                else if (hiccupNow)
+                    startHiccup(now);
                 else if (r < 18)
                     startAct(Act::PEEK, now, 3400);
                 else if (r < 30 && in.sunny)
@@ -732,12 +764,58 @@ namespace disp
                     servo_look(clampGaze(headX));
                 break;
             }
+            case Act::HICCUP: // hop, "hic", hop, "hic" ... then a surprised look
+            {
+                float hop = 0;
+                int8_t side = 1;
+                for (uint8_t i = 0; i < hiccupN; i++)
+                {
+                    const float d = t - (float)hicAt[i];
+                    if (d < 0 || d >= HICCUP_TEXT_MS)
+                        continue;
+                    if (i >= hicSoundNext) // one short sound per hiccup
+                    {
+                        hicSoundNext = i + 1;
+                        audio_play_async(SOUND_INDEX_HICCUP);
+                    }
+                    side = (i & 1) ? -1 : 1;
+                    P.hiccupText = (d + 20.0f) / (HICCUP_TEXT_MS + 20.0f); // always > 0 while it shows
+                    if (d < HICCUP_HOP_MS)
+                    {
+                        const float p = d / HICCUP_HOP_MS; // up fast (first quarter), back down slower
+                        hop = p < 0.25f ? p / 0.25f : 1.0f - sstep((p - 0.25f) / 0.75f);
+                    }
+                }
+                P.hiccupSide = side;
+                if (t < (float)hicSurpriseAt)
+                {
+                    P.exprOk = false;
+                    P.hiccupHop = hop;
+                    P.lidBias = 0.18f * hop;       // the lids flinch a little at each hic
+                    setGaze(0, -0.7f * hop, true); // the eyes jump up and drop back
+                    if (IDLE_HICCUP_HEAD)          // a tiny jolt of the head, then back to rest
+                        servo_look(hop > 0.3f ? side * (IDLE_HICCUP_HEAD_DEG / (float)SERVO_LOOK_DEG) : 0.0f);
+                }
+                else
+                {
+                    // the fit is over: the eyes widen and look straight ahead in surprise (exprOk stays true so it shows)
+                    const float ts = t - (float)hicSurpriseAt;
+                    if (!hicSurpriseDone)
+                    {
+                        hicSurpriseDone = true;
+                        exprForce(Expr::SURPRISE, now, 900);
+                    }
+                    P.scalePulse = 1.0f + 0.12f * sstep(ts / 200.0f) * (1.0f - sstep((ts - 950.0f) / 300.0f));
+                    setGaze(0, 0, true);
+                }
+                break;
+            }
             default:
                 break;
             }
         }
 
-        if (act != Act::FLY && !(act == Act::SNEEZE && IDLE_SNEEZE_HEAD))
+        if (act != Act::FLY && !(act == Act::SNEEZE && IDLE_SNEEZE_HEAD) && !(act == Act::HICCUP && IDLE_HICCUP_HEAD))
             servo_look_end(); // the head drifts back to rest
 
         // ---------- 5. longer moods (no act running) ----------
@@ -893,6 +971,17 @@ namespace disp
             g.fillCircle(fx + u(1.8f), fy + wy, r, wing);
             g.fillCircle(fx, fy, r + 1, rgb(190, 190, 200)); // light rim: visible on the dark card and on the bright eyes
             g.fillCircle(fx, fy, r, rgb(25, 25, 30));
+        }
+        if (persona.hiccupText > 0.0f && persona.hiccupText < 1.0f)
+        {
+            // "hic": pops up beside the face (above the eye on the side of the jolt), rises a little and fades;
+            // the side alternates with every hiccup
+            const float p = persona.hiccupText;
+            const int16_t hx = W / 2 + persona.hiccupSide * (2 * R + u(8));
+            const int16_t hy = cy - R - u(15) - (int16_t)(p * u(4));
+            g.setTextDatum(MC_DATUM);
+            g.setTextColor(tint(C_AMBER, clamp01(1.4f * (1.0f - p))));
+            g.drawString("hic", hx, hy, 2);
         }
         if (persona.sneezeSpray > 0.0f && persona.sneezeSpray < 1.0f)
         {
