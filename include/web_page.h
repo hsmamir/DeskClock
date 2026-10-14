@@ -296,6 +296,9 @@ dialog .foot{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding-top:12px
 <button type="button" class="chip" data-o="3">🎄 کریسمس</button>
 <button type="button" class="chip" data-o="4">🎆 شب سال نو</button>
 <button type="button" class="chip" data-o="5">💝 ولنتاین</button>
+<button type="button" class="chip" data-o="6">🔥 چهارشنبه‌سوری</button>
+<button type="button" class="chip" data-o="7">🍉 شب یلدا</button>
+<button type="button" class="chip" data-o="8">🌱 نوروز</button>
 <button type="button" class="chip" data-o="0">⏹ توقف</button>
 </div></div>
 <details><summary>زمان نمایش هر مناسبت</summary>

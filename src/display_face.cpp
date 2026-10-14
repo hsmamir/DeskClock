@@ -417,7 +417,7 @@ namespace disp
         int16_t R = W / 8; // same base size as before
         int16_t eyeW = R * 2;
         int16_t eyeH = (int16_t)(R * 2.25f);
-        int16_t cy = (int16_t)(faceH * 0.55f); // breathing is the eye height now (eyesSetBreath), not the position
+        int16_t cy = (int16_t)(faceH * 0.55f) + occasionEyeDy(now, alarm); // breathing is the eye height now (eyesSetBreath), not the position; the occasion may make the eyes hop
         int16_t lcx = W / 2 - R * 2;
         int16_t rcx = W / 2 + R * 2;
 

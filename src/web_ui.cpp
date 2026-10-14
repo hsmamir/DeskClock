@@ -211,8 +211,9 @@ static void handleTestSound()
     server.send(200, "application/json", "{\"ok\":true}");
 }
 
-// Shows a yearly occasion on the face for 25 s: /api/test-occasion?id=0..5 (0 = stop, 1 Halloween,
-// 2 Easter, 3 Christmas, 4 New Year's Eve with the countdown, 5 Valentine). Works whatever today's date is.
+// Shows a yearly occasion on the face for 25 s: /api/test-occasion?id=0..8 (0 = stop, 1 Halloween,
+// 2 Easter, 3 Christmas, 4 New Year's Eve with the countdown, 5 Valentine, 6 Chaharshanbe Suri, 7 Yalda,
+// 8 Nowruz with the greeting and Sizdah Bedar). Works whatever today's date is.
 static void handleTestOccasion()
 {
     if (!authorized())

@@ -28,7 +28,9 @@ Everything else - alarm time, volume, city, timezone - is set from a small web p
   when you stay away. It makes him more patient, lets him smile by himself, tints his eyes, and when he is lonely
   he sighs now and then. See [Bond](#bond).
 - **Yearly occasions**: Halloween, Valentine's Day, Christmas, Easter and New Year's Eve change the face on their own
-  (bats, hearts, snow and a Santa hat, bunny ears, fireworks and a 10..1 countdown). See [Yearly occasions](#yearly-occasions).
+  (bats, hearts, snow and a Santa hat, bunny ears, fireworks and a 10..1 countdown), and so do the Iranian ones from the
+  Persian calendar: Chaharshanbe Suri (bonfires and fireworks), Yalda (pomegranate and watermelon) and Nowruz (spring look).
+  See [Yearly occasions](#yearly-occasions).
 - **Weather** from Open-Meteo (free, no API key): current conditions, today's high / low, feels-like, humidity,
   wind, UV, pressure, sunrise / sunset and hourly forecast bars with the chance of rain.
 - **Date page** with the weekday, a big day number and a month calendar (today highlighted).
@@ -232,15 +234,21 @@ the bond neither changes nor shows. All numbers are `PET_BOND_*` in `config.h` (
 
 On a few dates the face changes by itself. Everything is drawn on the screen, no extra files or hardware are needed.
 
-| Occasion        | When (defaults)                                                        | What you see                                                         |
-| --------------- | ---------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| Halloween       | Oct 28 - 31                                                            | bats flying past, a glowing jack-o'-lantern, orange eyes             |
-| Valentine's Day | Feb 13 - 14                                                            | hearts drifting up, blushing cheeks, a beating heart, pink eyes      |
-| Christmas       | Dec 20 - 26                                                            | falling snow, a Santa hat, a string of blinking lights               |
-| Easter          | Good Friday to Easter Monday (Western Easter, computed for every year) | bunny ears (one twitches now and then), pastel eggs that hop         |
-| New Year's Eve  | Dec 31 from 18:00 until Jan 1 03:00                                    | fireworks, confetti, a party hat, a 10..1 countdown and the new year |
+| Occasion          | When (defaults)                                                                                | What you see                                                                                                                                                                             |
+| ----------------- | ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Halloween         | Oct 28 - 31                                                                                    | bats flying past, a glowing jack-o'-lantern, orange eyes                                                                                                                                 |
+| Valentine's Day   | Feb 13 - 14                                                                                    | hearts drifting up, blushing cheeks, a beating heart, pink eyes                                                                                                                          |
+| Christmas         | Dec 20 - 26                                                                                    | falling snow, a Santa hat, a string of blinking lights                                                                                                                                   |
+| Easter            | Good Friday to Easter Monday (Western Easter, computed for every year)                         | bunny ears (one twitches now and then), pastel eggs that hop                                                                                                                             |
+| New Year's Eve    | Dec 31 from 18:00 until Jan 1 03:00                                                            | fireworks, confetti, a party hat, a 10..1 countdown and the new year                                                                                                                     |
+| Chaharshanbe Suri | the Tuesday evening before the last Wednesday of Esfand, 17:00 until 02:00                     | three bonfires with sparks, warm fireworks, fiery eyes that hop, the call "زردی من از تو، سرخی تو از من"                                                                                 |
+| Yalda             | 30 Azar from the real sunset until the sunrise of 1 Dey (fixed hours without a saved location) | a candle, a watermelon slice, a cut pomegranate, falling ruby seeds, ruby-red eyes                                                                                                       |
+| Nowruz            | 29 Esfand - 13 Farvardin                                                                       | blossom petals, sabzeh, hyacinth, a goldfish bowl, spring-green eyes; at midnight of 1 Farvardin "نوروزت مبارک <year>" with fireworks; on the 13th (Sizdah Bedar) a kite and a butterfly |
 
 The countdown starts at 23:59:50 and the new year appears at midnight, so the clock needs a valid time (NTP or the time restored from flash).
+The Iranian occasions use the Persian (Solar Hijri) calendar, converted on the chip (`include/jalali.h`, the 33-year rule: it matches
+the official calendar until about the year 1472), and they win over every other occasion when dates overlap (Yalda vs Christmas,
+Nowruz vs Easter). Chaharshanbe Suri is the evening before the last Wednesday of Esfand. The Persian text is drawn with the Vazir font.
 The dates are the `OCC_*` values in `config.h`. The whole feature can be switched off on the settings page
 (`OCCASIONS_DEFAULT 0` changes the factory default), and the settings page can preview each occasion for 25 s at any time of year.
 

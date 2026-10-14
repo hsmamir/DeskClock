@@ -4,10 +4,18 @@
 //   Christmas     falling snow, Santa hat, a string of blinking lights
 //   Valentine     hearts drifting up, blushing cheeks, a beating heart, pink eyes
 //   New Year's Eve fireworks, confetti, party hat, a 10..1 countdown and the new year at midnight
+//   Chaharshanbe Suri  (Iranian, Tuesday evening before the last Wednesday of the Persian year) three bonfires with
+//                 sparks, warm fireworks, fiery eyes that hop, the call "zardi-ye man az to, sorkhi-ye to az man"
+//   Yalda         (Iranian, 30 Azar sunset -> 1 Dey sunrise) a candle, a watermelon slice, a pomegranate, falling ruby seeds
+//   Nowruz        (Iranian, 29 Esfand .. 13 Farvardin) blossom petals, sabzeh, hyacinth, goldfish bowl, green eyes; a
+//                 "Nowruz mubarak <year>" greeting with fireworks at midnight of 1 Farvardin; kite + butterfly on Sizdah Bedar
 // Everything is procedural (derived from `now`), no per-object state. Two layers: drawOccasionBack()
 // runs right after the background (behind the eyes), drawOccasionFront() after the eyes.
 // The dates are in occasionUpdate(); occasion_preview() (web page) forces one for a short while.
 #include "display_internal.h"
+#include "display_vazir.h" // Persian smooth fonts (plaques of the Iranian occasions)
+#include "persian_text.h"  // shaping + right-to-left order for them
+#include "jalali.h"        // Persian calendar
 #include "occasion.h"
 
 // ---- preview, written by the web task, read by the display task ----
@@ -31,7 +39,7 @@ void occasion_preview(uint8_t id, uint32_t durationMs)
 namespace disp
 {
 
-    OccState occ = {Occasion::NONE, 0, false, 0};
+    OccState occ = {Occasion::NONE, 0, false, 0, false};
 
     // ---- date helpers ----
     // Days since 1970-01-01 for a civil date (so two dates can be subtracted).
@@ -59,9 +67,71 @@ namespace disp
         day = ((h + l - 7 * m + 114) % 31) + 1;
     }
 
+    static float rnd01(uint32_t i, uint32_t salt); // defined with the drawing helpers below
+
+    // The Persian year that starts at the coming Nowruz (for the preview of the greeting).
+    static uint16_t nextPersianYear(const struct tm *ti)
+    {
+        if (!ti)
+            return 1406;
+        int jy, jm, jd;
+        jalali::fromGregorian(ti->tm_year + 1900, ti->tm_mon + 1, ti->tm_mday, jy, jm, jd);
+        return (uint16_t)(jy + 1);
+    }
+
+    // The Iranian occasions, from the Persian calendar. They are checked before every other occasion
+    // (Yalda can fall into the Christmas days, Nowruz into Easter): sets occ and returns true when one is on.
+    static bool persianOccasion(const struct tm *ti)
+    {
+        int jy, jm, jd;
+        jalali::fromGregorian(ti->tm_year + 1900, ti->tm_mon + 1, ti->tm_mday, jy, jm, jd);
+
+        // Chaharshanbe Suri: the evening of the Tuesday before the last Wednesday of Esfand, until the small hours
+        if (jm == 12)
+        {
+            int lastWed = jalali::lastWednesdayOfEsfand(jy, jd, ti->tm_wday);
+            bool eve = (jd == lastWed - 1 && ti->tm_hour >= OCC_CHAHARSHANBE_FROM_HOUR);
+            bool after = (jd == lastWed && ti->tm_hour < OCC_CHAHARSHANBE_UNTIL_HOUR);
+            if (eve || after)
+            {
+                occ.kind = Occasion::CHAHARSHANBE_SURI;
+                return true;
+            }
+        }
+
+        // Yalda: the night of 30 Azar -> 1 Dey, from the real sunset to the real sunrise (fixed hours without a location)
+        if ((jm == 9 && jd == 30) || (jm == 10 && jd == 1))
+        {
+            SunTimes st = sun_today(*ti);
+            bool sunOk = st.valid && !st.polarNight && !st.midnightSun;
+            float nowH = ti->tm_hour + ti->tm_min / 60.0f;
+            bool eve = (jm == 9) && nowH >= (sunOk ? st.setH : (float)OCC_YALDA_FROM_HOUR);
+            bool after = (jm == 10) && nowH < (sunOk ? st.riseH : (float)OCC_YALDA_UNTIL_HOUR);
+            if (eve || after)
+            {
+                occ.kind = Occasion::YALDA;
+                return true;
+            }
+        }
+
+        // Nowruz: 29 Esfand .. 13 Farvardin
+        if ((jm == 12 && jd >= OCC_NOWRUZ_FROM_DAY) || (jm == 1 && jd <= OCC_NOWRUZ_UNTIL_DAY))
+        {
+            occ.kind = Occasion::NOWRUZ;
+            occ.sizdah = (jm == 1 && jd == 13);
+            if (jm == 1 && jd == 1 && ti->tm_hour == 0 && ti->tm_min < OCC_NOWRUZ_GREETING_MIN)
+            {
+                occ.midnight = true;
+                occ.year = (uint16_t)jy;
+            }
+            return true;
+        }
+        return false;
+    }
+
     void occasionUpdate(const struct tm *ti, uint32_t now)
     {
-        occ = {Occasion::NONE, 0, false, 0};
+        occ = {Occasion::NONE, 0, false, 0, false};
 
         // Preview from the web page
         uint8_t pid = s_prevId;
@@ -86,6 +156,18 @@ namespace disp
                         occ.year = ti ? (uint16_t)(ti->tm_year + 1901) : 2027;
                     }
                 }
+                else if (occ.kind == Occasion::NOWRUZ)
+                {
+                    // 24 s story: 0-11 the spring look, 12-17 "Nowruz mubarak <year>", 18-23 Sizdah Bedar
+                    uint32_t t = ((now - s_prevStartMs) / 1000) % 24;
+                    if (t >= 12 && t < 18)
+                    {
+                        occ.midnight = true;
+                        occ.year = nextPersianYear(ti);
+                    }
+                    else if (t >= 18)
+                        occ.sizdah = true;
+                }
                 return;
             }
         }
@@ -94,6 +176,10 @@ namespace disp
             return;
 
         int y = ti->tm_year + 1900, mon = ti->tm_mon + 1, day = ti->tm_mday;
+
+        // The Iranian occasions go first
+        if (persianOccasion(ti))
+            return;
 
         // Halloween: the last days of October
         if (mon == 10 && day >= 31 - OCC_HALLOWEEN_DAYS_BEFORE)
@@ -151,6 +237,23 @@ namespace disp
         {
             C_EYE_TOP = mixColor(C_EYE_TOP, rgb(255, 125, 175), 0.6f);
             C_EYE_BOT = mixColor(C_EYE_BOT, rgb(225, 45, 105), 0.6f);
+        }
+        else if (occ.kind == Occasion::CHAHARSHANBE_SURI)
+        {
+            // the eyes catch the fire light: the tint flickers a little
+            float k = 0.55f + 0.2f * rnd01(millis() / 110, 61);
+            C_EYE_TOP = mixColor(C_EYE_TOP, rgb(255, 175, 45), k);
+            C_EYE_BOT = mixColor(C_EYE_BOT, rgb(235, 55, 10), k);
+        }
+        else if (occ.kind == Occasion::YALDA)
+        {
+            C_EYE_TOP = mixColor(C_EYE_TOP, rgb(245, 80, 110), 0.6f); // pomegranate red
+            C_EYE_BOT = mixColor(C_EYE_BOT, rgb(165, 10, 50), 0.6f);
+        }
+        else if (occ.kind == Occasion::NOWRUZ)
+        {
+            C_EYE_TOP = mixColor(C_EYE_TOP, rgb(175, 240, 140), 0.6f); // fresh spring green
+            C_EYE_BOT = mixColor(C_EYE_BOT, rgb(35, 165, 105), 0.6f);
         }
     }
 
@@ -332,7 +435,19 @@ namespace disp
     // =====================================================================
     //  New Year's Eve
     // =====================================================================
-    static void bgFireworks(TFT_eSPI &g, uint32_t now, bool heavy)
+    // pal: 0 = party colours (New Year's Eve), 1 = fire colours (Chaharshanbe Suri), 2 = spring colours (Nowruz)
+    static uint16_t fireworkColor(uint8_t pal, uint32_t i)
+    {
+        static const uint16_t warm[6] = {rgb(255, 90, 30), rgb(255, 200, 50), rgb(255, 140, 20), rgb(255, 235, 150), rgb(235, 40, 20), rgb(255, 170, 60)};
+        static const uint16_t spring[6] = {rgb(255, 150, 190), rgb(120, 230, 140), rgb(255, 215, 80), rgb(255, 255, 255), rgb(120, 220, 230), rgb(190, 150, 255)};
+        if (pal == 1)
+            return warm[i % 6];
+        if (pal == 2)
+            return spring[i % 6];
+        return partyColor(i);
+    }
+
+    static void bgFireworks(TFT_eSPI &g, uint32_t now, bool heavy, uint8_t pal = 0)
     {
         const uint8_t bursts = heavy ? 5 : 3;
         const uint32_t period = heavy ? 1500 : 3100, life = 1300;
@@ -345,7 +460,7 @@ namespace disp
             float p = age / (float)life;
             int16_t x = (int16_t)(W * (0.12f + 0.76f * rnd01(cyc * 7 + b, 1)));
             int16_t y = (int16_t)(faceH * (0.14f + 0.36f * rnd01(cyc * 7 + b, 2)));
-            uint16_t col = partyColor(hash32(cyc * 7 + b));
+            uint16_t col = fireworkColor(pal, hash32(cyc * 7 + b));
             if (age < 120)
                 g.fillCircle(x, y, u(3), C_WHITE); // the flash
             float r = u(4) + (1.0f - (1.0f - p) * (1.0f - p)) * u(24);
@@ -434,6 +549,355 @@ namespace disp
     }
 
     // =====================================================================
+    //  Iranian occasions - shared helpers
+    // =====================================================================
+    // Persian digits (U+06F0..U+06F9, UTF-8 0xDB 0xB0..0xB9) of v.
+    static void persianNumber(unsigned v, char *out)
+    {
+        char d[8];
+        int n = 0;
+        do
+        {
+            d[n++] = (char)('0' + v % 10);
+            v /= 10;
+        } while (v && n < 7);
+        int o = 0;
+        while (n > 0)
+        {
+            out[o++] = (char)0xDB;
+            out[o++] = (char)(0xB0 + (d[--n] - '0'));
+        }
+        out[o] = '\0';
+    }
+
+    // A dark plaque with Persian text at the top of the card (the counterpart of drawBigText). The text is shaped and put
+    // into visual order by fa::visual(), then drawn with the Vazir font: the bigger one when it fits.
+    static void drawPersianPlaque(TFT_eSPI &g, uint32_t now, const char *utf8, uint16_t textCol, uint16_t borderCol)
+    {
+        char vis[112];
+        fa::visual(utf8, strlen(utf8), vis, sizeof(vis), fa::DIR_RTL);
+        const uint8_t *font = Vazir18;
+        int16_t tw = smoothWidth(g, font, vis);
+        int16_t ph = u(25);
+        if (tw > W - u(14))
+        {
+            font = Vazir14;
+            tw = smoothWidth(g, font, vis);
+            ph = u(22);
+        }
+        int16_t cx = W / 2, cyT = u(14);
+        int16_t pw = imin(tw + u(12), (int16_t)(W - u(2)));
+        const uint16_t plaque = rgb(10, 10, 35);
+        g.fillRoundRect(cx - pw / 2, cyT - ph / 2, pw, ph, u(6), plaque);
+        g.drawRoundRect(cx - pw / 2, cyT - ph / 2, pw, ph, u(6), (now / 250) & 1 ? borderCol : dimColor(borderCol, 120));
+        g.loadFont(font);
+        g.setTextColor(textCol, plaque);
+        g.setTextDatum(MC_DATUM);
+        g.drawString(vis, cx, cyT);
+        g.unloadFont();
+    }
+
+    // A flame: a teardrop of height hh with its tip swayed sideways, base centred on x at by.
+    static void flameShape(TFT_eSPI &g, int16_t x, int16_t by, int16_t w, int16_t hh, int16_t sway, uint16_t c)
+    {
+        if (w < 1 || hh < 2)
+            return;
+        g.fillEllipse(x, by - hh * 28 / 100, w, hh * 30 / 100 + 1, c);
+        g.fillTriangle(x - w, by - hh * 28 / 100, x + w, by - hh * 28 / 100, x + sway, by - hh, c);
+    }
+
+    // The part of a disc below the line y0 (flat side up), by scanlines.
+    static void fillHalfDisc(TFT_eSPI &g, int16_t cx, int16_t y0, int16_t r, uint16_t c)
+    {
+        for (int16_t dy = 0; dy <= r; dy++)
+        {
+            int16_t hw = (int16_t)(sqrtf((float)(r * r - dy * dy)) + 0.5f);
+            g.drawFastHLine(cx - hw, y0 + dy, hw * 2 + 1, c);
+        }
+    }
+
+    // =====================================================================
+    //  Chaharshanbe Suri
+    // =====================================================================
+    // A bonfire: crossed logs, three layers of flame that flicker and sway, sparks rising from it.
+    static void drawBonfire(TFT_eSPI &g, uint32_t now, int16_t x, int16_t baseY, int16_t w, int16_t h, uint32_t seed)
+    {
+        const uint16_t red = rgb(225, 45, 10), orange = rgb(255, 135, 15), yellow = rgb(255, 225, 90);
+        int16_t hh = (int16_t)(h * (0.80f + 0.30f * rnd01(now / 70 + seed * 13, 31)));
+        int16_t sway = (int16_t)(sinf(now / 130.0f + seed * 1.7f) * w * 0.35f);
+        int16_t by = baseY - u(3);
+        g.fillCircle(x, by - hh / 3, w + u(3), tint(orange, 0.20f)); // the light of the fire
+        flameShape(g, x, by, w, hh, sway, red);
+        flameShape(g, x - w * 6 / 10, by, w * 55 / 100, hh * 65 / 100, -sway / 2, red); // side tongues
+        flameShape(g, x + w * 6 / 10, by, w * 55 / 100, hh * 55 / 100, sway / 2, red);
+        flameShape(g, x, by, w * 7 / 10, hh * 72 / 100, sway * 7 / 10, orange);
+        flameShape(g, x, by, w * 4 / 10, hh * 42 / 100, sway * 4 / 10, yellow);
+        // logs
+        g.fillRoundRect(x - w, baseY - u(3), w * 2, u(3), 1, rgb(95, 55, 25));
+        g.fillRect(x - w * 6 / 10, baseY - u(4), w * 12 / 10, u(1.5f), rgb(135, 85, 40));
+        // sparks
+        for (uint8_t k = 0; k < 5; k++)
+        {
+            uint32_t life = 900 + k * 170;
+            uint32_t age = (now + k * 337 + seed * 211) % life;
+            float p = age / (float)life;
+            int16_t sx = x + (int16_t)(sinf(now / 260.0f + k * 2.1f + seed) * u(3) * (0.4f + p)) + (int16_t)((rnd01(k + seed * 5, 41) - 0.5f) * w);
+            int16_t sy = by - hh * 60 / 100 - (int16_t)(p * u(26));
+            if (p < 0.55f)
+                g.fillRect(sx, sy, 2, 2, yellow);
+            else
+                g.drawPixel(sx, sy, tint(orange, 1.0f - (p - 0.55f) * 2.0f));
+        }
+    }
+
+    // One 12 s round: the eyes hop, "zardi-ye man az to" (my yellow is yours), the eyes hop again, "sorkhi-ye to az man" (your red is mine).
+    static const uint32_t CHANT_CYCLE_MS = 12000;
+
+    int16_t occasionEyeDy(uint32_t now, bool alarm)
+    {
+        if (alarm || occ.kind != Occasion::CHAHARSHANBE_SURI)
+            return 0;
+        uint32_t t = now % CHANT_CYCLE_MS;
+        uint32_t h = t < 500 ? t : (t >= 3500 && t < 4000 ? t - 3500 : 500);
+        if (h >= 500)
+            return 0;
+        return (int16_t)(-sinf(h / 500.0f * (float)M_PI) * u(6));
+    }
+
+    static void fgChaharshanbe(TFT_eSPI &g, uint32_t now)
+    {
+        drawBonfire(g, now, u(12), faceH - u(1), u(4.5f), u(17), 1);
+        drawBonfire(g, now, u(28), faceH - u(1), u(3.2f), u(11), 2);
+        drawBonfire(g, now, W - u(13), faceH - u(1), u(4.5f), u(15), 3);
+        uint32_t t = now % CHANT_CYCLE_MS;
+        const uint16_t gold = rgb(255, 220, 110), fire = rgb(255, 120, 30);
+        if (t >= 600 && t < 3400)
+            drawPersianPlaque(g, now, "زردی من از تو", gold, fire);
+        else if (t >= 4100 && t < 6900)
+            drawPersianPlaque(g, now, "سرخی تو از من", gold, fire);
+    }
+
+    // =====================================================================
+    //  Yalda
+    // =====================================================================
+    // Pomegranate seeds drifting down slowly behind the eyes.
+    static void bgYalda(TFT_eSPI &g, uint32_t now)
+    {
+        for (uint8_t i = 0; i < 9; i++)
+        {
+            float speed = 0.006f + 0.010f * rnd01(i, 71); // px per ms (at scale 1)
+            float yy = fmodf(now * speed * sc + rnd01(i, 72) * (faceH + 8), (float)(faceH + 8)) - 4;
+            float xx = rnd01(i, 73) * W + sinf(now / 1100.0f + i * 1.3f) * u(3);
+            bool flat = ((now / 380) + i) & 1; // the seed tumbles
+            uint16_t c = tint(rgb(215, 25, 60), 0.85f);
+            g.fillEllipse((int16_t)xx, (int16_t)yy, flat ? 2 : 1, flat ? 1 : 2, c);
+            g.drawPixel((int16_t)xx, (int16_t)yy - 1, tint(rgb(255, 160, 180), 0.8f));
+        }
+    }
+
+    static void fgYalda(TFT_eSPI &g, uint32_t now)
+    {
+        // One still life in the bottom-left corner: a candle, then the watermelon slice, and the cut pomegranate
+        // leaning on the watermelon (drawn last, so it overlaps the slice's right edge).
+
+        // candle with a small dish, on the far left
+        int16_t cx = u(7);
+        int16_t bodyBottom = faceH - u(2);
+        int16_t bodyTop = bodyBottom - u(9);
+        int16_t fh = (int16_t)(u(7) * (0.85f + 0.3f * rnd01(now / 90, 81)));
+        int16_t sway = (int16_t)(sinf(now / 170.0f) * u(1));
+        g.fillCircle(cx, bodyTop - fh / 3, u(7), tint(C_AMBER, 0.18f));      // glow
+        g.fillRect(cx - u(3.5f), bodyBottom, u(7), u(2), rgb(200, 160, 60)); // dish
+        g.fillRoundRect(cx - u(2.5f), bodyTop, u(5), u(9), 1, rgb(250, 240, 215));
+        g.fillRect(cx - u(2.5f), bodyTop, u(2), u(9), rgb(255, 252, 235)); // light side
+        g.drawFastVLine(cx, bodyTop - u(2), u(2), rgb(60, 40, 30));        // wick
+        flameShape(g, cx, bodyTop - u(1), u(2.2f), fh, sway, rgb(255, 150, 20));
+        flameShape(g, cx, bodyTop - u(1), u(1.2f), fh * 55 / 100, sway / 2, rgb(255, 235, 140));
+
+        // watermelon slice: rind, flesh, seeds
+        int16_t wr = u(10), wcx = u(22), wy0 = faceH - u(2) - wr;
+        fillHalfDisc(g, wcx, wy0, wr, rgb(40, 140, 60));
+        fillHalfDisc(g, wcx, wy0, wr - u(1), rgb(225, 240, 190));
+        fillHalfDisc(g, wcx, wy0, wr - u(2.5f), rgb(235, 50, 70));
+        static const uint8_t sa[5] = {35, 65, 90, 115, 145}; // seed angles; the middle ones sit closer to the rind
+        static const uint8_t sd[5] = {60, 30, 62, 30, 60};   // distance from the centre in % of the radius
+        for (uint8_t k = 0; k < 5; k++)
+        {
+            float a = sa[k] * (float)M_PI / 180.0f;
+            int16_t sx = wcx + (int16_t)(cosf(a) * wr * sd[k] / 100.0f);
+            int16_t sy = wy0 + (int16_t)(sinf(a) * wr * sd[k] / 100.0f);
+            g.fillEllipse(sx, sy, 1, 2, rgb(35, 20, 25));
+        }
+
+        // pomegranate cut open, overlapping the right edge of the watermelon: crown, rind, pith, ruby seeds that twinkle
+        int16_t pr = u(7), pcx = u(32), pcy = faceH - u(8);
+        const uint16_t rindC = rgb(190, 25, 45), rindDk = rgb(140, 15, 35);
+        g.fillTriangle(pcx - u(3), pcy - pr + 2, pcx - u(1.5f), pcy - pr - u(2.5f), pcx - u(0.5f), pcy - pr + 2, rindDk);
+        g.fillTriangle(pcx - u(1.5f), pcy - pr + 2, pcx, pcy - pr - u(3.5f), pcx + u(1.5f), pcy - pr + 2, rindDk);
+        g.fillTriangle(pcx + u(0.5f), pcy - pr + 2, pcx + u(1.5f), pcy - pr - u(2.5f), pcx + u(3), pcy - pr + 2, rindDk);
+        g.fillCircle(pcx, pcy, pr, rindC);
+        g.fillCircle(pcx, pcy, pr - u(1.5f), rgb(255, 232, 190)); // pith
+        int16_t sr = imax(2, (int16_t)((pr + 2) / 4));
+        int16_t ring = pr * 55 / 100;
+        uint8_t glint = (now / 250) % 14; // 0..6 = one seed flashes, 7..13 = rest
+        for (uint8_t k = 0; k < 7; k++)
+        {
+            int16_t sx = pcx, sy = pcy;
+            if (k > 0)
+            {
+                float a = (k - 1) * (float)M_PI / 3.0f + 0.5f;
+                sx += (int16_t)(cosf(a) * ring);
+                sy += (int16_t)(sinf(a) * ring);
+            }
+            g.fillCircle(sx, sy, sr, glint == k ? rgb(255, 170, 190) : rgb(215, 25, 60));
+            g.drawPixel(sx - 1, sy - 1, rgb(255, 150, 170));
+        }
+    }
+
+    // =====================================================================
+    //  Nowruz
+    // =====================================================================
+    // Blossom petals drifting down and sideways.
+    static void bgNowruz(TFT_eSPI &g, uint32_t now)
+    {
+        for (uint8_t i = 0; i < 14; i++)
+        {
+            float speed = 0.008f + 0.012f * rnd01(i, 91); // px per ms (at scale 1)
+            float yy = fmodf(now * speed * sc + rnd01(i, 92) * (faceH + 8), (float)(faceH + 8)) - 4;
+            float xx = rnd01(i, 93) * W + sinf(now / 800.0f + i * 1.6f) * u(5) + yy * 0.15f;
+            bool flat = ((now / 260) + i) & 1; // the petal flutters
+            uint16_t c = (i % 3 == 0) ? rgb(255, 245, 248) : rgb(255, 185, 210);
+            g.fillEllipse((int16_t)xx, (int16_t)yy, flat ? 2 : 1, flat ? 1 : 2, tint(c, 0.9f));
+        }
+    }
+
+    // Sabzeh (sprouted wheat) in an earthen bowl; the blades sway.
+    static void drawSabzeh(TFT_eSPI &g, uint32_t now, int16_t x, int16_t baseY)
+    {
+        int16_t top = baseY - u(5);
+        for (uint8_t i = 0; i < 9; i++)
+        {
+            int16_t bx = x - u(8) + i * u(2);
+            int16_t h = u(6) + (int16_t)(rnd01(i, 51) * u(6));
+            int16_t tipX = bx + (int16_t)(sinf(now / 700.0f + i * 0.9f) * u(1.5f)) + (i - 4) * u(0.4f);
+            uint16_t c = (i & 1) ? rgb(60, 185, 70) : rgb(115, 220, 90);
+            g.drawLine(bx, top, tipX, top - h, c);
+            g.drawLine(bx + 1, top, tipX + 1, top - h, c);
+        }
+        g.fillRoundRect(x - u(10), top, u(20), u(5), u(2), rgb(150, 95, 55));
+        g.fillRect(x - u(10), top, u(20), u(1.5f), rgb(190, 130, 80));
+    }
+
+    // Hyacinth (sonbol): a spike of purple florets on a short stem with two leaves.
+    static void drawHyacinth(TFT_eSPI &g, int16_t x, int16_t baseY)
+    {
+        const uint16_t leaf = rgb(60, 170, 70);
+        g.fillTriangle(x, baseY - u(2), x - u(4), baseY - u(9), x - u(1), baseY - u(2), leaf);
+        g.fillTriangle(x, baseY - u(2), x + u(4), baseY - u(8), x + u(1), baseY - u(2), leaf);
+        int16_t topY = baseY - u(15);
+        g.drawFastVLine(x, topY + u(6), u(9), leaf);
+        for (int j = 0; j < 6; j++)
+        {
+            int16_t yy = topY + j * u(1.6f);
+            int n = 1 + j / 2;
+            for (int k = 0; k < n; k++)
+            {
+                int16_t xx = (int16_t)(x + (k - (n - 1) * 0.5f) * u(2.6f));
+                g.fillCircle(xx, yy, imax(1, (int16_t)u(1.5f)), ((j + k) & 1) ? rgb(150, 95, 225) : rgb(205, 165, 255));
+            }
+        }
+        g.fillRect(x - u(3), baseY - u(2), u(6), u(2), rgb(150, 95, 55)); // little pot
+    }
+
+    // The round goldfish bowl (tang) with a swimming goldfish and rising bubbles.
+    static void drawGoldfishBowl(TFT_eSPI &g, uint32_t now, int16_t bx, int16_t by, int16_t r)
+    {
+        const uint16_t glass = rgb(185, 225, 245), orange = rgb(255, 110, 15);
+        g.fillRect(bx - r / 3, by - r - u(2), r * 2 / 3 + 1, u(3), glass); // the neck
+        g.fillCircle(bx, by, r, rgb(70, 155, 205));                        // the water
+        g.drawCircle(bx, by, r, glass);
+        g.drawLine(bx - r * 60 / 100, by - r * 30 / 100, bx - r * 35 / 100, by - r * 60 / 100, rgb(225, 247, 255)); // glint
+        float ph = now / 1300.0f;
+        int dir = cosf(ph) >= 0 ? 1 : -1;
+        int16_t fx = bx + (int16_t)(sinf(ph) * r * 0.35f);
+        int16_t fy = by + (int16_t)(sinf(now / 900.0f) * r * 0.15f);
+        int16_t rx = u(3.2f), ry = u(2.2f);
+        g.fillTriangle(fx - dir * (rx - 1), fy, fx - dir * (rx + u(3)), fy - u(2.3f), fx - dir * (rx + u(3)), fy + u(2.3f), rgb(255, 150, 40)); // tail
+        g.fillEllipse(fx, fy, rx, ry, orange);
+        g.drawPixel(fx + dir * (rx - u(1.2f)), fy - 1, rgb(20, 20, 30)); // eye
+        for (uint8_t k = 0; k < 2; k++)
+        {
+            float p = fmodf(now / 2400.0f + k * 0.5f, 1.0f);
+            g.drawCircle(bx + (k ? u(2) : -u(2)), by + r / 2 - (int16_t)(p * r * 1.2f), 1, rgb(210, 240, 255));
+        }
+    }
+
+    // Sizdah Bedar (13 Farvardin): a kite on the right ...
+    static void drawKite(TFT_eSPI &g, uint32_t now, int16_t kx, int16_t ky)
+    {
+        kx += (int16_t)(sinf(now / 900.0f) * u(2));
+        ky += (int16_t)(cosf(now / 1100.0f) * u(1.5f));
+        int16_t hw = u(6), ht = u(7), hb = u(8);
+        g.fillTriangle(kx, ky - ht, kx + hw, ky, kx, ky, rgb(235, 50, 60));
+        g.fillTriangle(kx + hw, ky, kx, ky + hb, kx, ky, rgb(255, 210, 60));
+        g.fillTriangle(kx, ky + hb, kx - hw, ky, kx, ky, rgb(70, 140, 255));
+        g.fillTriangle(kx - hw, ky, kx, ky - ht, kx, ky, rgb(70, 200, 100));
+        static const uint16_t bows[3] = {rgb(255, 255, 255), rgb(235, 50, 60), rgb(255, 210, 60)};
+        int16_t px = kx, py = ky + hb;
+        for (uint8_t k = 0; k < 3; k++)
+        {
+            int16_t tx = kx + (int16_t)(sinf(now / 300.0f + k * 1.4f) * u(2));
+            int16_t ty = ky + hb + (k + 1) * u(2.5f);
+            g.drawLine(px, py, tx, ty, C_WHITE);
+            g.fillRect(tx - 1, ty, 3, 2, bows[k]);
+            px = tx;
+            py = ty;
+        }
+    }
+
+    // ... and a butterfly flying about on the left.
+    static void drawButterfly(TFT_eSPI &g, uint32_t now, int16_t bx, int16_t by)
+    {
+        bx += (int16_t)(sinf(now / 1500.0f) * u(5));
+        by += (int16_t)(cosf(now / 1000.0f) * u(3));
+        float flap = fabsf(sinf(now / 110.0f));
+        int16_t rx = imax(1, (int16_t)(u(4.5f) * flap)), ry = u(3.5f);
+        g.fillEllipse(bx - rx, by - 1, rx, ry, rgb(255, 150, 40));
+        g.fillEllipse(bx + rx, by - 1, rx, ry, rgb(255, 150, 40));
+        g.fillEllipse(bx - rx * 7 / 10, by + u(2.5f), imax(1, rx * 7 / 10), imax(1, ry * 6 / 10), rgb(170, 110, 240));
+        g.fillEllipse(bx + rx * 7 / 10, by + u(2.5f), imax(1, rx * 7 / 10), imax(1, ry * 6 / 10), rgb(170, 110, 240));
+        g.fillRect(bx, by - u(3), 2, u(6), rgb(40, 30, 40)); // body
+        g.drawLine(bx, by - u(3), bx - u(2), by - u(5), rgb(40, 30, 40));
+        g.drawLine(bx + 1, by - u(3), bx + u(3), by - u(5), rgb(40, 30, 40));
+    }
+
+    static void fgNowruz(TFT_eSPI &g, uint32_t now)
+    {
+        drawSabzeh(g, now, u(14), faceH - u(1));
+        if (occ.sizdah)
+        {
+            drawButterfly(g, now, u(34), faceH - u(12));
+            drawKite(g, now, W - u(14), faceH - u(15));
+        }
+        else
+        {
+            drawHyacinth(g, u(33), faceH - u(1));
+            drawGoldfishBowl(g, now, W - u(13), faceH - u(10), u(8));
+        }
+        if (occ.midnight)
+        {
+            char buf[64] = "نوروزت مبارک ";
+            persianNumber(occ.year, buf + strlen(buf));
+            drawPersianPlaque(g, now, buf, rgb(255, 235, 150), rgb(110, 225, 130));
+        }
+        else if (occ.sizdah && (now % 16000) < 5000)
+            drawPersianPlaque(g, now, "سیزده"
+                                      "\xE2\x80\x8C"
+                                      "بدر",
+                              rgb(190, 255, 170), rgb(110, 225, 130));
+    }
+
+    // =====================================================================
     //  Entry points
     // =====================================================================
     void drawOccasionBack(TFT_eSPI &g, uint32_t now)
@@ -451,6 +915,17 @@ namespace disp
             break;
         case Occasion::VALENTINE:
             bgValentine(g, now);
+            break;
+        case Occasion::CHAHARSHANBE_SURI:
+            bgFireworks(g, now, ((now / 8000) & 1) != 0, 1); // calm and lively rounds alternate
+            break;
+        case Occasion::YALDA:
+            bgYalda(g, now);
+            break;
+        case Occasion::NOWRUZ:
+            if (occ.midnight)
+                bgFireworks(g, now, true, 2);
+            bgNowruz(g, now);
             break;
         default:
             break;
@@ -478,6 +953,15 @@ namespace disp
             break;
         case Occasion::VALENTINE:
             fgValentine(g, now, cy, eyeW, eyeH, lcx, rcx);
+            break;
+        case Occasion::CHAHARSHANBE_SURI:
+            fgChaharshanbe(g, now);
+            break;
+        case Occasion::YALDA:
+            fgYalda(g, now);
+            break;
+        case Occasion::NOWRUZ:
+            fgNowruz(g, now);
             break;
         case Occasion::NEW_YEAR_EVE:
         {
