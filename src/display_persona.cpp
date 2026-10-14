@@ -61,7 +61,8 @@ namespace disp
         THINK,  // "hmm": up and to the right, dots, sometimes an idea
         GLANCE, // looks at the digits, they glow once
         FLY,    // a fly buzzes across; eyes (and head) follow
-        YAWN    // evening / late-night yawn
+        YAWN,   // evening / late-night yawn
+        SNEEZE  // "ah ... ah ... choo!" (rare; likelier in rain / snow / cold)
     };
     static Act act = Act::NONE;
     static uint32_t actStartMs = 0, actDurMs = 0;
@@ -76,6 +77,7 @@ namespace disp
     static float flyPhase = 0;        // makes every flight different
     static bool thinkIdea = false;    // this "hmm" ends with an "oh!"
     static bool thinkIdeaShown = false;
+    static bool sneezeBurstDone = false; // the burst's blink / sound was already triggered in this sneeze
     static uint32_t pulseStartMs = 0;
     static bool pulseOn = false;
 
@@ -229,6 +231,9 @@ namespace disp
         P.frown = (int32_t)(now - frownUntilMs) < 0;
         P.digitPulse = 0;
         P.flyOn = false;
+        P.sneezeJerk = 0;
+        P.sneezeSpray = 0;
+        P.sneezeMouth = false;
 
         // ---------- 1. wake-up at boot ----------
         if (!bootInit)
@@ -491,7 +496,24 @@ namespace disp
             else if (act == Act::NONE && !in.sleepy && in.haveTime && in.wifiDownMs == 0 && (int32_t)(now - nextMicroAtMs) >= 0)
             {
                 int r = random(0, 100);
-                if (r < 18)
+                bool sneezeNow = false;
+                if (IDLE_SNEEZE_ENABLED)
+                {
+                    int chance = IDLE_SNEEZE_PERCENT;
+                    bool coldNow = false;
+                    xSemaphoreTake(g_stateMutex, portMAX_DELAY);
+                    coldNow = g_state.weatherValid && g_state.weatherTempC <= REACT_COLD_C;
+                    xSemaphoreGive(g_stateMutex);
+                    if ((in.weatherKnown && isPrecip(in.weatherCode)) || coldNow)
+                        chance += IDLE_SNEEZE_WEATHER_BONUS;
+                    sneezeNow = random(0, 100) < chance;
+                }
+                if (sneezeNow)
+                {
+                    sneezeBurstDone = false;
+                    startAct(Act::SNEEZE, now, IDLE_SNEEZE_MS);
+                }
+                else if (r < 18)
                     startAct(Act::PEEK, now, 3400);
                 else if (r < 30 && in.sunny)
                     startAct(Act::SQUINT, now, 2200);
@@ -632,12 +654,90 @@ namespace disp
                     servo_look(clampGaze(fx));
                 break;
             }
+            case Act::SNEEZE: // inhale, inhale, hold, CHOO, a sheepish glance away
+            {
+                // phases as fractions of the whole act: 0..0.23 first "ah", ..0.29 sags back, ..0.54 second (bigger)
+                // "ah", ..0.61 holds it (quiver), ..0.77 the burst, ..1.0 recovers
+                const float tn = t / (float)actDurMs;
+                float lid = 0, big = 1.0f, headX = 0;
+                P.exprOk = false;
+                if (tn < 0.23f)
+                {
+                    const float k = sstep(tn / 0.23f);
+                    lid = 0.32f * k;
+                    big = 1.0f + 0.06f * k;
+                    headX = 0.25f * k;
+                    setGaze(0, -0.7f * k, true);
+                }
+                else if (tn < 0.29f)
+                {
+                    const float k = (tn - 0.23f) / 0.06f;
+                    lid = 0.32f - 0.14f * k;
+                    big = 1.06f - 0.04f * k;
+                    headX = 0.25f - 0.10f * k;
+                    setGaze(0, -0.7f + 0.3f * k, true);
+                }
+                else if (tn < 0.54f)
+                {
+                    const float k = sstep((tn - 0.29f) / 0.25f);
+                    lid = 0.18f + 0.38f * k;
+                    big = 1.02f + 0.12f * k;
+                    headX = 0.15f + 0.30f * k;
+                    setGaze(0, -0.4f - 0.5f * k, true);
+                    P.sneezeMouth = true;
+                }
+                else if (tn < 0.61f)
+                {
+                    lid = 0.60f;
+                    big = 1.14f;
+                    headX = 0.45f;
+                    P.shiver = true; // the quiver before it comes
+                    setGaze(0, -0.9f, true);
+                    P.sneezeMouth = true;
+                }
+                else if (tn < 0.77f)
+                {
+                    const float k = (tn - 0.61f) / 0.16f;
+                    if (!sneezeBurstDone)
+                    {
+                        sneezeBurstDone = true;
+                        blinkTrigger(now);
+                        audio_play_async(SOUND_INDEX_SNEEZE);
+                    }
+                    lid = 0.95f;
+                    big = 0.90f;
+                    headX = -0.85f * (1.0f - 0.35f * k);    // the head snaps to the other side
+                    P.sneezeJerk = 1.0f - sstep(k / 0.75f); // sstep() clamps to 0..1
+                    P.sneezeSpray = (tn - 0.61f) / 0.30f;
+                    P.sneezeMouth = true;
+                    setGaze(0, 0.5f, true);
+                }
+                else
+                {
+                    const float k = (tn - 0.77f) / 0.23f;
+                    lid = 0.95f * (1.0f - sstep(k / 0.55f));
+                    big = 0.90f + 0.10f * sstep(k);
+                    headX = -0.55f * (1.0f - sstep(k));
+                    if (tn < 0.91f)
+                        P.sneezeSpray = (tn - 0.61f) / 0.30f; // the last drops
+                    // sheepish: a glance away, then back to the middle
+                    if (k < 0.7f)
+                        setGaze(-0.8f, 0.3f, true);
+                    else
+                        setGaze(0, 0, true);
+                }
+                P.lidBias = lid;
+                P.scalePulse = big;
+                if (IDLE_SNEEZE_HEAD)
+                    servo_look(clampGaze(headX));
+                break;
+            }
             default:
                 break;
             }
         }
 
-        if (act != Act::FLY)
+        if (act != Act::FLY && !(act == Act::SNEEZE && IDLE_SNEEZE_HEAD))
             servo_look_end(); // the head drifts back to rest
 
         // ---------- 5. longer moods (no act running) ----------
@@ -793,6 +893,22 @@ namespace disp
             g.fillCircle(fx + u(1.8f), fy + wy, r, wing);
             g.fillCircle(fx, fy, r + 1, rgb(190, 190, 200)); // light rim: visible on the dark card and on the bright eyes
             g.fillCircle(fx, fy, r, rgb(25, 25, 30));
+        }
+        if (persona.sneezeSpray > 0.0f && persona.sneezeSpray < 1.0f)
+        {
+            // the spray of the sneeze: a fan of small drops from the mouth, flying down and outwards, fading as they go
+            const float p = persona.sneezeSpray;
+            const float fly = 1.0f - (1.0f - p) * (1.0f - p); // quick at first, then slower
+            const int16_t mx = W / 2, my = cy + eyeH / 2 + u(10);
+            for (int i = 0; i < 7; i++)
+            {
+                const float a = 3.14159f * (0.22f + 0.56f * i / 6.0f); // 0.22 pi .. 0.78 pi: downwards, fanned out
+                const float reach = u(14) + u(10) * ((i * 5) % 3);     // each drop goes a bit different
+                const int16_t px = mx + (int16_t)(cosf(a) * reach * fly * 1.6f);
+                const int16_t py = my + (int16_t)(sinf(a) * reach * fly) + (int16_t)(p * p * u(6)); // gravity pulls them down
+                const int16_t pr = imax(1, (int16_t)(u(2.2f) * (1.0f - 0.6f * p)));
+                g.fillCircle(px, py, pr, tint(C_ICE, 0.9f * (1.0f - p)));
+            }
         }
         if (persona.relief > 0.2f)
         {

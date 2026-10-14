@@ -482,6 +482,8 @@ namespace disp
                 wantMouth = MouthKind::SMILE;
             else if (persona.relief > 0.15f && persona.relief < 0.7f)
                 wantMouth = MouthKind::OPEN_O; // the sigh
+            else if (persona.sneezeMouth)
+                wantMouth = MouthKind::OPEN_O; // "ah ... choo!"
         }
         eyesSetMouth(wantMouth);
         int16_t mouthY = cy + eyeH / 2 + u(10); // ~y 76 on the 128x88 face
@@ -535,6 +537,11 @@ namespace disp
             shiver = (((now / 40) & 1) ? 1 : -1) * u(1);
         // peek-a-boo: the eyes rise from below the card's bottom edge (the sprite clips them)
         int16_t cyE = cy + (int16_t)(persona.peek * ((faceH - cy) + eyeH / 2));
+        if (persona.sneezeJerk > 0)
+        {
+            cyE += (int16_t)(persona.sneezeJerk * u(5)); // the sneeze kicks the eyes down and to one side
+            shiver += (int16_t)(-persona.sneezeJerk * u(3));
+        }
 
         // one-off idle expressions
         float squeeze = 0;

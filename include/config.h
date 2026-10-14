@@ -148,8 +148,9 @@ static_assert(WEATHER_BARS >= 2 && WEATHER_BARS <= 8, "WEATHER_BARS must be 2-8"
 // All of them go through audio_play_gentle(): at night they follow AUDIO_NIGHT_PET_VOLUME (silent by default).
 #define SOUND_INDEX_PET_B 6
 #define SOUND_INDEX_PET_C 7
-#define SOUND_INDEX_YAWN 0  // set to 8 if you upload the yawn_servo clip to the module
-#define SOUND_INDEX_CHIME 0 // hourly chime OFF (was 9 = 09_hour_chime); set back to 9 to re-enable
+#define SOUND_INDEX_YAWN 0   // set to 8 if you upload the yawn_servo clip to the module
+#define SOUND_INDEX_SNEEZE 0 // the sneeze (idle life); 0 = silent. Set it to the index of a clip you upload yourself
+#define SOUND_INDEX_CHIME 0  // hourly chime OFF (was 9 = 09_hour_chime); set back to 9 to re-enable
 #define SOUND_INDEX_BOOT 10
 
 // UI beeps (not wired to any feature yet — use these numbers when you add them):
@@ -317,6 +318,11 @@ static_assert(AMBIENT_MOTES >= 3 && AMBIENT_MOTES <= 5, "AMBIENT_MOTES must be 3
 //           IDLE_FLY_HEAD, the head turns a little (SERVO_LOOK_DEG at most; SERVO_LOOK_DIR = -1 if it turns the wrong way).
 //   YAWN:   in the last IDLE_YAWN_EVENING_MIN minutes before night mode he yawns every IDLE_YAWN_MIN_MIN..MAX_MIN minutes;
 //           and if you wake him at night he yawns once IDLE_YAWN_LATE_S seconds after the touch if you keep him up.
+//   SNEEZE: "ah ... ah ... choo!": the eyes squint and look up twice, then the burst - eyes shut, a kick, a small spray,
+//           the head snaps to one side - and an embarrassed sideways glance. It is a rare pick among the idle acts:
+//           IDLE_SNEEZE_PERCENT is the chance (in %) each time one is due, IDLE_SNEEZE_WEATHER_BONUS is added when it is
+//           raining / snowing or cold (REACT_COLD_C). IDLE_SNEEZE_MS is the whole act (the phases scale with it).
+//           IDLE_SNEEZE_HEAD 0 keeps the head still. Sound: SOUND_INDEX_SNEEZE.
 // Set a switch to 0 to remove that behaviour.
 #define IDLE_THINK_ENABLED 1
 #define IDLE_GLANCE_ENABLED 1
@@ -330,6 +336,11 @@ static_assert(AMBIENT_MOTES >= 3 && AMBIENT_MOTES <= 5, "AMBIENT_MOTES must be 3
 #define IDLE_YAWN_MIN_MIN 12
 #define IDLE_YAWN_MAX_MIN 26
 #define IDLE_YAWN_LATE_S 25
+#define IDLE_SNEEZE_ENABLED 1
+#define IDLE_SNEEZE_PERCENT 5
+#define IDLE_SNEEZE_WEATHER_BONUS 10
+#define IDLE_SNEEZE_MS 2800
+#define IDLE_SNEEZE_HEAD 1
 
 // ---- Servo motion ----
 // Visible movements are eased in SERVO_STEP_MS steps instead of jumping, and start SERVO_FOLLOW_DELAY_MS after

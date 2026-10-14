@@ -338,6 +338,9 @@ namespace disp
         float relief = 0;         // 0..1 progress of the sigh when WiFi came back (0 = none)
         bool flyOn = false;       // the virtual fly is on screen (drawPersonaExtras)
         float flyX = 0, flyY = 0; // where: x -1..1 across the card (beyond = off screen), y -1 (up) .. 1 (down)
+        float sneezeJerk = 0;     // 0..1 the kick of the sneeze (display_face.cpp pushes the eyes down / aside by it)
+        float sneezeSpray = 0;    // 0..1 progress of the spray after the sneeze (0 = none, drawPersonaExtras)
+        bool sneezeMouth = false; // mouth open for the "ah ... ah ..." and the burst
         bool celestOk = false;    // the sun / moon is up there: a share of idle looks goes to it
         float celestX = 0, celestY = 0;
         bool gazeOn = false;     // the persona decides where to look

@@ -112,7 +112,7 @@ Once a clock runs a firmware with this feature, it can update itself from the **
 with no cable and no computer. It is always your decision:
 
 1. The clock looks for a new release **by itself, twice a day** (the first time a few minutes after it starts), and
-   you can press **Check for updates** in *Firmware update* on the settings page (`http://deskclock.local/`) at any
+   you can press **Check for updates** in _Firmware update_ on the settings page (`http://deskclock.local/`) at any
    time. Either way nothing is downloaded yet. The diagnostics page shows the running **Version** and whether an
    **Update** is ready, so you can see it on the clock itself.
 2. If a newer release exists for your display type, the page shows its version, size and a link to the release notes.
@@ -172,8 +172,8 @@ An unattended alarm stops by itself after 3 minutes. The next day's alarm is nev
 
 - **Clock**: the face, the time, the alarm bell with its time (red and flashing while ringing).
 - **Date**: weekday, big day number, month and year, and a month calendar.
-- **Weather**: two views that alternate every few seconds. *Now*: icon, big temperature, condition, today's
-  high / low, feels-like, humidity, wind (speed and arrow) and chance of rain. *Forecast*: hourly bars with the
+- **Weather**: two views that alternate every few seconds. _Now_: icon, big temperature, condition, today's
+  high / low, feels-like, humidity, wind (speed and arrow) and chance of rain. _Forecast_: hourly bars with the
   temperature and the chance of rain, plus sunrise, sunset, UV and pressure. Old readings are shown dimmed with
   their age.
 - **Diagnostics**: IP address, WiFi signal, free memory, last NTP sync, age of the weather reading, firmware version and
@@ -184,15 +184,17 @@ An unattended alarm stops by itself after 3 minutes. The next day's alarm is nev
 While nothing else is happening (daytime, no reaction showing) he does a small thing by himself every 1-2.5 minutes
 (the `MICRO_*` rhythm): peek-a-boo, an eye roll, a squint in bright sun, and these:
 
-| Behaviour | What you see                                                                                                                                          |
-| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Thinking  | looks up and to the right, three dots bounce; half the time an "oh!" at the end                                                                       |
-| Glance    | looks down at the digits and they glow once, as if checking the time                                                                                  |
-| Fly       | a small fly enters on one side, loops around for about 6.5 s and leaves on the other; the eyes follow it and the head turns a little                  |
-| Yawn      | in the last 90 minutes before night mode starts, a yawn every 12-26 minutes; at night, if you wake him and keep him up, one yawn 25 s after the touch |
+| Behaviour | What you see                                                                                                                                                                               |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Thinking  | looks up and to the right, three dots bounce; half the time an "oh!" at the end                                                                                                            |
+| Glance    | looks down at the digits and they glow once, as if checking the time                                                                                                                       |
+| Fly       | a small fly enters on one side, loops around for about 6.5 s and leaves on the other; the eyes follow it and the head turns a little                                                       |
+| Yawn      | in the last 90 minutes before night mode starts, a yawn every 12-26 minutes; at night, if you wake him and keep him up, one yawn 25 s after the touch                                      |
+| Sneeze    | rare: "ah ... ah ... choo!" - eyes squint and look up twice, then the burst (eyes shut, a kick, a small spray, the head snaps aside) and a sheepish glance; likelier in rain, snow or cold |
 
 If the head turns the wrong way for the fly, set `SERVO_LOOK_DIR` to `-1` in `config.h`; `IDLE_FLY_HEAD 0` keeps the head
-still. Every behaviour has an `IDLE_*_ENABLED` switch.
+still. Every behaviour has an `IDLE_*_ENABLED` switch. The sneeze is a rare pick (`IDLE_SNEEZE_PERCENT`, plus `IDLE_SNEEZE_WEATHER_BONUS` in
+rain / snow / cold), `IDLE_SNEEZE_HEAD 0` keeps the head still, and `SOUND_INDEX_SNEEZE` plays a clip of your own (0 = silent).
 
 ### Pet reactions
 
@@ -203,14 +205,14 @@ All of it can be turned off on the settings page (then it is always the happy fa
 
 ### Bond
 
-The clock remembers how much it likes you (0-100 %, kept in flash, shown on the settings page under *Pet reactions*).
+The clock remembers how much it likes you (0-100 %, kept in flash, shown on the settings page under _Pet reactions_).
 
 - **Grows** with taps (+1 % each, not while dizzy-spamming), with purring (+1.5 % per hold) and with making up after a
   sulk (+2 %). Taps and purring together add at most 12 % per day, so one long session cannot max it out.
   "That's enough!" costs 3 %.
 - **Fades** when nobody pets him: nothing for 12 hours after the last tap, then 8 % per day, never below 5 %.
   The fading is only counted with a clock that was NTP-synced (not one restored from flash).
-- **Levels**: *lonely* (under 25 %), *friendly* (the start, 40 %), *fond* (55 %) and *devoted* (80 %).
+- **Levels**: _lonely_ (under 25 %), _friendly_ (the start, 40 %), _fond_ (55 %) and _devoted_ (80 %).
 
 | Level    | What changes                                                                                                                                                        |
 | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -219,7 +221,7 @@ The clock remembers how much it likes you (0-100 %, kept in flash, shown on the 
 | Fond     | +2 taps before dizzy / "that's enough!", more rare reactions, faint pink eyes, smiles by himself, sulks 25 % shorter                                                |
 | Devoted  | +4 taps before dizzy / "that's enough!", heart eyes one tap sooner, even more rare reactions, pinker eyes, smiles or gets heart eyes by himself, sulks half as long |
 
-Nothing about it happens at night or while the alarm is involved. It follows the *varied reactions* switch: off means
+Nothing about it happens at night or while the alarm is involved. It follows the _varied reactions_ switch: off means
 the bond neither changes nor shows. All numbers are `PET_BOND_*` in `config.h` (`PET_BOND_ENABLED 0` removes the feature,
 `PET_BOND_TINT 0` only the eye colour).
 
@@ -291,7 +293,7 @@ Almost everything is a `#define` in `include/config.h`, each with a comment. The
 | `BACKLIGHT_*`                                             | how the screen is dimmed (drive strength or PWM)                                                  |
 | `PET_*`                                                   | streak lengths, purr time, rare-reaction chance                                                   |
 | `PET_BOND_*`                                              | how fast the bond grows and fades, its levels, tint and self-started acts                         |
-| `IDLE_*`, `SERVO_LOOK_*`                                  | thinking, glance, fly and yawn behaviours, how far the head follows the fly                       |
+| `IDLE_*`, `SERVO_LOOK_*`                                  | thinking, glance, fly, yawn and sneeze behaviours, how far the head follows the fly               |
 | `SERVO_*`                                                 | rest / pet / alarm angles and timings                                                             |
 | `OCCASIONS_DEFAULT`, `OCC_*`                              | yearly occasion animations: default on / off and their dates                                      |
 | `UI_SOUNDS_DEFAULT`                                       | feedback beeps when settings are changed                                                          |
