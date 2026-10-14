@@ -7,8 +7,8 @@
 //   Chaharshanbe Suri  (Iranian, Tuesday evening before the last Wednesday of the Persian year) three bonfires with
 //                 sparks, warm fireworks, fiery eyes that hop, the call "zardi-ye man az to, sorkhi-ye to az man"
 //   Yalda         (Iranian, 30 Azar sunset -> 1 Dey sunrise) a candle, a watermelon slice, a pomegranate, falling ruby seeds
-//   Nowruz        (Iranian, 29 Esfand .. 13 Farvardin) blossom petals, sabzeh, hyacinth, goldfish bowl, green eyes; a
-//                 "Nowruz mubarak <year>" greeting with fireworks at midnight of 1 Farvardin; kite + butterfly on Sizdah Bedar
+//   Nowruz        (Iranian, 29 Esfand .. 13 Farvardin) blossom petals, sabzeh, goldfish bowl, green eyes; a
+//                 "Nowruz <year> mubarak" greeting with fireworks at midnight of 1 Farvardin; kite + butterfly on Sizdah Bedar
 // Everything is procedural (derived from `now`), no per-object state. Two layers: drawOccasionBack()
 // runs right after the background (behind the eyes), drawOccasionFront() after the eyes.
 // The dates are in occasionUpdate(); occasion_preview() (web page) forces one for a short while.
@@ -788,27 +788,6 @@ namespace disp
         g.fillRect(x - u(10), top, u(20), u(1.5f), rgb(190, 130, 80));
     }
 
-    // Hyacinth (sonbol): a spike of purple florets on a short stem with two leaves.
-    static void drawHyacinth(TFT_eSPI &g, int16_t x, int16_t baseY)
-    {
-        const uint16_t leaf = rgb(60, 170, 70);
-        g.fillTriangle(x, baseY - u(2), x - u(4), baseY - u(9), x - u(1), baseY - u(2), leaf);
-        g.fillTriangle(x, baseY - u(2), x + u(4), baseY - u(8), x + u(1), baseY - u(2), leaf);
-        int16_t topY = baseY - u(15);
-        g.drawFastVLine(x, topY + u(6), u(9), leaf);
-        for (int j = 0; j < 6; j++)
-        {
-            int16_t yy = topY + j * u(1.6f);
-            int n = 1 + j / 2;
-            for (int k = 0; k < n; k++)
-            {
-                int16_t xx = (int16_t)(x + (k - (n - 1) * 0.5f) * u(2.6f));
-                g.fillCircle(xx, yy, imax(1, (int16_t)u(1.5f)), ((j + k) & 1) ? rgb(150, 95, 225) : rgb(205, 165, 255));
-            }
-        }
-        g.fillRect(x - u(3), baseY - u(2), u(6), u(2), rgb(150, 95, 55)); // little pot
-    }
-
     // The round goldfish bowl (tang) with a swimming goldfish and rising bubbles.
     static void drawGoldfishBowl(TFT_eSPI &g, uint32_t now, int16_t bx, int16_t by, int16_t r)
     {
@@ -881,13 +860,14 @@ namespace disp
         }
         else
         {
-            drawHyacinth(g, u(33), faceH - u(1));
             drawGoldfishBowl(g, now, W - u(13), faceH - u(10), u(8));
         }
         if (occ.midnight)
         {
-            char buf[64] = "نوروزت مبارک ";
+            // "Nowruz <year> mubarak": the year is the Persian year that just began (occ.year)
+            char buf[64] = "نوروز ";
             persianNumber(occ.year, buf + strlen(buf));
+            strcat(buf, " مبارک");
             drawPersianPlaque(g, now, buf, rgb(255, 235, 150), rgb(110, 225, 130));
         }
         else if (occ.sizdah && (now % 16000) < 5000)
