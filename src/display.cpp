@@ -2,6 +2,7 @@
 // shared declarations are in display_internal.h.
 #include "display_internal.h"
 #include <WiFi.h>
+#include "tls_lock.h"
 
 using namespace disp;
 
@@ -18,8 +19,9 @@ static bool portalScreenShown = false;
 static bool otaScreenShown = false;
 
 // A TLS connection (the weather fetch, the update check and the update itself) wants ~60 KB of contiguous heap
-// at once, the three off-screen sprites below hold 40-50 KB permanently. So they are released for as long as a
-// TLS connection is open (g_state.tlsUsers, see tls_lock.h) or an update runs, and created again afterwards
+// at once, the three off-screen sprites below hold ~40 KB permanently. They are only released when the heap is
+// too small for TLS (tls_heap_ok() false -> tls_wants_memory(), see tls_lock.h) or an update runs, and created
+// again afterwards
 // (Canvas::begin() already falls back to drawing straight on the screen when a sprite is missing).
 static bool spritesReleased = false;
 static int16_t digSprW = 0, digSprH = 0;
@@ -137,7 +139,9 @@ void display_tick()
 
     // A firmware update owns the screen: full brightness, progress only.
     int otaPct = readOtaPercent();
-    if ((otaPct >= 0 || tlsActive) && !spritesReleased)
+    // Sprites are freed only when a TLS guard really needs the memory (tls_wants_memory) or an update runs;
+    // otherwise the display keeps animating during the weather fetch.
+    if ((otaPct >= 0 || (tlsActive && tls_wants_memory())) && !spritesReleased)
         releaseSprites();
     if (otaPct >= 0)
     {
