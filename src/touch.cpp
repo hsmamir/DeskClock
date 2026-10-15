@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include "driver/gpio.h"
 #include "touch.h"
 #include "pins.h"
 #include "config.h"
@@ -9,51 +10,137 @@
 #include "settings.h"
 #include "reminders.h"
 
-// Each button wires one leg to its GPIO and the other leg to GND.
-// INPUT_PULLUP holds the pin HIGH when idle, so a press reads LOW.
+// ---------------------------------------------------------------------------------------
+// Debounced digital input (touch pad + rotary push button)
+// ---------------------------------------------------------------------------------------
+// TTP223 touch pad: OUT is HIGH while touched (active HIGH, INPUT_PULLDOWN).
+// KY-040 push button: SW goes LOW when pushed (active LOW, INPUT_PULLUP).
 
-struct DebouncedButton
+struct DebouncedInput
 {
     uint8_t pin;
-    bool lastStable = false; // true = pressed
+    bool activeLow;
+    uint16_t debounceMs;
+    bool lastStable = false; // true = pressed / touched
     bool lastReading = false;
     uint32_t lastChangeMs = 0;
 
-    explicit DebouncedButton(uint8_t p) : pin(p) {}
+    DebouncedInput(uint8_t p, bool low, uint16_t ms) : pin(p), activeLow(low), debounceMs(ms) {}
 };
 
-static DebouncedButton btnPet{TOUCH_PET_PIN};
-static DebouncedButton btnMode{TOUCH_MODE_PIN};
-static DebouncedButton btnAlarm{TOUCH_ALARM_PIN};
+static DebouncedInput pad{TOUCH_PAD_PIN, false, TOUCH_PAD_DEBOUNCE_MS};
+static DebouncedInput knobSw{ROTARY_SW_PIN, true, TOUCH_DEBOUNCE_MS};
 
 enum class BtnEvent : uint8_t
 {
     NONE,
-    PRESSED, // debounced press   (HIGH -> LOW), reported once
-    RELEASED // debounced release (LOW -> HIGH), reported once
+    PRESSED, // debounced press, reported once
+    RELEASED // debounced release, reported once
 };
 
-static BtnEvent pollButton(DebouncedButton &btn)
+static BtnEvent pollInput(DebouncedInput &in)
 {
-    bool pressed = digitalRead(btn.pin) == LOW;
+    bool pressed = (digitalRead(in.pin) == HIGH) != in.activeLow;
     uint32_t now = millis();
 
-    if (pressed != btn.lastReading)
+    if (pressed != in.lastReading)
     {
-        btn.lastReading = pressed;
-        btn.lastChangeMs = now;
+        in.lastReading = pressed;
+        in.lastChangeMs = now;
     }
 
-    if ((now - btn.lastChangeMs) > TOUCH_DEBOUNCE_MS && pressed != btn.lastStable)
+    if ((now - in.lastChangeMs) > in.debounceMs && pressed != in.lastStable)
     {
-        btn.lastStable = pressed;
+        in.lastStable = pressed;
         return pressed ? BtnEvent::PRESSED : BtnEvent::RELEASED;
     }
     return BtnEvent::NONE;
 }
 
-// Pet button doesn't interrupt an active alarm — you snooze/confirm that
-// with the alarm button instead, so it can't be "pet" into silence.
+// ---------------------------------------------------------------------------------------
+// Rotary encoder (KY-040): interrupt-driven quadrature decoder
+// ---------------------------------------------------------------------------------------
+// A state table (full-step, after Ben Buxton's well-known decoder) turns the CLK/DT edges
+// into exactly one count per detent and ignores contact bounce, because a bounce can never
+// complete a valid CLK/DT sequence. Both pins interrupt on CHANGE; the touch task takes the
+// counted detents every tick. +1 = one detent clockwise (CLK leads DT).
+
+#define ROT_START 0x0
+#define ROT_CW_FINAL 0x1
+#define ROT_CW_BEGIN 0x2
+#define ROT_CW_NEXT 0x3
+#define ROT_CCW_BEGIN 0x4
+#define ROT_CCW_FINAL 0x5
+#define ROT_CCW_NEXT 0x6
+#define ROT_DIR_CW 0x10
+#define ROT_DIR_CCW 0x20
+
+// rows: state, columns: pin state (CLK << 1 | DT)
+static const DRAM_ATTR uint8_t kRotTable[7][4] = {
+    /* ROT_START     */ {ROT_START, ROT_CW_BEGIN, ROT_CCW_BEGIN, ROT_START},
+    /* ROT_CW_FINAL  */ {ROT_CW_NEXT, ROT_START, ROT_CW_FINAL, ROT_START | ROT_DIR_CW},
+    /* ROT_CW_BEGIN  */ {ROT_CW_NEXT, ROT_CW_BEGIN, ROT_START, ROT_START},
+    /* ROT_CW_NEXT   */ {ROT_CW_NEXT, ROT_CW_BEGIN, ROT_CW_FINAL, ROT_START},
+    /* ROT_CCW_BEGIN */ {ROT_CCW_NEXT, ROT_START, ROT_CCW_BEGIN, ROT_START},
+    /* ROT_CCW_FINAL */ {ROT_CCW_NEXT, ROT_CCW_FINAL, ROT_START, ROT_START | ROT_DIR_CCW},
+    /* ROT_CCW_NEXT  */ {ROT_CCW_NEXT, ROT_CCW_FINAL, ROT_CCW_BEGIN, ROT_START},
+};
+
+static volatile uint8_t s_rotState = ROT_START;
+static volatile int16_t s_rotSteps = 0; // detents since the last rotaryTakeSteps(), +CW
+static portMUX_TYPE s_rotMux = portMUX_INITIALIZER_UNLOCKED;
+
+static void IRAM_ATTR rotaryIsr()
+{
+    uint8_t pinState = (uint8_t)((gpio_get_level((gpio_num_t)ROTARY_CLK_PIN) << 1) |
+                                 gpio_get_level((gpio_num_t)ROTARY_DT_PIN));
+    uint8_t next = kRotTable[s_rotState & 0x0F][pinState];
+    s_rotState = next;
+    uint8_t dir = next & 0x30;
+    if (dir)
+    {
+        portENTER_CRITICAL_ISR(&s_rotMux);
+        s_rotSteps += (dir == ROT_DIR_CW) ? 1 : -1;
+        portEXIT_CRITICAL_ISR(&s_rotMux);
+    }
+}
+
+// Detents turned since the last call (positive = clockwise), then resets the counter.
+static int rotaryTakeSteps()
+{
+    portENTER_CRITICAL(&s_rotMux);
+    int s = s_rotSteps;
+    s_rotSteps = 0;
+    portEXIT_CRITICAL(&s_rotMux);
+    return ROTARY_REVERSE ? -s : s;
+}
+
+static void rotaryInit()
+{
+    pinMode(ROTARY_CLK_PIN, INPUT_PULLUP);
+    pinMode(ROTARY_DT_PIN, INPUT_PULLUP);
+    s_rotState = ROT_START;
+    s_rotSteps = 0;
+    attachInterrupt(digitalPinToInterrupt(ROTARY_CLK_PIN), rotaryIsr, CHANGE);
+    attachInterrupt(digitalPinToInterrupt(ROTARY_DT_PIN), rotaryIsr, CHANGE);
+}
+
+// ---------------------------------------------------------------------------------------
+// Touch pad: Pet + Snooze / Off
+// ---------------------------------------------------------------------------------------
+// While the alarm RINGS the touch snoozes it (the pet reaction is skipped, so it can't be
+// "petted" into silence) and keeping the finger on for ALARM_LONG_PRESS_MS switches the alarm
+// off. While it is SNOOZED a touch is a normal pet, but a hold of ALARM_LONG_PRESS_MS switches
+// the alarm off instead of purring (PAD_HOLD_DISMISSES_SNOOZE). Otherwise: pet, and a hold
+// of PET_PURR_HOLD_MS purrs until released or PET_PURR_MAX_MS is over.
+static uint32_t padPressedAtMs = 0;
+static bool padPurrHandled = false; // this hold already purred (or was not allowed to)
+static bool padSwallow = false;     // this touch closed a reminder: it is used up (no pet, no purr)
+static bool padOffArmed = false;    // holding this touch switches the alarm off (and never purrs)
+static bool padOffHandled = false;  // ...and that already happened
+
+// Sound is sent outside the mutex. audio_play_gentle() stays quiet (or muted) during the
+// night window.
 static void triggerPetHappy()
 {
     bool petted = false;
@@ -65,8 +152,6 @@ static void triggerPetHappy()
     }
     xSemaphoreGive(g_stateMutex);
 
-    // Sound is sent outside the mutex; skipped while an alarm is ringing.
-    // audio_play_gentle() stays quiet (or muted) during the night window.
     if (petted)
     {
         pet_on_press(millis());                    // picks the reaction the display will draw (streak, night, rain, ...)
@@ -74,25 +159,54 @@ static void triggerPetHappy()
     }
 }
 
-// Holding the Pet button: after PET_PURR_HOLD_MS the clock purrs (Mood::PET_PURR: closed eyes,
-// the servo trembles gently) until the button is released or PET_PURR_MAX_MS is over.
-// An alarm replaces the mood by itself, so it always wins.
-static uint32_t petPressedAtMs = 0;
-static bool petPurrHandled = false; // this hold already purred (or was not allowed to)
-static bool petSwallow = false;     // this press closed a reminder: it is used up (no pet reaction, no purr)
-
-static void updatePurr(uint32_t now)
+static void onPadTouched(uint32_t now)
 {
-    bool held = btnPet.lastStable && !petSwallow;
-    uint32_t heldMs = (uint32_t)(now - petPressedAtMs);
+    padPressedAtMs = now;
+    padPurrHandled = false;
+    padSwallow = false;
+    padOffArmed = false;
+    padOffHandled = false;
 
+    xSemaphoreTake(g_stateMutex, portMAX_DELAY);
+    bool ringing = g_state.alarmActive;
+    xSemaphoreGive(g_stateMutex);
+
+    if (ringing)
+    {
+        alarm_request_snooze(); // the alarm task owns the timing and the snooze limit
+        padOffArmed = true;     // keep touching -> alarm off
+        return;
+    }
+    if (reminder_consume_press())
+    {
+        padSwallow = true; // closes a visible reminder, nothing else
+        return;
+    }
+    if (PAD_HOLD_DISMISSES_SNOOZE && alarm_get_state() == AlarmState::SNOOZED)
+        padOffArmed = true; // pet as usual, but a long hold switches the pending alarm off
+    triggerPetHappy();
+}
+
+static void updatePadHold(uint32_t now)
+{
+    bool held = pad.lastStable && !padSwallow;
+    uint32_t heldMs = (uint32_t)(now - padPressedAtMs);
+
+    // Hold -> alarm off (works while it rings and while it is snoozed; ignored when idle)
+    if (held && padOffArmed && !padOffHandled && heldMs >= ALARM_LONG_PRESS_MS)
+    {
+        padOffHandled = true;
+        alarm_request_dismiss();
+    }
+
+    // Hold -> purr
     if (!held)
     {
-        petPurrHandled = false;
+        padPurrHandled = false;
     }
-    else if (!petPurrHandled && heldMs >= PET_PURR_HOLD_MS)
+    else if (!padPurrHandled && !padOffArmed && heldMs >= PET_PURR_HOLD_MS)
     {
-        petPurrHandled = true;
+        padPurrHandled = true;
         if (settings_get().petReactions)
         {
             bool purring = false;
@@ -108,8 +222,8 @@ static void updatePurr(uint32_t now)
         }
     }
 
-    // stop purring: released, held too long
-    if (!held || heldMs > PET_PURR_MAX_MS)
+    // stop purring: released, held too long (an alarm replaces the mood by itself, so it always wins)
+    if (!held || padOffArmed || heldMs > PET_PURR_MAX_MS)
     {
         xSemaphoreTake(g_stateMutex, portMAX_DELAY);
         if (g_state.mood == Mood::PET_PURR)
@@ -118,28 +232,49 @@ static void updatePurr(uint32_t now)
     }
 }
 
-// Tap on Mode: Clock -> Date -> Weather -> Clock. Diagnostics is not part of the
-// cycle (see toggleDiagPage); tapping while on it just goes back to the clock.
-static void cycleDisplayMode()
+static bool handlePad()
 {
+    BtnEvent ev = pollInput(pad);
+    uint32_t now = millis();
+
+    if (ev == BtnEvent::RELEASED)
+        padSwallow = false;
+    if (ev == BtnEvent::PRESSED)
+        onPadTouched(now);
+    updatePadHold(now);
+    return ev == BtnEvent::PRESSED || pad.lastStable;
+}
+
+// ---------------------------------------------------------------------------------------
+// Rotary encoder: pages
+// ---------------------------------------------------------------------------------------
+
+// Turn: Clock -> Date -> Weather -> Clock (clockwise) and the same way back (counter-clockwise).
+// Diagnostics is not part of the cycle (see toggleDiagPage); turning while on it goes back to the clock.
+static void stepDisplayMode(int dir)
+{
+    static const DisplayMode kOrder[3] = {DisplayMode::CLOCK, DisplayMode::DATE, DisplayMode::WEATHER};
     xSemaphoreTake(g_stateMutex, portMAX_DELAY);
-    switch (g_state.displayMode)
+    int idx = 0;
+    if (g_state.displayMode != DisplayMode::DIAG)
     {
-    case DisplayMode::CLOCK:
-        g_state.displayMode = DisplayMode::DATE;
-        break;
-    case DisplayMode::DATE:
-        g_state.displayMode = DisplayMode::WEATHER;
-        break;
-    case DisplayMode::WEATHER:
-    case DisplayMode::DIAG:
-        g_state.displayMode = DisplayMode::CLOCK;
-        break;
+        for (int i = 0; i < 3; i++)
+            if (kOrder[i] == g_state.displayMode)
+                idx = i;
+        idx = (idx + (dir > 0 ? 1 : 2)) % 3; // +1 or -1 (mod 3)
     }
+    g_state.displayMode = kOrder[idx];
     xSemaphoreGive(g_stateMutex);
 }
 
-// Hold on Mode: open the diagnostics page from anywhere, or leave it.
+static void goToClock()
+{
+    xSemaphoreTake(g_stateMutex, portMAX_DELAY);
+    g_state.displayMode = DisplayMode::CLOCK;
+    xSemaphoreGive(g_stateMutex);
+}
+
+// Hold on the knob: open the diagnostics page from anywhere, or leave it.
 static void toggleDiagPage()
 {
     xSemaphoreTake(g_stateMutex, portMAX_DELAY);
@@ -147,34 +282,62 @@ static void toggleDiagPage()
     xSemaphoreGive(g_stateMutex);
 }
 
-// Mode button: a tap acts on RELEASE (so a long press doesn't also flip a page first);
-// holding MODE_LONG_PRESS_MS acts while still held. Returns true on any activity.
-static uint32_t modePressedAtMs = 0;
-static bool modeLongHandled = false;
-static bool modeSwallow = false; // this press closed a reminder
+// After a turn closed a reminder, the rest of that turn must not also flip pages.
+static bool rotIgnoring = false;
+static uint32_t rotIgnoreUntilMs = 0;
 
-static bool handleModeButton()
+static bool handleRotation(uint32_t now)
 {
-    BtnEvent ev = pollButton(btnMode);
+    int steps = rotaryTakeSteps();
+    if (steps == 0)
+        return false;
+
+    if (reminder_consume_press())
+    {
+        rotIgnoring = true;
+        rotIgnoreUntilMs = now + ROTARY_REMINDER_IGNORE_MS;
+        return true;
+    }
+    if (rotIgnoring)
+    {
+        if ((int32_t)(now - rotIgnoreUntilMs) < 0)
+            return true;
+        rotIgnoring = false;
+    }
+
+    stepDisplayMode(steps > 0 ? 1 : -1); // one page per tick, however fast it was turned
+    return true;
+}
+
+// Knob push: a tap acts on RELEASE (so a long press doesn't also jump to the clock first)
+// and goes back to the clock; holding MODE_LONG_PRESS_MS acts while still held and toggles
+// the diagnostics page. Returns true on any activity.
+static uint32_t knobPressedAtMs = 0;
+static bool knobLongHandled = false;
+static bool knobSwallow = false; // this push closed a reminder
+
+static bool handleKnobButton()
+{
+    BtnEvent ev = pollInput(knobSw);
     uint32_t now = millis();
 
-    // A visible reminder: this press closes it and is used up (no page change, no hold ring) until released.
+    // A visible reminder: this push closes it and is used up (no page change, no hold ring) until released.
     if (ev == BtnEvent::PRESSED && reminder_consume_press())
-        modeSwallow = true;
-    if (modeSwallow)
+        knobSwallow = true;
+    if (knobSwallow)
     {
         g_state.modeHoldPct = 0;
         if (ev == BtnEvent::RELEASED)
-            modeSwallow = false;
+            knobSwallow = false;
         return true;
     }
 
     // progress ring for the display task (only when the hold would OPEN the diagnostics
     // page; on that page a plain tap already leaves it)
     uint8_t ring = 0;
-    if (MODE_HOLD_RING && btnMode.lastStable && !modeLongHandled && ev != BtnEvent::PRESSED)
+    if (MODE_HOLD_RING && knobSw.lastStable && !knobLongHandled && ev != BtnEvent::PRESSED)
     {
-        uint32_t held = (uint32_t)(now - modePressedAtMs);
+        uint32_t held = (uint32_t)(now - knobPressedAtMs);
         if (held > MODE_HOLD_RING_DELAY_MS && held < MODE_LONG_PRESS_MS)
         {
             xSemaphoreTake(g_stateMutex, portMAX_DELAY);
@@ -191,28 +354,28 @@ static bool handleModeButton()
 
     if (ev == BtnEvent::PRESSED)
     {
-        modePressedAtMs = now;
-        modeLongHandled = false;
+        knobPressedAtMs = now;
+        knobLongHandled = false;
         return true;
     }
-    if (btnMode.lastStable && !modeLongHandled && (uint32_t)(now - modePressedAtMs) >= MODE_LONG_PRESS_MS)
+    if (knobSw.lastStable && !knobLongHandled && (uint32_t)(now - knobPressedAtMs) >= MODE_LONG_PRESS_MS)
     {
-        modeLongHandled = true;
+        knobLongHandled = true;
         g_state.modeHoldPct = 0;
         toggleDiagPage();
         return true;
     }
     if (ev == BtnEvent::RELEASED)
     {
-        if (!modeLongHandled)
-            cycleDisplayMode();
+        if (!knobLongHandled)
+            goToClock();
         return true;
     }
-    return btnMode.lastStable; // held = still interacting
+    return knobSw.lastStable; // held = still interacting
 }
 
-// Back to the clock after a while without any button press. The timer restarts
-// whenever the page changes or a button is used.
+// Back to the clock after a while without any input. The timer restarts
+// whenever the page changes or the pad / knob is used.
 static uint32_t lastActivityMs = 0;
 static DisplayMode lastSeenMode = DisplayMode::CLOCK;
 
@@ -235,72 +398,20 @@ static void autoReturnToClock(bool activity)
     xSemaphoreGive(g_stateMutex);
 }
 
-// Alarm button:
-//   tap  while ringing -> snooze at once (the sound stops immediately)
-//   hold ALARM_LONG_PRESS_MS (ringing or snoozed) -> alarm off completely
-// The snooze fires on the press, not the release, so there is no delay; if the
-// finger stays down, the same press then becomes "off". The alarm task owns the
-// timing and the snooze limit — this only passes the requests along.
-static uint32_t alarmPressedAtMs = 0;
-static bool alarmLongHandled = false;
-
-static bool handleAlarmButton()
-{
-    BtnEvent ev = pollButton(btnAlarm);
-    uint32_t now = millis();
-
-    if (ev == BtnEvent::PRESSED)
-    {
-        alarmPressedAtMs = now;
-        alarmLongHandled = false;
-
-        xSemaphoreTake(g_stateMutex, portMAX_DELAY);
-        bool ringing = g_state.alarmActive;
-        xSemaphoreGive(g_stateMutex);
-        if (ringing)
-            alarm_request_snooze();
-        else if (reminder_consume_press())
-            alarmLongHandled = true; // closed a reminder: holding on must not also switch the alarm off
-        return true;
-    }
-    else if (btnAlarm.lastStable && !alarmLongHandled &&
-             (uint32_t)(now - alarmPressedAtMs) >= ALARM_LONG_PRESS_MS)
-    {
-        alarmLongHandled = true;
-        alarm_request_dismiss(); // ignored by the alarm task while it is idle
-        return true;
-    }
-    return btnAlarm.lastStable;
-}
-
 void touch_init()
 {
-    pinMode(TOUCH_PET_PIN, INPUT_PULLUP);
-    pinMode(TOUCH_MODE_PIN, INPUT_PULLUP);
-    pinMode(TOUCH_ALARM_PIN, INPUT_PULLUP);
+    pinMode(TOUCH_PAD_PIN, INPUT_PULLDOWN); // TTP223 drives the pin itself; the pull-down only keeps it defined (and makes a plain test button work)
+    pinMode(ROTARY_SW_PIN, INPUT_PULLUP);
+    rotaryInit();
 }
 
 void touch_tick()
 {
+    uint32_t now = millis();
     bool activity = false;
-    BtnEvent petEv = pollButton(btnPet);
-    if (petEv == BtnEvent::RELEASED)
-        petSwallow = false;
-    if (petEv == BtnEvent::PRESSED)
-    {
-        if (reminder_consume_press())
-            petSwallow = true; // closes a visible reminder, nothing else
-        else
-        {
-            petPressedAtMs = millis();
-            petPurrHandled = false;
-            triggerPetHappy();
-        }
-        activity = true;
-    }
-    updatePurr(millis());
-    pet_tick(millis());
-    activity |= handleModeButton();
-    activity |= handleAlarmButton();
+    activity |= handlePad();
+    pet_tick(now);
+    activity |= handleRotation(now);
+    activity |= handleKnobButton();
     autoReturnToClock(activity);
 }

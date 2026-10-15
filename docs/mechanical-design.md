@@ -34,9 +34,10 @@ The current project pin configuration is documented in `include/pins.h`:
 | TFT DC            |          2 |
 | TFT RST           |          4 |
 | TFT backlight     |         15 |
-| Pet button        |         32 |
-| Mode button       |         33 |
-| Alarm button      |         27 |
+| TTP223 touch OUT  |         32 |
+| KY-040 CLK        |         33 |
+| KY-040 DT         |         27 |
+| KY-040 SW         |         26 |
 | SG90 servo signal |         13 |
 | JQ6500 UART RX    |         16 |
 | JQ6500 UART TX    |         17 |

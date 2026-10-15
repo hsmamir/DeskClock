@@ -5,12 +5,12 @@
 enum class Mood
 {
     IDLE_BLINK, // default resting animation
-    PET_HAPPY,  // pad 1 touched — happy eyes + servo wiggle
-    PET_PURR,   // pet button held — purring (closed eyes, gentle servo tremble)
+    PET_HAPPY,  // touch pad touched — happy eyes + servo wiggle
+    PET_PURR,   // touch pad held — purring (closed eyes, gentle servo tremble)
     ALARM_ALERT // alarm firing — urgent animation + servo pattern
 };
 
-// What's currently shown on screen — cycled by pad 2
+// What's currently shown on screen — changed by turning the rotary knob
 enum class DisplayMode
 {
     CLOCK,
@@ -30,7 +30,7 @@ struct AppState
     bool timeSynced = false;          // clock holds a usable time (NTP, or restored from flash)
     bool timeApprox = false;          // ...but it came from flash, not NTP yet (may be behind)
     bool wifiPortalActive = false;    // WiFiManager setup portal is open (real hardware)
-    volatile uint8_t modeHoldPct = 0; // Mode button held toward the diagnostics page: 0 = not shown, 1-100 = ring progress
+    volatile uint8_t modeHoldPct = 0; // Knob button held toward the diagnostics page: 0 = not shown, 1-100 = ring progress
     int8_t otaPercent = -1;           // OTA update progress 0-100; -1 = no update running
     uint8_t tlsUsers = 0;             // tasks holding or waiting for a TLS connection (tls_lock.h); while > 0 the display frees its sprites
 

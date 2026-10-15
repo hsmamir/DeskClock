@@ -3,32 +3,63 @@
   "author": "reactive-clock",
   "editor": "wokwi",
   "parts": [
-    { "type": "wokwi-esp32-devkit-v1", "id": "esp", "top": 0, "left": 0, "attrs": {} },
-    { "type": "wokwi-ili9341", "id": "tft", "top": -140, "left": -260, "attrs": {} },
-    { "type": "wokwi-pushbutton", "id": "btnPet",   "top": 200, "left": -260, "attrs": { "label": "Pet" } },
-    { "type": "wokwi-pushbutton", "id": "btnMode",  "top": 200, "left": -160, "attrs": { "label": "Mode" } },
-    { "type": "wokwi-pushbutton", "id": "btnAlarm", "top": 200, "left": -60,  "attrs": { "label": "Alarm" } },
-    { "type": "wokwi-servo", "id": "servo", "top": 60, "left": 260, "attrs": {} }
+    {
+      "type": "wokwi-esp32-devkit-v1",
+      "id": "esp",
+      "top": 0,
+      "left": 0,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-ili9341",
+      "id": "tft",
+      "top": -140,
+      "left": -260,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "btnPad",
+      "top": 200,
+      "left": -260,
+      "attrs": { "label": "Touch pad (TTP223 stand-in)" }
+    },
+    {
+      "type": "wokwi-ky-040",
+      "id": "enc",
+      "top": 190,
+      "left": -140,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-servo",
+      "id": "servo",
+      "top": 60,
+      "left": 260,
+      "attrs": {}
+    }
   ],
   "connections": [
-    ["tft:VCC",  "esp:3V3",   "red",   []],
-    ["tft:GND",  "esp:GND.1", "black", []],
-    ["tft:CS",   "esp:D5",    "green", []],
-    ["tft:RST",  "esp:D4",    "green", []],
-    ["tft:D/C",  "esp:D2",    "green", []],
-    ["tft:MOSI", "esp:D23",   "blue",  []],
-    ["tft:SCK",  "esp:D18",   "blue",  []],
-    ["tft:LED",  "esp:3V3",   "red",   []],
+    ["tft:VCC", "esp:3V3", "red", []],
+    ["tft:GND", "esp:GND.1", "black", []],
+    ["tft:CS", "esp:D5", "green", []],
+    ["tft:RST", "esp:D4", "green", []],
+    ["tft:D/C", "esp:D2", "green", []],
+    ["tft:MOSI", "esp:D23", "blue", []],
+    ["tft:SCK", "esp:D18", "blue", []],
+    ["tft:LED", "esp:3V3", "red", []],
 
-    ["btnPet:1.l",   "esp:D32",   "green", []],
-    ["btnPet:2.l",   "esp:GND.2", "black", []],
-    ["btnMode:1.l",  "esp:D33",   "green", []],
-    ["btnMode:2.l",  "esp:GND.2", "black", []],
-    ["btnAlarm:1.l", "esp:D27",   "green", []],
-    ["btnAlarm:2.l", "esp:GND.2", "black", []],
+    ["btnPad:1.l", "esp:3V3", "red", []],
+    ["btnPad:2.l", "esp:D32", "green", []],
 
-    ["servo:PWM", "esp:D13",   "green", []],
-    ["servo:V+",  "esp:VIN",   "red",   []],
+    ["enc:CLK", "esp:D33", "green", []],
+    ["enc:DT", "esp:D27", "green", []],
+    ["enc:SW", "esp:D26", "green", []],
+    ["enc:VCC", "esp:3V3", "red", []],
+    ["enc:GND", "esp:GND.2", "black", []],
+
+    ["servo:PWM", "esp:D13", "green", []],
+    ["servo:V+", "esp:VIN", "red", []],
     ["servo:GND", "esp:GND.2", "black", []]
   ]
 }

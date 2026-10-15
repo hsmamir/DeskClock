@@ -189,13 +189,13 @@ static void connectWifi()
     wm.setAPCallback([](WiFiManager *)
                      { setPortalActive(true); });
 
-    // Holding the Mode button while powering on forgets the saved network,
-    // which forces the portal to open — the way to switch WiFi without
+    // Holding the rotary knob's push button while powering on forgets the saved
+    // network, which forces the portal to open — the way to switch WiFi without
     // reflashing. (touch_init() sets this pin up too, but that task may not
     // have run yet, so set it here before reading.)
-    pinMode(TOUCH_MODE_PIN, INPUT_PULLUP);
+    pinMode(ROTARY_SW_PIN, INPUT_PULLUP);
     delay(50);
-    if (digitalRead(TOUCH_MODE_PIN) == LOW)
+    if (digitalRead(ROTARY_SW_PIN) == LOW)
     {
         wm.resetSettings();
     }

@@ -4,7 +4,7 @@
 // Real hardware: no SSID/password lives in code. On first boot (or whenever
 // the saved network can't be reached) the clock opens a setup access point —
 // join it from a phone, pick your network and enter its password.
-// To forget the saved network later: hold the Mode button while powering on.
+// To forget the saved network later: hold the rotary knob's push button while powering on.
 #define WIFI_PORTAL_AP_NAME "DeskClock"
 #define WIFI_PORTAL_TIMEOUT_SEC 180
 
@@ -46,18 +46,34 @@
 #define DEFAULT_TZ_NAME "Asia-Tehran" // id used by the web page's dropdown
 #define DEFAULT_TZ_POSIX "<+0330>-3:30"
 
-// ---- Button debounce (mechanical microswitch contact bounce) ----
-#define TOUCH_DEBOUNCE_MS 50
+// ---- Input debounce ----
+#define TOUCH_DEBOUNCE_MS 50     // rotary push button (mechanical contact bounce)
+#define TOUCH_PAD_DEBOUNCE_MS 30 // TTP223 touch pad (clean output, only filters noise)
 
-// ---- Pages: Mode button and automatic return to the clock ----
-// Tap Mode: Clock -> Date -> Weather -> Clock. The diagnostics page is NOT in that
-// cycle: HOLD the Mode button for MODE_LONG_PRESS_MS to open it (hold again to leave).
-// With no button pressed for DISPLAY_RETURN_MS on the Date / Weather page, or
+// ---- Touch pad (TTP223): Pet + Snooze ----
+// While the alarm is SNOOZED, holding the pad for ALARM_LONG_PRESS_MS switches the alarm off
+// (a tap is still a normal pet). 0 = the pad never switches off a snoozed alarm: holding it
+// purrs as usual and the alarm is then switched off from the web page (or by using up the snoozes).
+#define PAD_HOLD_DISMISSES_SNOOZE 1
+
+// ---- Rotary encoder (KY-040): pages ----
+// Turn clockwise: Clock -> Date -> Weather -> Clock; counter-clockwise goes the other way.
+// Push: back to the clock. HOLD the push button for MODE_LONG_PRESS_MS: diagnostics page.
+// ROTARY_REVERSE 1 swaps the two turn directions (if your module / wiring turns out mirrored).
+#define ROTARY_REVERSE 0
+// A turn that closes a visible reminder is used up; the rest of that turn is ignored for this long
+// so it doesn't also flip the page.
+#define ROTARY_REMINDER_IGNORE_MS 300
+
+// ---- Pages: rotary encoder and automatic return to the clock ----
+// Turn the knob: Clock -> Date -> Weather -> Clock. The diagnostics page is NOT in that
+// cycle: HOLD the knob's push button for MODE_LONG_PRESS_MS to open it (hold again to leave).
+// With no input for DISPLAY_RETURN_MS on the Date / Weather page, or
 // DIAG_RETURN_MS on the diagnostics page, the display goes back to the clock.
 // 0 = stay where you left it. (The weather page alternates its two views every
 // WEATHER_PAGE_SWITCH_MS, so keep DISPLAY_RETURN_MS above 2x that to see both.)
 #define MODE_LONG_PRESS_MS 1000
-// While Mode is held, a small ring fills on the face and completes exactly when the
+// While the knob button is held, a small ring fills on the face and completes exactly when the
 // diagnostics page opens. It appears after MODE_HOLD_RING_DELAY_MS so a normal tap
 // never flashes it. 0 = no ring.
 #define MODE_HOLD_RING 1
@@ -170,7 +186,7 @@ static_assert(WEATHER_BARS >= 2 && WEATHER_BARS <= 8, "WEATHER_BARS must be 2-8"
 #define ALARM_MINUTE 30      // 0-59
 #define ALARM_DAYS_MASK 0x7F // default days it rings (changeable from the settings page):
                              // bit0 = Sunday, bit1 = Monday ... bit6 = Saturday; 0x7F = every day
-#define ALARM_SNOOZE_MIN 5   // alarm button while ringing = silence for this long, then ring again
+#define ALARM_SNOOZE_MIN 5   // touch pad while ringing = silence for this long, then ring again
 #define ALARM_AUTO_OFF_MIN 3 // nobody pressed anything: stop by itself after this long
                              // (no more rings until the next day's alarm time)
 #define ALARM_GRACE_MIN 10   // missed-alarm catch-up: if the clock was busy (test ring, snooze),
@@ -179,9 +195,9 @@ static_assert(WEATHER_BARS >= 2 && WEATHER_BARS <= 8, "WEATHER_BARS must be 2-8"
                              // never after the alarm already rang. 0 = only in the exact minute
 
 // How to switch the alarm OFF completely (not just snooze it):
-//   * hold the alarm button for ALARM_LONG_PRESS_MS (works while it rings AND while it
-//     is snoozed - a short tap snoozes at once, holding on turns it off), or
-//   * use up all the snoozes: after ALARM_MAX_SNOOZES snoozes the next tap ends the alarm.
+//   * hold the touch pad for ALARM_LONG_PRESS_MS (works while it rings AND while it
+//     is snoozed - a short touch snoozes at once, holding on turns it off), or
+//   * use up all the snoozes: after ALARM_MAX_SNOOZES snoozes the next touch ends the alarm.
 // The next day's alarm is not affected either way.
 #define ALARM_LONG_PRESS_MS 1000 // hold time for "off"
 #define ALARM_MAX_SNOOZES 3      // 0 = unlimited snoozes
@@ -249,7 +265,7 @@ static_assert(WEATHER_BARS >= 2 && WEATHER_BARS <= 8, "WEATHER_BARS must be 2-8"
 #define MOON_PHASE_ENABLED 1
 
 // ---- Page transition ----
-// Pressing the Mode button slides the new page in from the right over the old one
+// Turning the knob slides the new page in from the right over the old one
 // instead of swapping instantly. Only between clock / date / weather (the
 // diagnostics page switches instantly). 0 = instant swap.
 #define TRANSITION_ENABLED 1
@@ -397,7 +413,7 @@ static_assert(AMBIENT_MOTES >= 3 && AMBIENT_MOTES <= 5, "AMBIENT_MOTES must be 3
 #define REACT_OFFLINE_DELAY_MS 20000 // WiFi down this long -> worried eyes
 
 // ---- Pet button reactions (pet.cpp decides, display.cpp draws) ----
-// The Pet button no longer always gives the same happy face. In priority order:
+// The Pet pad no longer always gives the same happy face. In priority order:
 //   fast repeated taps ... hearts for the eyes, then dizzy, then annoyed
 //   first tap of the morning ... yawn + happy; first tap after a long absence ... "missed you"
 //   a rare random one ... wink with tongue / surprise + big heart
@@ -425,7 +441,7 @@ static_assert(AMBIENT_MOTES >= 3 && AMBIENT_MOTES <= 5, "AMBIENT_MOTES must be 3
 #define PET_HEART_STREAK 4            // this many taps in a row -> heart eyes
 #define PET_DIZZY_STREAK 12           // ... dizzy spiral eyes
 #define PET_ANNOYED_STREAK 15         // ... "that's enough!" (until you pause)
-#define PET_PURR_HOLD_MS 1000         // hold the button this long -> purring
+#define PET_PURR_HOLD_MS 1000         // keep touching the pad this long -> purring
 #define PET_PURR_MAX_MS 8000          // purring stops by itself after this (keeps the servo/supply calm)
 #define PET_PURR_SERVO_DEG 3          // trembling amplitude around the rest angle while purring
 #define PET_MISSED_HOURS 6            // first tap after this many hours -> "missed you"

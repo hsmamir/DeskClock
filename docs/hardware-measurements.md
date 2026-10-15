@@ -55,15 +55,16 @@ Reference only: a common 30-pin DOIT board is approximately 51.5 × 28.3 mm. Ver
 - Full movement clearance needed by the mechanism: `TO MEASURE / CAD CHECK`
 - Photo links: `ADD LINKS`
 
-## Three buttons
+## TTP223 touch module and KY-040 rotary encoder
 
-Record this section for each button if their physical parts differ.
+Record this section for each of the two modules.
 
-- Body diameter / width × length: `TO MEASURE`
-- Body depth: `TO MEASURE`
-- Required travel: `TO MEASURE`
+- PCB width × length × thickness: `TO MEASURE`
+- TTP223: sensing pad diameter and the maximum cover thickness it still senses through: `TO MEASURE`
+- KY-040: shaft diameter / length, thread size and nut / panel thickness: `TO MEASURE`
+- KY-040: knob diameter and height: `TO MEASURE`
 - Panel-hole size: `TO MEASURE`
-- Terminal / cable clearance: `TO MEASURE`
+- Pin header / cable clearance: `TO MEASURE`
 - Photo links: `ADD LINKS`
 
 ## Assembly-level measurements

@@ -107,7 +107,7 @@ namespace disp
         g.drawLine(cx - r + 1, cy - r, cx + r + 1, cy + 4, C_RED);
     }
 
-    // Ring that fills while the Mode button is held toward the diagnostics page
+    // Ring that fills while the knob button is held toward the diagnostics page
     // (g_state.modeHoldPct, set by touch.cpp). Drawn over the middle of the face.
     void drawHoldRing(TFT_eSPI &g)
     {

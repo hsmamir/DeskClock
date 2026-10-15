@@ -10,7 +10,7 @@ The goal is a practical, attractive enclosure for the existing hardware:
 - 1.8-inch ST7735 TFT display, 128 × 160 pixels
 - JQ6500-16P audio module and small speaker
 - Hobby servo (for example, SG90) for the moving head
-- Three push buttons: Pet, Mode, and Alarm
+- TTP223 touch module (Pet + snooze) and KY-040 rotary encoder module (pages)
 
 The current wiring and GPIO assignments are documented in the main README and `include/pins.h`. Please check the actual dimensions of your own modules before finalizing a design: boards and displays sold under the same name can have different PCB outlines, mounting holes, and component clearances.
 

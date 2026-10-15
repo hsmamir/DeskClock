@@ -9,7 +9,7 @@ This document will be completed as the enclosure design matures.
 - The display PCB must be supported without pressure on the LCD glass.
 - The SG90 horn must move through its required range without contacting the case.
 - The speaker must be secured while leaving its sound outlet unobstructed.
-- Buttons must move freely and must not be permanently pressed by the case.
+- The touch pad must have no metal or thick material over its sensing pad, and the knob must turn freely and its push button must not be permanently pressed by the case.
 
 ## To be documented by the enclosure contributor
 

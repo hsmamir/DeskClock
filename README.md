@@ -2,7 +2,7 @@
 
 An ESP32 desk clock with a face. A 1.8" colour TFT shows a pair of expressive eyes over a live sky
 (sun, moon, clouds, rain, wind), the time, and the weather. A small servo gives it a head, a sound
-module gives it a voice, and three push buttons let you pet it, change pages and silence the alarm.
+module gives it a voice, a touch pad lets you pet it and snooze the alarm, and a rotary knob changes pages.
 Everything else - alarm time, volume, city, timezone - is set from a small web page on your WiFi.
 
 **Contents:** [Features](#features) · [Hardware](#hardware) · [Build and flash](#build-and-flash) ·
@@ -22,7 +22,7 @@ Everything else - alarm time, volume, city, timezone - is set from a small web p
 - **Living background**: the sky behind the eyes follows the weather and the hour - sun and moon travelling
   across the sky, the real moon phase, drifting clouds, rain, snow, fog, lightning and stars. Clouds and
   rain follow the real wind speed and direction.
-- **Pet button** with varied reactions (hearts, dizzy, annoyed, sleepy, raised eyebrow in rain, "missed you",
+- **Pet touch pad** with varied reactions (hearts, dizzy, annoyed, sleepy, raised eyebrow in rain, "missed you",
   morning yawn, rare winks and surprises) plus purring when held. Statistics are kept in flash.
 - **Bond**: a lasting "how much does he like you" value that grows when you pet or purr him regularly and fades
   when you stay away. It makes him more patient, lets him smile by himself, tints his eyes, and when he is lonely
@@ -51,7 +51,8 @@ Everything else - alarm time, volume, city, timezone - is set from a small web p
 | 1.8" TFT, ST7735, 128x160             | SPI. Comes in several "tab" variants, see [Display variants](#display-variants) |
 | JQ6500-16P MP3 module + small speaker | Audio clips live in the module's own flash                                      |
 | Hobby servo (e.g. SG90)               | The "head"                                                                      |
-| 3 x push buttons (microswitches)      | Pet, Mode, Alarm                                                                |
+| TTP223 touch module                   | Pet + snooze / alarm off                                                        |
+| KY-040 rotary encoder module          | Pages (turn), home / diagnostics (push)                                         |
 
 No extra parts are needed for anything described here.
 
@@ -64,13 +65,17 @@ Pins are defined in `include/pins.h`.
 | TFT CS / DC / RST | 5 / 2 / 4 |                                                |
 | TFT MOSI / SCLK   | 23 / 18   | default VSPI pins                              |
 | TFT backlight     | 15        | dimmed at night                                |
-| Pet button        | 32        | switch between the pin and GND                 |
-| Mode button       | 33        | switch between the pin and GND                 |
-| Alarm button      | 27        | switch between the pin and GND                 |
+| TTP223 OUT        | 32        | touch pad: Pet + snooze / alarm off            |
+| KY-040 CLK        | 33        | rotary encoder, turn                           |
+| KY-040 DT         | 27        | rotary encoder, turn                           |
+| KY-040 SW         | 26        | rotary encoder, push button (active LOW)       |
 | Servo signal      | 13        |                                                |
 | JQ6500 RX / TX    | 16 / 17   | ESP32 RX2 <- JQ6500 TX, ESP32 TX2 -> JQ6500 RX |
 
-Buttons use `INPUT_PULLUP`: one leg to the GPIO, the other to GND. No resistors needed.
+Power both modules from **3V3** (TTP223 `VCC`, KY-040 `+`) and connect their `GND` to GND. The TTP223 drives its
+`OUT` pin itself (HIGH while touched, default jumper setting). The KY-040 already has pull-ups on `CLK`, `DT` and
+`SW`. No extra resistors are needed. If turning the knob clockwise goes to the previous page, set `ROTARY_REVERSE`
+to `1` in `include/config.h`.
 
 The servo and the speaker share a supply. If the screen flickers, the sound stutters or the web page shows
 "Brownout" resets, use a better power supply or cable, and keep the servo off a weak USB port.
@@ -152,22 +157,27 @@ Details:
 3. The clock syncs the time (NTP) and fetches the weather.
 4. Open **http://deskclock.local/** from a device on the same WiFi to set the alarm, city and timezone.
 
-To forget the saved WiFi network: **hold the Mode button while powering on**.
+To forget the saved WiFi network: **hold the rotary knob pushed in while powering on**.
 
 Until the first NTP sync the clock restores the last time saved in flash (shown as approximate), so the alarm
 still works after a power cut without WiFi.
 
 ## Using it
 
-### Buttons
+### Touch pad and knob
 
-| Button    | Tap                                                                        | Hold                                                                |
-| --------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| **Pet**   | A reaction (not while the alarm rings)                                     | after 1 s: purring (stops when released, or after 8 s)              |
-| **Mode**  | Clock -> Date -> Weather -> Clock                                          | 1 s: open / close the diagnostics page (a ring fills while holding) |
-| **Alarm** | While ringing: snooze (5 min). After 3 snoozes the next tap ends the alarm | 1 s: switch the alarm off, also while snoozed                       |
+| Input          | Action                                                                                                           |
+| -------------- | ---------------------------------------------------------------------------------------------------------------- |
+| **Touch pad**  | Touch: a pet reaction. While the alarm rings: snooze (5 min); after 3 snoozes the next touch ends the alarm      |
+|                | Hold 1 s: purring (stops when released, or after 8 s). While the alarm rings or is snoozed: switch the alarm off |
+| **Knob, turn** | Clockwise: Clock -> Date -> Weather -> Clock. Counter-clockwise: the other way round                             |
+| **Knob, push** | Tap: back to the clock. Hold 1 s: open / close the diagnostics page (a ring fills while holding)                 |
 
-The Date, Weather and diagnostics pages return to the clock by themselves after 15 s without a button press.
+A visible reminder is closed by the first touch, turn or push (that input is then used up).
+While the alarm is snoozed a touch is still a normal pet; only a 1 s hold switches the alarm off
+(`PAD_HOLD_DISMISSES_SNOOZE` in `include/config.h`).
+
+The Date, Weather and diagnostics pages return to the clock by themselves after 15 s without any input.
 An unattended alarm stops by itself after 3 minutes. The next day's alarm is never affected by dismissing one.
 
 ### Pages

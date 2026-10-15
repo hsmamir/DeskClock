@@ -7,10 +7,19 @@
 #define TFT_RST_PIN 4
 #define TFT_BL_PIN 15 // backlight, PWM-capable for dimming
 
-// ---- Buttons (mechanical microswitches, wired GPIO -> switch -> GND, INPUT_PULLUP) ----
-#define TOUCH_PET_PIN 32   // btn 1: pet/react
-#define TOUCH_MODE_PIN 33  // btn 2: switch display mode
-#define TOUCH_ALARM_PIN 27 // btn 3: snooze the ringing alarm
+// ---- Touch pad (TTP223 module) ----
+// OUT -> GPIO, VCC -> 3V3, GND -> GND. The module drives OUT HIGH while touched
+// (default jumper setting: momentary, active-high), so no resistor is needed.
+// This one pad is Pet AND Snooze/Off (see touch.h).
+#define TOUCH_PAD_PIN 32 // TTP223 OUT
+
+// ---- Rotary encoder (KY-040 module) ----
+// "+" -> 3V3, GND -> GND. The module already has pull-ups on CLK / DT / SW.
+// Rotate = change page, push = home / hold for diagnostics (see touch.h).
+// All three pins are plain GPIOs (not strapping pins, not input-only).
+#define ROTARY_CLK_PIN 33 // KY-040 CLK (A)
+#define ROTARY_DT_PIN 27  // KY-040 DT  (B)
+#define ROTARY_SW_PIN 26  // KY-040 SW  (push button, active LOW)
 
 // ---- Servo ----
 #define SERVO_PIN 13 // PWM-capable, avoid strapping pins (0,2,5,12,15)
