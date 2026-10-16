@@ -11,13 +11,14 @@ namespace disp
 {
 
     // ---- Slide between pages ----
-    int16_t pageSlideX = 0; // offset of the page that is sliding in; 0 = settled
+    int16_t pageSlideX = 0; // offset of the page that is sliding in; 0 = settled, > 0 = coming in from the right, < 0 = from the left
     bool gapIsFull = false; // what gapPaint() last painted (page background = true, frame colour = false)
 
     static bool slideOn = false;    // a slide is running (it ends on the frame that lands at x = 0)
     static bool slideFrame = false; // this frame belongs to a slide, the landing frame included
     static uint32_t slideStartMs = 0;
     static uint32_t slideMs = TRANSITION_MS;
+    static int8_t slideDir = 1; // +1: the new page comes in from the right (next page), -1: from the left (previous page)
 
     bool isFullPage(DisplayMode m)
     {
@@ -43,12 +44,13 @@ namespace disp
             return;
         }
         float inv = 1.0f - el / (float)slideMs;
-        pageSlideX = (int16_t)(W * inv * inv * inv);
+        pageSlideX = (int16_t)(W * inv * inv * inv) * slideDir;
     }
 
     void pageSlideStart(uint32_t now, uint32_t ms)
     {
         slideOn = true;
+        slideDir = 1;
         slideStartMs = now;
         slideMs = ms;
         slideCompute(now);
@@ -71,14 +73,18 @@ namespace disp
             slideOn = true;
             slideStartMs = now;
             slideMs = TRANSITION_MS;
+            // Direction follows the knob: the pages form a ring CLOCK -> DATE -> WEATHER -> CLOCK. One step forward
+            // (clockwise) = the new page comes in from the right, one step back (counter-clockwise) = from the left.
+            int fwd = ((int)shown - (int)lastMode + 3) % 3; // 1 = next page, 2 = previous page
+            slideDir = (fwd == 2) ? -1 : 1;
         }
         slideCompute(now);
     }
 
     // ---- The strip between the two cards ----
     // Clock layout: frame colour (two separate cards). Full-screen page: the page background (no divider line), so
-    // the two halves read as one page. dx = how far the page is still to slide in: only the part
-    // the new page already covers is repainted.
+    // the two halves read as one page. dx = how far the page is still to slide in (+ from the right, - from the
+    // left): only the part the new page already covers is repainted.
     //
     // No flicker: the strip is repainted only when its look really changed (layout, background or frame colour),
     // not on every redraw of the page, and every pixel is written once, straight in its final colour.
@@ -97,8 +103,8 @@ namespace disp
         if (cardGap > 0)
         {
             int16_t gy = faceY + faceH;
-            int16_t x = cardX + (dx > 0 ? dx : 0);
-            int16_t right = cardX + W;
+            int16_t x = cardX + (dx > 0 ? dx : 0);         // dx > 0: the page covers [cardX + dx, cardX + W)
+            int16_t right = cardX + W + (dx < 0 ? dx : 0); // dx < 0: the page covers [cardX, cardX + W + dx)
             bool same = gapSigOk && gapSigFull == fullLayout && gapSigBg == C_BG && gapSigFrame == C_FRAME &&
                         gapSigY == gy;
             if (x < right && !same)
