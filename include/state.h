@@ -59,6 +59,10 @@ struct AppState
     int8_t barTempC[WEATHER_MAX_BARS] = {};   // temperature, rounded
     int8_t barRainPct[WEATHER_MAX_BARS] = {}; // chance of rain, 0-100; -1 = unknown
 
+    // Weather page scroll (rotary knob): how far the knob has scrolled the page, 0 = top .. WEATHER_SCROLL_STEPS =
+    // bottom. Written by the touch task (touch.cpp); the display eases its pixel offset toward it.
+    uint8_t weatherScrollStep = 0;
+
     // Last successful NTP sync (diagnostics page). 0 = no NTP sync since boot.
     uint32_t ntpSyncEpoch = 0; // wall-clock time of that sync
     uint32_t ntpSyncMs = 0;    // millis() of that sync (age = millis() - this)

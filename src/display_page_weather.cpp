@@ -1,13 +1,20 @@
-// display_page_weather.cpp - the Weather page (full screen). Two views that alternate every WEATHER_PAGE_SWITCH_MS:
+// display_page_weather.cpp - the Weather page (full screen): ONE page that the rotary knob scrolls.
 //
-//   now view       upper half: icon, big temperature, condition, today's high / low
-//                  lower half: feels like, humidity, wind (speed + arrow), chance of rain
-//   forecast view  upper half: hourly bars with the temperature above and the chance of rain below
-//                  lower half: sunrise, sunset (computed on the chip), UV, pressure
+// The page is twice as tall as the screen. Its first half ("now") and second half ("forecast") are laid out the way
+// the two views used to be, one below the other:
 //
-// Both halves use canvas coordinates (see display_pages.cpp): the upper half is laid out from its top edge, the
-// lower half from its bottom edge (the rows are numbered 0..3 from the top and counted up from the page dots), so
-// nothing ever crosses the strip between the two cards.
+//   now        upper part: icon, big temperature, condition, today's high / low
+//              lower part: feels like, humidity, wind (speed + arrow), chance of rain
+//   forecast   upper part: hourly bars with the temperature above and the chance of rain below
+//              lower part: sunrise, sunset (computed on the chip), UV, pressure
+//
+// Turning the knob scrolls the page (touch.cpp sets the target, display_pages.cpp eases the pixel offset toward it).
+// Without the extra details (no forecast yet) only the "now" part exists and nothing scrolls.
+//
+// Drawing: like every full-screen page it is drawn into the two canvases (upper card = faceCv, lower card = infoCv).
+// Each canvas draws the part of the tall page that is in view: a block (upper / lower part of a section) is laid out
+// in its own canvas coordinates, shifted by `oy` = the canvas y of the block's top edge; the sprite clips whatever
+// sticks out. Fixed parts (the coloured line at the top, the footer with the page dots, the scroll bar) are drawn last.
 #include "display_internal.h"
 
 namespace disp
@@ -17,10 +24,11 @@ namespace disp
 
     static uint8_t lblFont() { return sc >= 1.5f ? 2 : 1; } // small captions: built-in font 1 (6x8) / font 2
 
-    // ---- Rows of the lower half: caption on the left, value on the right ----
-    static int16_t rowY(int i) // centre of row i (0 = top .. 3 = bottom) inside the lower card
+    // ---- Rows of the lower part: caption on the left, value on the right ----
+    // oy = canvas y of the top edge of the lower block (see the header comment)
+    static int16_t rowY(int16_t oy, int i) // centre of row i (0 = top .. 3 = bottom) inside the lower block
     {
-        return (int16_t)(infoH - u(19) - (3 - i) * u(13));
+        return (int16_t)(oy + infoH - u(19) - (3 - i) * u(13));
     }
 
     static void rowLabel(TFT_eSPI &g, int16_t y, const char *label)
@@ -73,18 +81,18 @@ namespace disp
     }
 
     // =====================================================================
-    //  "Now" view
+    //  "Now" section
     // =====================================================================
-    static void drawNowTop(TFT_eSPI &g, const WeatherPage &p)
+    static void drawNowTop(TFT_eSPI &g, const WeatherPage &p, int16_t oy)
     {
-        const int16_t rowCy = u(24); // middle of the icon / temperature row
+        const int16_t rowCy = oy + u(24); // middle of the icon / temperature row
 
         if (!p.valid)
         {
-            drawCloud(g, W / 2, u(34), u(16), tint(C_SOFT, 0.47f));
+            drawCloud(g, W / 2, oy + u(34), u(16), tint(C_SOFT, 0.47f));
             g.setTextDatum(MC_DATUM);
             g.setTextColor(C_SOFT);
-            g.drawString("No weather yet", W / 2, u(60), 2);
+            g.drawString("No weather yet", W / 2, oy + u(60), 2);
             return;
         }
 
@@ -112,17 +120,17 @@ namespace disp
         }
         g.setTextDatum(MC_DATUM);
         g.setTextColor(C_WHITE);
-        g.drawString(cap, W / 2, u(53), 2);
+        g.drawString(cap, W / 2, oy + u(53), 2);
 
         // today's high / low
         if (p.wd.valid)
         {
-            drawHiLo(g, (int16_t)(W * 0.28f), u(70), true, p.wd.maxC, tempColor(p.wd.maxC));
-            drawHiLo(g, (int16_t)(W * 0.72f), u(70), false, p.wd.minC, tempColor(p.wd.minC));
+            drawHiLo(g, (int16_t)(W * 0.28f), oy + u(70), true, p.wd.maxC, tempColor(p.wd.maxC));
+            drawHiLo(g, (int16_t)(W * 0.72f), oy + u(70), false, p.wd.minC, tempColor(p.wd.minC));
         }
     }
 
-    static void drawNowBottom(TFT_eSPI &g, const WeatherPage &p)
+    static void drawNowBottom(TFT_eSPI &g, const WeatherPage &p, int16_t oy)
     {
         if (!p.valid)
             return; // the upper half already says "No weather yet"
@@ -131,32 +139,32 @@ namespace disp
         {
             g.setTextDatum(MC_DATUM);
             g.setTextColor(C_SOFT);
-            g.drawString("No details yet", W / 2, infoH / 2 - u(4), 2);
+            g.drawString("No details yet", W / 2, oy + infoH / 2 - u(4), 2);
             return;
         }
         char buf[24];
 
         // feels like
-        rowLabel(g, rowY(0), "Feels like");
+        rowLabel(g, rowY(oy, 0), "Feels like");
         if (!isnan(d.feelsC))
-            drawDegValue(g, W - u(7), rowY(0), (int)lroundf(d.feelsC), tempColor(d.feelsC));
+            drawDegValue(g, W - u(7), rowY(oy, 0), (int)lroundf(d.feelsC), tempColor(d.feelsC));
         else
-            rowValue(g, rowY(0), "--", C_SOFT);
+            rowValue(g, rowY(oy, 0), "--", C_SOFT);
 
         // humidity: a water drop in front of the number
-        rowLabel(g, rowY(1), "Humidity");
+        rowLabel(g, rowY(oy, 1), "Humidity");
         if (d.humidityPct >= 0)
         {
             snprintf(buf, sizeof(buf), "%d%%", d.humidityPct);
             int16_t tw = g.textWidth(buf, 2);
-            rowValue(g, rowY(1), buf, C_WHITE);
-            drawDrop(g, W - u(7) - tw - u(6), rowY(1) + 1, imax(2, u(3)), RAIN_COL);
+            rowValue(g, rowY(oy, 1), buf, C_WHITE);
+            drawDrop(g, W - u(7) - tw - u(6), rowY(oy, 1) + 1, imax(2, u(3)), RAIN_COL);
         }
         else
-            rowValue(g, rowY(1), "--", C_SOFT);
+            rowValue(g, rowY(oy, 1), "--", C_SOFT);
 
         // wind: speed and an arrow for the direction (a direction means nothing in calm air)
-        rowLabel(g, rowY(2), "Wind");
+        rowLabel(g, rowY(oy, 2), "Wind");
         if (d.windKmh >= 0)
         {
             int spd = (int)lroundf(d.windKmh);
@@ -166,29 +174,29 @@ namespace disp
                 strcpy(buf, "Calm");
             else
                 snprintf(buf, sizeof(buf), "%d km/h", spd);
-            rowValue(g, rowY(2), buf, C_WHITE, arrow ? (int16_t)(2 * ar + u(4)) : (int16_t)0);
+            rowValue(g, rowY(oy, 2), buf, C_WHITE, arrow ? (int16_t)(2 * ar + u(4)) : (int16_t)0);
             if (arrow)
-                drawWindArrow(g, W - u(7) - ar, rowY(2), ar, d.windDirDeg, p.accent);
+                drawWindArrow(g, W - u(7) - ar, rowY(oy, 2), ar, d.windDirDeg, p.accent);
         }
         else
-            rowValue(g, rowY(2), "--", C_SOFT);
+            rowValue(g, rowY(oy, 2), "--", C_SOFT);
 
         // chance of rain this hour (the first hourly entry)
-        rowLabel(g, rowY(3), "Rain");
+        rowLabel(g, rowY(oy, 3), "Rain");
         int rp = d.barCount > 0 ? d.rainPct[0] : -1;
         if (rp >= 0)
         {
             snprintf(buf, sizeof(buf), "%d%%", rp);
-            rowValue(g, rowY(3), buf, rp >= WEATHER_BAR_RAIN_PCT ? RAIN_COL : C_WHITE);
+            rowValue(g, rowY(oy, 3), buf, rp >= WEATHER_BAR_RAIN_PCT ? RAIN_COL : C_WHITE);
         }
         else
-            rowValue(g, rowY(3), "--", C_SOFT);
+            rowValue(g, rowY(oy, 3), "--", C_SOFT);
     }
 
     // =====================================================================
-    //  Forecast view
+    //  Forecast section
     // =====================================================================
-    static void drawForecastTop(TFT_eSPI &g, const WeatherPage &p)
+    static void drawForecastTop(TFT_eSPI &g, const WeatherPage &p, int16_t oy)
     {
         const WeatherDetail &d = p.wd;
         const uint8_t lf = lblFont();
@@ -198,24 +206,24 @@ namespace disp
         // header: title on the left, what the blue numbers mean on the right
         g.setTextDatum(ML_DATUM);
         g.setTextColor(C_SOFT);
-        g.drawString("Hourly", m, u(10), lf);
+        g.drawString("Hourly", m, oy + u(10), lf);
         int16_t lw = g.textWidth("rain %", lf);
         g.setTextDatum(MR_DATUM);
         g.setTextColor(RAIN_COL);
-        g.drawString("rain %", W - m, u(10), lf);
-        drawDrop(g, W - m - lw - u(6), u(10) + 1, imax(2, u(2)), RAIN_COL);
+        g.drawString("rain %", W - m, oy + u(10), lf);
+        drawDrop(g, W - m - lw - u(6), oy + u(10) + 1, imax(2, u(2)), RAIN_COL);
 
         int n = d.barCount;
         if (n <= 0)
         {
             g.setTextDatum(MC_DATUM);
             g.setTextColor(C_SOFT);
-            g.drawString("No forecast", W / 2, u(40), 2);
+            g.drawString("No forecast", W / 2, oy + u(40), 2);
             return;
         }
 
         // bars: height = temperature relative to the other shown hours, colour = temperature
-        int16_t top = u(27), base = u(55);
+        int16_t top = oy + u(27), base = oy + u(55);
         int16_t area = base - top;
         int16_t x0 = u(6);
         int16_t slot = (int16_t)((W - 2 * x0) / n);
@@ -266,7 +274,7 @@ namespace disp
             else
                 snprintf(buf, sizeof(buf), "%d", d.hour[i]);
             g.setTextColor(rain ? RAIN_COL : (i == 0 ? C_WHITE : C_SOFT));
-            g.drawString(buf, cxBar, u(63), lf);
+            g.drawString(buf, cxBar, oy + u(63), lf);
 
             // chance of rain in that hour
             int rp = d.rainPct[i];
@@ -280,7 +288,7 @@ namespace disp
                 strcpy(buf, "-");
                 g.setTextColor(tint(C_SOFT, 0.4f));
             }
-            g.drawString(buf, cxBar, u(74), lf);
+            g.drawString(buf, cxBar, oy + u(74), lf);
         }
     }
 
@@ -301,7 +309,7 @@ namespace disp
         snprintf(out, n, "%02d:%02d", hh, mm);
     }
 
-    static void drawForecastBottom(TFT_eSPI &g, const WeatherPage &p)
+    static void drawForecastBottom(TFT_eSPI &g, const WeatherPage &p, int16_t oy)
     {
         const WeatherDetail &d = p.wd;
         char buf[24];
@@ -313,26 +321,26 @@ namespace disp
         bool sunOk = st.valid && !st.polarNight && !st.midnightSun;
         const char *noSun = !st.valid ? "--" : (st.polarNight ? "no sun" : "all day");
 
-        rowLabel(g, rowY(0), "Sunrise");
+        rowLabel(g, rowY(oy, 0), "Sunrise");
         if (sunOk)
         {
             fmtHM(buf, sizeof(buf), st.riseH);
-            rowValue(g, rowY(0), buf, C_AMBER);
+            rowValue(g, rowY(oy, 0), buf, C_AMBER);
         }
         else
-            rowValue(g, rowY(0), noSun, C_SOFT);
+            rowValue(g, rowY(oy, 0), noSun, C_SOFT);
 
-        rowLabel(g, rowY(1), "Sunset");
+        rowLabel(g, rowY(oy, 1), "Sunset");
         if (sunOk)
         {
             fmtHM(buf, sizeof(buf), st.setH);
-            rowValue(g, rowY(1), buf, rgb(255, 140, 60));
+            rowValue(g, rowY(oy, 1), buf, rgb(255, 140, 60));
         }
         else
-            rowValue(g, rowY(1), noSun, C_SOFT);
+            rowValue(g, rowY(oy, 1), noSun, C_SOFT);
 
         // UV: the number, a short word for the level, coloured like a traffic light
-        rowLabel(g, rowY(2), "UV max");
+        rowLabel(g, rowY(oy, 2), "UV max");
         if (d.uvMax >= 0)
         {
             int uv = (int)lroundf(d.uvMax);
@@ -364,39 +372,56 @@ namespace disp
                 col = rgb(200, 100, 255);
             }
             snprintf(buf, sizeof(buf), "%d %s", uv, word);
-            rowValue(g, rowY(2), buf, col);
+            rowValue(g, rowY(oy, 2), buf, col);
         }
         else
-            rowValue(g, rowY(2), "--", C_SOFT);
+            rowValue(g, rowY(oy, 2), "--", C_SOFT);
 
-        rowLabel(g, rowY(3), "Press");
+        rowLabel(g, rowY(oy, 3), "Press");
         if (d.pressureHpa > 0)
         {
             snprintf(buf, sizeof(buf), "%d hPa", d.pressureHpa);
-            rowValue(g, rowY(3), buf, C_WHITE);
+            rowValue(g, rowY(oy, 3), buf, C_WHITE);
         }
         else
-            rowValue(g, rowY(3), "--", C_SOFT);
+            rowValue(g, rowY(oy, 3), "--", C_SOFT);
     }
 
     // =====================================================================
-    //  Entry points (called by drawFullPage)
+    //  Fixed parts: scroll bar and footer
     // =====================================================================
-    void drawWeatherPageTop(TFT_eSPI &g, const WeatherPage &p)
+
+    // Thin position bar at the right edge, only while the page can scroll. Fixed on screen (page y, not scrolled);
+    // base = page y of the canvas' first row.
+    static void drawScrollBar(TFT_eSPI &g, const WeatherPage &p, int16_t base)
     {
-        if (p.forecastView && p.wd.valid)
-            drawForecastTop(g, p);
-        else
-            drawNowTop(g, p);
+#if WEATHER_SCROLLBAR
+        if (!p.scrollable || p.maxScrollPx <= 0)
+            return;
+        const int16_t ph = (int16_t)(faceH + infoH);
+        const int16_t bw = imax(2, u(2));
+        const int16_t x = (int16_t)(W - bw - u(1));
+        const int16_t top = u(8), bot = (int16_t)(ph - u(14));
+        const int16_t len = (int16_t)(bot - top);
+        int16_t th = (int16_t)((long)len * ph / (ph + p.maxScrollPx)); // thumb = the share of the page that is in view
+        if (th < u(10))
+            th = u(10);
+        const int16_t ty = (int16_t)(top + (long)(len - th) * p.scrollPx / p.maxScrollPx);
+        g.fillRect(x, top - base, bw, len, tint(C_SOFT, 0.22f));
+        g.fillRect(x, ty - base, bw, th, tint(p.accent, 0.85f));
+#else
+        (void)g;
+        (void)p;
+        (void)base;
+#endif
     }
 
-    void drawWeatherPageBottom(TFT_eSPI &g, const WeatherPage &p)
+    // Bottom strip of the lower canvas: a plain band that content scrolls under (the page dots are drawn on it by
+    // drawFullPage afterwards), and the small clock badge when the reading is old.
+    static void drawFooter(TFT_eSPI &g, const WeatherPage &p)
     {
-        if (p.forecastView && p.wd.valid)
-            drawForecastBottom(g, p);
-        else
-            drawNowBottom(g, p);
-
+        const int16_t band = u(12);
+        g.fillRect(0, infoH - band, W, band, C_BG);
         if (p.stale)
         {
             // small clock badge: the reading is old (bottom right, next to the page dots)
@@ -405,6 +430,57 @@ namespace disp
             g.drawLine(bx, by, bx, by - br + 1, C_AMBER);
             g.drawLine(bx, by, bx + br - 1, by, C_AMBER);
         }
+    }
+
+    // =====================================================================
+    //  The page
+    // =====================================================================
+
+    // Draws the part of the tall page that lies in this canvas. lower = the lower card (infoCv), else the upper card
+    // (faceCv); the page runs through both: the upper card shows page rows 0 .. faceH, the lower card faceH .. faceH + infoH,
+    // moved up by the scroll offset.
+    static void drawWeatherPage(TFT_eSPI &g, const WeatherPage &p, bool lower)
+    {
+        const int16_t ph = (int16_t)(faceH + infoH); // height of one section = height of the screen's page area
+        const int16_t base = lower ? faceH : (int16_t)0;
+        const int16_t ch = lower ? infoH : faceH;
+        const int sections = p.scrollable ? 2 : 1;
+        for (int s = 0; s < sections; s++)
+        {
+            const bool forecast = (s == 1);
+            const int16_t oyTop = (int16_t)(s * ph - p.scrollPx - base); // canvas y of this section's upper block
+            const int16_t oyBot = (int16_t)(oyTop + faceH);              // ... and of its lower block
+            if (oyTop < ch && oyTop + faceH > 0)
+            {
+                if (forecast)
+                    drawForecastTop(g, p, oyTop);
+                else
+                    drawNowTop(g, p, oyTop);
+            }
+            if (oyBot < ch && oyBot + infoH > 0)
+            {
+                if (forecast)
+                    drawForecastBottom(g, p, oyBot);
+                else
+                    drawNowBottom(g, p, oyBot);
+            }
+        }
+        drawScrollBar(g, p, base);
+        if (lower)
+            drawFooter(g, p);
+    }
+
+    // =====================================================================
+    //  Entry points (called by drawFullPage)
+    // =====================================================================
+    void drawWeatherPageTop(TFT_eSPI &g, const WeatherPage &p)
+    {
+        drawWeatherPage(g, p, false);
+    }
+
+    void drawWeatherPageBottom(TFT_eSPI &g, const WeatherPage &p)
+    {
+        drawWeatherPage(g, p, true);
     }
 
 } // namespace disp

@@ -486,13 +486,13 @@ namespace disp
     int16_t tempReadoutDh(TFT_eSPI &g, float tempC, float zoneW, int16_t maxDh); // largest dh (<= maxDh) whose number fits zoneW (fraction of W)
     bool tempRollActive(float tempC, uint32_t now);                              // a temperature roll is running or about to start
     uint32_t barsGrowTotalMs(uint8_t barCount);                                  // how long the hourly bars take to grow in
-    void drawViewDots(TFT_eSPI &g, uint8_t active, uint16_t accent, int16_t y);
     void drawWindArrow(TFT_eSPI &g, int16_t cx, int16_t cy, int16_t r, int deg, uint16_t col);
 
     // ---- Full-screen pages: Date and Weather (display_page_date.cpp, display_page_weather.cpp) ----
     // Each page is drawn in two halves with canvas coordinates: Top = the upper card (faceCv), Bottom = the lower card (infoCv).
     // Nothing may cross the gap between them, so a page lays its content out from the top edge of the upper half and
-    // from the bottom edge of the lower half.
+    // from the bottom edge of the lower half. (The Weather page is the exception: it is twice as tall as the screen and
+    // scrolls, so each canvas draws the part of it that is in view, see display_page_weather.cpp.)
     void drawPageAccent(TFT_eSPI &g, uint16_t accent); // coloured line + soft glow along the top edge
     void drawDatePageTop(TFT_eSPI &g, bool haveTime, const struct tm &ti);
     void drawDatePageBottom(TFT_eSPI &g, bool haveTime, const struct tm &ti);
@@ -503,12 +503,13 @@ namespace disp
         int code;
         bool stale; // the reading is old (offline / fetches failing)
         uint32_t ageMs;
-        WeatherDetail wd;  // wd.valid = the extra details exist
-        bool forecastView; // second view: hourly forecast + sun / UV / pressure (first view: now)
-        bool twoViews;     // both views available -> view indicator
+        WeatherDetail wd; // wd.valid = the extra details exist
+        bool scrollable;  // the details exist: the forecast continues below the "now" part, the knob scrolls the page
+        int16_t scrollPx; // how far the page is scrolled up, px: 0 = top .. maxScrollPx = bottom
+        int16_t maxScrollPx;
         uint16_t accent;
         uint32_t now, settleMs;
-        int32_t growMs; // ms since the forecast view landed (the bars grow)
+        int32_t growMs; // ms since the hourly bars came into view (they grow; negative = not yet)
         bool haveTime;
         const struct tm *ti;
     };

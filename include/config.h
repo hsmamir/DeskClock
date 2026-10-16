@@ -58,6 +58,8 @@
 
 // ---- Rotary encoder (KY-040): pages ----
 // Turn clockwise: Clock -> Date -> Weather -> Clock; counter-clockwise goes the other way.
+// On the Weather page the knob first SCROLLS the page (see "Weather page: one scrollable page" below); only a turn
+// at its top / bottom edge moves on to the previous / next page.
 // Push: back to the clock. HOLD the push button for MODE_LONG_PRESS_MS: diagnostics page.
 // ROTARY_REVERSE 1 swaps the two turn directions (if your module / wiring turns out mirrored).
 #define ROTARY_REVERSE 0
@@ -70,8 +72,7 @@
 // cycle: HOLD the knob's push button for MODE_LONG_PRESS_MS to open it (hold again to leave).
 // With no input for DISPLAY_RETURN_MS on the Date / Weather page, or
 // DIAG_RETURN_MS on the diagnostics page, the display goes back to the clock.
-// 0 = stay where you left it. (The weather page alternates its two views every
-// WEATHER_PAGE_SWITCH_MS, so keep DISPLAY_RETURN_MS above 2x that to see both.)
+// 0 = stay where you left it. (Turning the knob counts as input, so scrolling the weather page keeps it open.)
 #define MODE_LONG_PRESS_MS 1000
 // While the knob button is held, a small ring fills on the face and completes exactly when the
 // diagnostics page opens. It appears after MODE_HOLD_RING_DELAY_MS so a normal tap
@@ -102,36 +103,42 @@ static_assert(CALENDAR_WEEK_START >= 0 && CALENDAR_WEEK_START <= 6, "CALENDAR_WE
 #define WEATHER_REFRESH_INTERVAL_MS (15UL * 60 * 1000) // refresh every 15 min
 // A reading older than this is shown as "stale" (dimmed + age, e.g. "Clear 3h ago").
 // Two missed refreshes: a normal schedule never gets there, an offline clock does.
-// ---- Weather page details ----
-// The same request that fetches the temperature also brings today's high / low,
-// humidity, wind and the next hours' temperature and chance of rain. The weather
-// page then alternates between two views: the big temperature (as before) and a
-// "details" view with Hi / Lo, humidity, wind and small hourly bars.
-// 0 = only the big temperature, as before.
+// ---- Weather page: ONE scrollable page ----
+// The same request that fetches the temperature also brings today's high / low, humidity, wind and the next
+// hours' temperature and chance of rain. The weather page is a single tall page: "now" (icon, big temperature,
+// high / low, feels like, humidity, wind, chance of rain) with the "forecast" (hourly bars, sunrise, sunset, UV,
+// pressure) continuing below it. Turn the knob to scroll down / up.
+// 0 = only the big temperature, as before (nothing to scroll).
 #define WEATHER_DETAILS_ENABLED 1
-#define WEATHER_PAGE_SWITCH_MS 6000   // each view stays this long (the page opens on the big temperature)
-#define WEATHER_WIND_ARROW_DOWNWIND 1 // details view: wind arrow points where the wind blows TO (1, like weather maps) or where it comes FROM (0)
+#define WEATHER_WIND_ARROW_DOWNWIND 1 // wind arrow points where the wind blows TO (1, like weather maps) or where it comes FROM (0)
 #define WEATHER_BARS 6                // hours shown as bars, starting with the current hour (2-8; 8 is a bit crowded on the 128 px display)
 #define WEATHER_BAR_RAIN_PCT 50       // an hour with at least this chance of rain is marked blue
 static_assert(WEATHER_BARS >= 2 && WEATHER_BARS <= 8, "WEATHER_BARS must be 2-8");
 
-// ---- Weather page: smooth view change, growing bars, rolling temperature ----
-// WEATHER_VIEW_TRANSITION: the details view slides in from the right over the big temperature
-//   (and back), like a page change, instead of swapping instantly. Needs the info-panel sprite.
-// WEATHER_BARS_GROW: when the details view has landed, the hourly bars grow up from the baseline,
-//   one after the other (STAGGER = delay between neighbouring bars).
-// WEATHER_TEMP_ROLL: when the big temperature differs from what was on screen the last time it was
+// ---- Weather page: scrolling, growing bars, rolling temperature ----
+// WEATHER_SCROLL_STEPS:         knob clicks from the top of the page to its bottom (1-8). Fewer = bigger jumps.
+// WEATHER_SCROLL_EASE_MS:       how softly the page glides to its new position (smaller = snappier, 0 = jumps).
+// WEATHER_SCROLL_EDGE_PAUSE_MS: at the top / bottom edge the knob only moves on to the previous / next page after it
+//                               was still for this long, so spinning fast does not fly right past the weather page.
+//                               0 = the very next click moves on.
+// WEATHER_SCROLLBAR:            thin position bar at the right edge while the page can scroll.
+// WEATHER_BARS_GROW:            when the hourly bars scroll into view they grow up from the baseline, one after the
+//   other (STAGGER = delay between neighbouring bars).
+// WEATHER_TEMP_ROLL:            when the big temperature differs from what was on screen the last time it was
 //   drawn (a new reading, also one that arrived while another page was showing), the digits that
 //   changed roll - upward when it got warmer, downward when colder. The first reading after boot
 //   just appears. Needs the info-panel sprite.
-// Set any of them to 0 to turn that effect off.
-#define WEATHER_VIEW_TRANSITION 1
-#define WEATHER_VIEW_TRANSITION_MS 300
+// Set the effects (SCROLLBAR / GROW / ROLL) to 0 to turn them off.
+#define WEATHER_SCROLL_STEPS 4
+#define WEATHER_SCROLL_EASE_MS 70
+#define WEATHER_SCROLL_EDGE_PAUSE_MS 350
+#define WEATHER_SCROLLBAR 1
 #define WEATHER_BARS_GROW 1
 #define WEATHER_BARS_GROW_MS 420
 #define WEATHER_BARS_STAGGER_MS 60
 #define WEATHER_TEMP_ROLL 1
 #define WEATHER_TEMP_ROLL_MS 450
+static_assert(WEATHER_SCROLL_STEPS >= 1 && WEATHER_SCROLL_STEPS <= 8, "WEATHER_SCROLL_STEPS must be 1-8");
 
 #define WEATHER_STALE_MS (2UL * WEATHER_REFRESH_INTERVAL_MS)
 

@@ -1,5 +1,5 @@
 // display_widgets.cpp - widgets shared by the pages: alarm badge + next-ring text, the big temperature, wind arrow,
-// weather view dots and the hourly-bars timing.
+// hourly-bars timing.
 #include "display_internal.h"
 
 namespace disp
@@ -277,7 +277,7 @@ namespace disp
         smoothText(g, ClockSm26, CLOCKSM26_CAPH, "C", x0 + numW + gap * 2 + ring * 2, y0 + dhT / 2, L_BASELINE, accent, C_BG);
     }
 
-    // ---- Wind arrow, view dots, bar timing (used by the weather page) ----
+    // ---- Wind arrow, bar timing (used by the weather page) ----
     // Wind direction as a small arrow (up = north, clockwise). windDirDeg is the direction the wind
     // comes FROM; WEATHER_WIND_ARROW_DOWNWIND decides whether the arrow shows where it blows TO
     // (weather-map style, default) or where it comes from.
@@ -302,23 +302,6 @@ namespace disp
         g.fillTriangle(tipX, tipY,
                        (int16_t)lroundf(bx + px * hw), (int16_t)lroundf(by + py * hw),
                        (int16_t)lroundf(bx - px * hw), (int16_t)lroundf(by - py * hw), col);
-    }
-
-    // Two small rings right of the page dots: which of the weather page's two views is showing
-    // (filled = current). Rings, so they don't read as two more pages.
-    void drawViewDots(TFT_eSPI &g, uint8_t active, uint16_t accent, int16_t y)
-    {
-        int16_t dotsRight = W / 2 + (int16_t)(((MODE_COUNT - 1) / 2.0f) * u(10)) + imax(2, u(2.5f));
-        int16_t r = imax(2, u(2));
-        int16_t x0 = dotsRight + u(16);
-        for (uint8_t i = 0; i < 2; i++)
-        {
-            int16_t x = x0 + (int16_t)i * u(8);
-            if (i == active)
-                g.fillCircle(x, y, r, accent);
-            else
-                g.drawCircle(x, y, r, tint(accent, 0.5f));
-        }
     }
 
     // How long the hourly bars take to grow in: the last bar starts (n-1) staggers late.

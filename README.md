@@ -166,12 +166,12 @@ still works after a power cut without WiFi.
 
 ### Touch pad and knob
 
-| Input          | Action                                                                                                           |
-| -------------- | ---------------------------------------------------------------------------------------------------------------- |
-| **Touch pad**  | Touch: a pet reaction. While the alarm rings: snooze (5 min); after 3 snoozes the next touch ends the alarm      |
-|                | Hold 1 s: purring (stops when released, or after 8 s). While the alarm rings or is snoozed: switch the alarm off |
-| **Knob, turn** | Clockwise: Clock -> Date -> Weather -> Clock. Counter-clockwise: the other way round                             |
-| **Knob, push** | Tap: back to the clock. Hold 1 s: open / close the diagnostics page (a ring fills while holding)                 |
+| Input          | Action                                                                                                                            |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| **Touch pad**  | Touch: a pet reaction. While the alarm rings: snooze (5 min); after 3 snoozes the next touch ends the alarm                       |
+|                | Hold 1 s: purring (stops when released, or after 8 s). While the alarm rings or is snoozed: switch the alarm off                  |
+| **Knob, turn** | Clockwise: Clock -> Date -> Weather -> Clock. Counter-clockwise: the other way round. On the Weather page a turn scrolls it first |
+| **Knob, push** | Tap: back to the clock. Hold 1 s: open / close the diagnostics page (a ring fills while holding)                                  |
 
 A visible reminder is closed by the first touch, turn or push (that input is then used up).
 While the alarm is snoozed a touch is still a normal pet; only a 1 s hold switches the alarm off
@@ -184,10 +184,11 @@ An unattended alarm stops by itself after 3 minutes. The next day's alarm is nev
 
 - **Clock**: the face, the time, the alarm bell with its time (red and flashing while ringing).
 - **Date**: weekday, big day number, month and year, and a month calendar.
-- **Weather**: two views that alternate every few seconds. _Now_: icon, big temperature, condition, today's
-  high / low, feels-like, humidity, wind (speed and arrow) and chance of rain. _Forecast_: hourly bars with the
-  temperature and the chance of rain, plus sunrise, sunset, UV and pressure. Old readings are shown dimmed with
-  their age.
+- **Weather**: one tall page that the knob scrolls (a thin bar at the right edge shows where you are). At the top
+  is _Now_: icon, big temperature, condition, today's high / low, feels-like, humidity, wind (speed and arrow) and
+  chance of rain. Scroll down for the _Forecast_: hourly bars with the temperature and the chance of rain, plus
+  sunrise, sunset, UV and pressure. At the top or bottom edge, pause briefly and turn again to move on to the
+  neighbouring page. Old readings are shown dimmed with their age.
 - **Diagnostics**: IP address, WiFi signal, free memory, last NTP sync, age of the weather reading, firmware version and
   whether a newer release is available.
 

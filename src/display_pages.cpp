@@ -3,7 +3,8 @@
 // Only the clock page shows the face (eyes) above the info card. The Date and Weather pages are ONE full-screen
 // page: its upper half is drawn into faceCv, its lower half into infoCv (the same two canvases, so no extra RAM),
 // and the 3 px strip between the cards gets the page background instead of the frame colour. The contents of the
-// pages are in display_page_date.cpp and display_page_weather.cpp.
+// pages are in display_page_date.cpp and display_page_weather.cpp. The Weather page is twice as tall as the screen and
+// scrolls with the rotary knob: this file owns the scroll position (it eases toward the step touch.cpp has set).
 #include "display_internal.h"
 
 namespace disp
@@ -127,6 +128,25 @@ namespace disp
         g.fillRect(0, imax(2, u(2)), W, imax(1, u(1)), tint(accent, 0.235f));
     }
 
+    // ---- Weather page scroll ----
+    // touch.cpp sets the step the knob has scrolled to (g_state.weatherScrollStep: 0 = top .. WEATHER_SCROLL_STEPS =
+    // bottom); the pixel offset below glides toward it. The page is twice the height of the screen's page area, so
+    // the largest offset is one page height and every step is an equal share of it.
+    static float scrollF = 0;        // current offset, px (0 = top of the page)
+    static uint32_t scrollMs = 0;    // when it was last advanced
+    static bool barsOn = false;      // the hourly bars are (about to be) in view
+    static uint32_t barsStartMs = 0; // when they started to grow
+
+    static int readWeatherScrollStep()
+    {
+        xSemaphoreTake(g_stateMutex, portMAX_DELAY);
+        int s = g_state.weatherScrollStep;
+        xSemaphoreGive(g_stateMutex);
+        if (s > WEATHER_SCROLL_STEPS)
+            s = WEATHER_SCROLL_STEPS;
+        return s;
+    }
+
     // ---- The full-screen pages ----
     void drawFullPage(DisplayMode shown, bool haveTime, const struct tm &ti, uint32_t now)
     {
@@ -136,12 +156,9 @@ namespace disp
         wp.haveTime = haveTime;
         wp.ti = &ti;
 
-        // The weather page opens on the "now" view, then alternates with the forecast view.
-        static uint32_t weatherEnterMs = 0;
-        static bool lastForecastView = false;
-        static uint32_t forecastStartMs = 0; // when the forecast view landed = when its bars start to grow
-        bool forecastView = false;
-        bool viewChanged = false; // the weather page just swapped between its two views (not a page change)
+        const float pageH = (float)(faceH + infoH);
+        bool scrollMoving = false; // the page is gliding: redraw every frame
+        bool tempInView = false;   // the big temperature (top of the page) is on screen
 
         if (shown == DisplayMode::WEATHER)
         {
@@ -149,20 +166,51 @@ namespace disp
             readWeather(wp.valid, wp.tempC, wp.code, wUpdatedMs);
             wp.ageMs = wp.valid ? ageSince(millis(), wUpdatedMs) : 0;
             wp.stale = wp.valid && wp.ageMs > WEATHER_STALE_MS; // offline / fetches failing: the reading is old
-            if (lastMode != DisplayMode::WEATHER)
-                weatherEnterMs = now;
             if (WEATHER_DETAILS_ENABLED)
             {
                 readWeatherDetail(wp.wd);
-                wp.twoViews = wp.wd.valid && wp.valid;
-                forecastView = wp.twoViews && (((now - weatherEnterMs) / WEATHER_PAGE_SWITCH_MS) & 1);
+                wp.scrollable = wp.wd.valid && wp.valid;
             }
-            viewChanged = lastMode == DisplayMode::WEATHER && forecastView != lastForecastView;
-            lastForecastView = forecastView;
+            wp.maxScrollPx = wp.scrollable ? (int16_t)pageH : (int16_t)0;
+
+            // where the knob wants the page, and the glide toward it
+            float target = wp.scrollable ? pageH * (float)readWeatherScrollStep() / (float)WEATHER_SCROLL_STEPS : 0.0f;
+            if (lastMode != DisplayMode::WEATHER)
+            {
+                scrollF = target; // the page opens right where the knob left it (no glide from the old position)
+                scrollMs = now;
+                barsOn = false;
+            }
+            else
+            {
+                uint32_t dt = now - scrollMs;
+                if (dt > 100)
+                    dt = 100;
+                scrollMs = now;
+                float diff = target - scrollF;
+                if (WEATHER_SCROLL_EASE_MS <= 0 || fabsf(diff) < 0.6f)
+                    scrollF = target;
+                else
+                    scrollF += diff * (1.0f - expf(-(float)dt / (float)WEATHER_SCROLL_EASE_MS)); // exponential ease-out
+                scrollMoving = (scrollF != target);
+            }
+            wp.scrollPx = (int16_t)lroundf(scrollF);
+
+            // the hourly bars grow when they scroll into view, and start over after they left it
+            if (!wp.scrollable)
+                barsOn = false;
+            else if (!barsOn && target >= pageH * 0.25f - 0.5f)
+            {
+                barsOn = true;
+                barsStartMs = pageSlideSettleMs(now); // wait for the page to land if it is still sliding in
+            }
+            else if (barsOn && scrollF < pageH * 0.10f)
+                barsOn = false; // fully scrolled out of view
+            wp.growMs = barsOn ? (int32_t)(now - barsStartMs) : 0;
+            tempInView = scrollF < (float)faceH;
         }
         else
-            lastForecastView = false;
-        wp.forecastView = forecastView;
+            barsOn = false;
 
         // ---- signature: only redraw when something visible changed ----
         uint32_t sig = 0;
@@ -173,21 +221,19 @@ namespace disp
         }
         else
         {
-            // every frame while the bars grow / the temperature rolls, otherwise as slowly as before
-            bool growing = forecastView && (int32_t)(now - forecastStartMs) < (int32_t)barsGrowTotalMs(wp.wd.barCount);
-            bool rolling = !forecastView && wp.valid && tempRollActive(wp.tempC, now);
-            uint32_t tick = forecastView ? (growing ? now / 33 : now / 1000) : (rolling ? now / 33 : now / 120);
-            sig = ((forecastView ? 6u : 4u) << 28) | (tick & 0xFF) |
+            // every frame while the page glides / the bars grow / the temperature rolls, otherwise as slowly as before
+            // (the weather icon on top of the page animates, so it needs more redraws than the rest of the page)
+            bool growing = barsOn && (int32_t)(now - barsStartMs) < (int32_t)barsGrowTotalMs(wp.wd.barCount);
+            bool rolling = tempInView && wp.valid && tempRollActive(wp.tempC, now);
+            uint32_t tick = (scrollMoving || growing || rolling) ? now / 33 : (tempInView ? now / 120 : now / 1000);
+            sig = (4u << 28) | (tick & 0xFF) |
                   (((uint32_t)((int)lroundf(wp.tempC) + 128) & 0xFF) << 8) |
                   (((uint32_t)wp.code & 0x7F) << 16) | (wp.valid ? (1u << 23) : 0u);
+            sig = (sig * 131u) ^ ((uint32_t)wp.scrollPx & 0x3FFu) ^ (wp.scrollable ? 0x400u : 0u);
         }
         sig = (sig * 131u) ^ (uint32_t)g_state.modeHoldPct; // the "hold for diagnostics" ring is drawn over the page
 
-        if (WEATHER_VIEW_TRANSITION && viewChanged && faceCv.ok && infoCv.ok)
-            pageSlideStart(now, WEATHER_VIEW_TRANSITION_MS); // the other weather view slides in the same way
         uint32_t settleMs = pageSlideSettleMs(now);
-        if (viewChanged && forecastView)
-            forecastStartMs = settleMs;
 
         bool modeChanged = (shown != lastMode);
         if (!pageSliding() && !modeChanged && sig == lastInfoSig)
@@ -204,16 +250,20 @@ namespace disp
         }
         wp.accent = accent;
         wp.settleMs = settleMs;
-        wp.growMs = (int32_t)(now - forecastStartMs);
 
         // ---- upper half: the upper card ----
         TFT_eSPI &gt = faceCv.begin();
         gt.fillRect(0, 0, W, faceH, C_BG);
-        drawPageAccent(gt, accent);
         if (shown == DisplayMode::DATE)
+        {
+            drawPageAccent(gt, accent);
             drawDatePageTop(gt, haveTime, ti);
+        }
         else
+        {
             drawWeatherPageTop(gt, wp);
+            drawPageAccent(gt, accent); // fixed at the top edge: the page scrolls beneath it
+        }
         drawHoldRing(gt);
         faceCv.endAt(pageSlideX, CORNERS_TOP);
 
@@ -225,8 +275,6 @@ namespace disp
         else
             drawWeatherPageBottom(gb, wp);
         drawModeDots(gb, shown, accent, infoH - u(5));
-        if (wp.twoViews && shown == DisplayMode::WEATHER)
-            drawViewDots(gb, forecastView ? 1 : 0, accent, infoH - u(5));
         infoCv.endAt(pageSlideX, CORNERS_BOT);
 
         gapPaint(pageSlideX);

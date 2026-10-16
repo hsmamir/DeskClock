@@ -19,6 +19,8 @@ void touch_init();
 //   Rotary encoder
 //     turn clockwise         : next page      Clock -> Date -> Weather -> Clock
 //     turn counter-clockwise : previous page  Clock -> Weather -> Date -> Clock
+//     (the Weather page is one tall page: a turn scrolls it first, and only a turn at its top / bottom edge, after a
+//      short pause, moves on to the neighbouring page - see WEATHER_SCROLL_* in config.h)
 //     (from the diagnostics page any turn goes back to the clock)
 //     push (tap) on the clock: opens the quick menu (quick_menu.h): alarm on/off, alarm time, volume,
 //                              alarm volume, pet reactions. Turn = move / change, push = select / save,

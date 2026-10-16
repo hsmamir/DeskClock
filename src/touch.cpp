@@ -253,10 +253,48 @@ static bool handlePad()
 // Turn: Clock -> Date -> Weather -> Clock (clockwise) and the same way back (counter-clockwise).
 // Diagnostics and the quick menu are not part of the cycle (see toggleDiagPage / quick_menu.h); turning while on
 // the diagnostics page goes back to the clock (while the menu is open a turn drives the menu instead).
-static void stepDisplayMode(int dir)
+//
+// The Weather page is ONE scrollable page: while it has something to scroll (the forecast below "now") a turn scrolls it
+// (WEATHER_SCROLL_STEPS clicks from top to bottom) instead of changing pages. A turn at the top / bottom edge moves on to
+// the previous / next page, but only after the knob was still for WEATHER_SCROLL_EDGE_PAUSE_MS, so spinning fast scrolls
+// to the end and stops there instead of flying through the whole page. Coming from the next page (counter-clockwise) the
+// page opens at its bottom, coming from the previous one (clockwise) at its top.
+static uint32_t lastWeatherTurnMs = 0; // the last turn while the Weather page was involved (entering counts)
+
+static void turnPages(int steps, uint32_t now)
 {
     static const DisplayMode kOrder[3] = {DisplayMode::CLOCK, DisplayMode::DATE, DisplayMode::WEATHER};
+    const int dir = steps > 0 ? 1 : -1;
     xSemaphoreTake(g_stateMutex, portMAX_DELAY);
+
+    // ---- scrolling the Weather page ----
+    if (WEATHER_DETAILS_ENABLED && g_state.displayMode == DisplayMode::WEATHER && g_state.weatherValid && g_state.detailValid)
+    {
+        bool still = (uint32_t)(now - lastWeatherTurnMs) >= (uint32_t)WEATHER_SCROLL_EDGE_PAUSE_MS;
+        lastWeatherTurnMs = now;
+        int cur = g_state.weatherScrollStep;
+        if (cur > WEATHER_SCROLL_STEPS)
+            cur = WEATHER_SCROLL_STEPS;
+        int next = cur + steps;
+        if (next < 0)
+            next = 0;
+        if (next > WEATHER_SCROLL_STEPS)
+            next = WEATHER_SCROLL_STEPS;
+        if (next != cur)
+        {
+            g_state.weatherScrollStep = (uint8_t)next;
+            xSemaphoreGive(g_stateMutex);
+            return;
+        }
+        if (!still) // at the edge, but the knob was just moving: stay on the page
+        {
+            xSemaphoreGive(g_stateMutex);
+            return;
+        }
+        // still at the edge: fall through and move on to the neighbouring page
+    }
+
+    // ---- changing the page ----
     int idx = 0;
     if (g_state.displayMode != DisplayMode::DIAG && g_state.displayMode != DisplayMode::MENU)
     {
@@ -264,6 +302,12 @@ static void stepDisplayMode(int dir)
             if (kOrder[i] == g_state.displayMode)
                 idx = i;
         idx = (idx + (dir > 0 ? 1 : 2)) % 3; // +1 or -1 (mod 3)
+    }
+    if (kOrder[idx] == DisplayMode::WEATHER && g_state.displayMode != DisplayMode::WEATHER)
+    {
+        // entering the Weather page: from the top when coming from the Date page, from the bottom when coming back from the clock
+        g_state.weatherScrollStep = dir > 0 ? 0 : (uint8_t)WEATHER_SCROLL_STEPS;
+        lastWeatherTurnMs = now; // the turn that brought us here must not also leave again
     }
     g_state.displayMode = kOrder[idx];
     xSemaphoreGive(g_stateMutex);
@@ -321,7 +365,7 @@ static bool handleRotation(uint32_t now)
         return true;
     }
 
-    stepDisplayMode(steps > 0 ? 1 : -1); // one page per tick, however fast it was turned
+    turnPages(steps, now); // scrolls the Weather page, else one page per tick, however fast it was turned
     return true;
 }
 
