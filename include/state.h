@@ -16,7 +16,8 @@ enum class DisplayMode
     CLOCK,
     DATE,
     WEATHER,
-    DIAG // full-screen diagnostics page: IP, signal, free heap, last sync
+    DIAG, // full-screen diagnostics page: IP, signal, free heap, last sync
+    MENU  // full-screen quick menu (alarm, volume, ...): opened by a tap on the knob on the clock page, see quick_menu.h
 };
 
 // Shared app state, written by touch/time tasks, read by display/servo tasks.

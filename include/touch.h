@@ -20,8 +20,13 @@ void touch_init();
 //     turn clockwise         : next page      Clock -> Date -> Weather -> Clock
 //     turn counter-clockwise : previous page  Clock -> Weather -> Date -> Clock
 //     (from the diagnostics page any turn goes back to the clock)
-//     push (tap)             : back to the clock
+//     push (tap) on the clock: opens the quick menu (quick_menu.h): alarm on/off, alarm time, volume,
+//                              alarm volume, pet reactions. Turn = move / change, push = select / save,
+//                              hold = leave, 15 s without input = leave.
+//     push (tap) elsewhere   : back to the clock
 //     push and hold          : diagnostics page on/off (a ring fills while holding)
+//     alarm ringing          : push = snooze, keep holding ALARM_LONG_PRESS_MS = alarm off (like the touch pad);
+//                              turning does nothing
 //     a visible reminder is closed by a turn or a push and that input is used up
 //   With no input for DISPLAY_RETURN_MS / DIAG_RETURN_MS the display returns to the
 //   clock by itself.

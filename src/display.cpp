@@ -3,6 +3,7 @@
 #include "display_internal.h"
 #include <WiFi.h>
 #include "tls_lock.h"
+#include "display_menu.h"
 
 using namespace disp;
 
@@ -197,7 +198,7 @@ void display_tick()
     // The Date / Weather / diagnostics / reminder pages are ONE page: no strip between the two cards (seamless).
     ReminderView rvNow;
     const bool reminderOn = !alarm && reminder_get_active(rvNow);
-    const bool seamless = reminderOn || fullLayout || (!alarm && mode == DisplayMode::DIAG);
+    const bool seamless = reminderOn || fullLayout || (!alarm && (mode == DisplayMode::DIAG || mode == DisplayMode::MENU));
     geometrySet(fullLayout && mode == DisplayMode::DATE && !reminderOn, seamless); // the Date page has its own card split
 
     struct tm ti;
@@ -343,6 +344,16 @@ void display_tick()
         return;
     }
     diagShown = false;
+
+    // Quick menu (rotary knob): full screen like the diagnostics page, one seamless page. An alarm always wins
+    // (the touch task also closes the menu when the alarm starts). Redraws itself only when something changed.
+    if (mode == DisplayMode::MENU && !alarm)
+    {
+        lastMode = DisplayMode::DIAG; // so the page change back to the clock is noticed (and does not slide)
+        drawMenuScreen(now);
+        return;
+    }
+    menuScreenLeft(); // not shown: it is drawn from scratch the next time it opens
 
     // Page flow: the slide between pages, and which layout is up
     DisplayMode shown = alarm ? DisplayMode::CLOCK : mode;

@@ -9,6 +9,7 @@
 #include "pet.h"
 #include "settings.h"
 #include "reminders.h"
+#include "quick_menu.h"
 
 // ---------------------------------------------------------------------------------------
 // Debounced digital input (touch pad + rotary push button)
@@ -250,13 +251,14 @@ static bool handlePad()
 // ---------------------------------------------------------------------------------------
 
 // Turn: Clock -> Date -> Weather -> Clock (clockwise) and the same way back (counter-clockwise).
-// Diagnostics is not part of the cycle (see toggleDiagPage); turning while on it goes back to the clock.
+// Diagnostics and the quick menu are not part of the cycle (see toggleDiagPage / quick_menu.h); turning while on
+// the diagnostics page goes back to the clock (while the menu is open a turn drives the menu instead).
 static void stepDisplayMode(int dir)
 {
     static const DisplayMode kOrder[3] = {DisplayMode::CLOCK, DisplayMode::DATE, DisplayMode::WEATHER};
     xSemaphoreTake(g_stateMutex, portMAX_DELAY);
     int idx = 0;
-    if (g_state.displayMode != DisplayMode::DIAG)
+    if (g_state.displayMode != DisplayMode::DIAG && g_state.displayMode != DisplayMode::MENU)
     {
         for (int i = 0; i < 3; i++)
             if (kOrder[i] == g_state.displayMode)
@@ -278,7 +280,8 @@ static void goToClock()
 static void toggleDiagPage()
 {
     xSemaphoreTake(g_stateMutex, portMAX_DELAY);
-    g_state.displayMode = g_state.displayMode == DisplayMode::DIAG ? DisplayMode::CLOCK : DisplayMode::DIAG;
+    if (g_state.displayMode != DisplayMode::MENU) // inside the menu a hold leaves the menu (handleKnobButton)
+        g_state.displayMode = g_state.displayMode == DisplayMode::DIAG ? DisplayMode::CLOCK : DisplayMode::DIAG;
     xSemaphoreGive(g_stateMutex);
 }
 
@@ -291,6 +294,13 @@ static bool handleRotation(uint32_t now)
     int steps = rotaryTakeSteps();
     if (steps == 0)
         return false;
+
+    // While the alarm rings the knob does not flip pages or edit anything behind the red face (a push snoozes).
+    xSemaphoreTake(g_stateMutex, portMAX_DELAY);
+    bool ringing = g_state.alarmActive;
+    xSemaphoreGive(g_stateMutex);
+    if (ringing)
+        return true;
 
     if (reminder_consume_press())
     {
@@ -305,25 +315,89 @@ static bool handleRotation(uint32_t now)
         rotIgnoring = false;
     }
 
+    if (quickmenu_is_open())
+    {
+        quickmenu_turn(steps); // moves the cursor / changes the value being edited
+        return true;
+    }
+
     stepDisplayMode(steps > 0 ? 1 : -1); // one page per tick, however fast it was turned
     return true;
 }
 
-// Knob push: a tap acts on RELEASE (so a long press doesn't also jump to the clock first)
-// and goes back to the clock; holding MODE_LONG_PRESS_MS acts while still held and toggles
-// the diagnostics page. Returns true on any activity.
+// Knob push. What it does depends on the moment:
+//   alarm ringing : push = snooze at once (like the touch pad); keep holding ALARM_LONG_PRESS_MS = alarm off
+//   reminder up   : the push closes it and is used up
+//   quick menu    : tap = select / save, hold MODE_LONG_PRESS_MS = leave the menu
+//   clock page    : tap = open the quick menu; hold = diagnostics page (a ring fills while holding)
+//   other pages   : tap = back to the clock; hold = diagnostics page
+// A tap acts on RELEASE (so a long press doesn't also do the tap action first); a hold acts while still held.
+// Returns true on any activity.
 static uint32_t knobPressedAtMs = 0;
 static bool knobLongHandled = false;
-static bool knobSwallow = false; // this push closed a reminder
+static bool knobSwallow = false;      // this push closed a reminder
+static bool knobAlarmArmed = false;   // this push belongs to the alarm (it snoozed it); holding switches it off
+static bool knobAlarmOffDone = false; // ...and that already happened
+
+static void onKnobTap()
+{
+    if (quickmenu_is_open())
+    {
+        quickmenu_press();
+        return;
+    }
+    xSemaphoreTake(g_stateMutex, portMAX_DELAY);
+    bool onClock = g_state.displayMode == DisplayMode::CLOCK;
+    xSemaphoreGive(g_stateMutex);
+    if (QUICK_MENU_ENABLED && onClock)
+        quickmenu_open();
+    else
+        goToClock();
+}
 
 static bool handleKnobButton()
 {
     BtnEvent ev = pollInput(knobSw);
     uint32_t now = millis();
 
+    if (ev == BtnEvent::PRESSED)
+    {
+        knobPressedAtMs = now;
+        knobLongHandled = false;
+        knobSwallow = false;
+        knobAlarmArmed = false;
+        knobAlarmOffDone = false;
+
+        xSemaphoreTake(g_stateMutex, portMAX_DELAY);
+        bool ringing = g_state.alarmActive;
+        xSemaphoreGive(g_stateMutex);
+
+        if (KNOB_CONTROLS_ALARM && ringing)
+        {
+            alarm_request_snooze(); // the alarm task owns the timing and the snooze limit
+            knobAlarmArmed = true;  // keep holding -> alarm off
+        }
+        else if (reminder_consume_press())
+        {
+            knobSwallow = true; // closes a visible reminder, nothing else
+        }
+    }
+
+    // The alarm owns this push until it is released (no page change, no menu, no diagnostics ring).
+    if (knobAlarmArmed)
+    {
+        g_state.modeHoldPct = 0;
+        if (knobSw.lastStable && !knobAlarmOffDone && (uint32_t)(now - knobPressedAtMs) >= ALARM_LONG_PRESS_MS)
+        {
+            knobAlarmOffDone = true;
+            alarm_request_dismiss();
+        }
+        if (ev == BtnEvent::RELEASED)
+            knobAlarmArmed = false;
+        return true;
+    }
+
     // A visible reminder: this push closes it and is used up (no page change, no hold ring) until released.
-    if (ev == BtnEvent::PRESSED && reminder_consume_press())
-        knobSwallow = true;
     if (knobSwallow)
     {
         g_state.modeHoldPct = 0;
@@ -333,7 +407,7 @@ static bool handleKnobButton()
     }
 
     // progress ring for the display task (only when the hold would OPEN the diagnostics
-    // page; on that page a plain tap already leaves it)
+    // page; on that page and inside the menu a hold leaves instead)
     uint8_t ring = 0;
     if (MODE_HOLD_RING && knobSw.lastStable && !knobLongHandled && ev != BtnEvent::PRESSED)
     {
@@ -341,9 +415,9 @@ static bool handleKnobButton()
         if (held > MODE_HOLD_RING_DELAY_MS && held < MODE_LONG_PRESS_MS)
         {
             xSemaphoreTake(g_stateMutex, portMAX_DELAY);
-            bool onDiag = g_state.displayMode == DisplayMode::DIAG;
+            bool onDiagOrMenu = g_state.displayMode == DisplayMode::DIAG || g_state.displayMode == DisplayMode::MENU;
             xSemaphoreGive(g_stateMutex);
-            if (!onDiag)
+            if (!onDiagOrMenu)
             {
                 uint32_t pct = (held - MODE_HOLD_RING_DELAY_MS) * 100 / (MODE_LONG_PRESS_MS - MODE_HOLD_RING_DELAY_MS);
                 ring = (uint8_t)(pct < 1 ? 1 : (pct > 100 ? 100 : pct));
@@ -353,22 +427,21 @@ static bool handleKnobButton()
     g_state.modeHoldPct = ring;
 
     if (ev == BtnEvent::PRESSED)
-    {
-        knobPressedAtMs = now;
-        knobLongHandled = false;
         return true;
-    }
     if (knobSw.lastStable && !knobLongHandled && (uint32_t)(now - knobPressedAtMs) >= MODE_LONG_PRESS_MS)
     {
         knobLongHandled = true;
         g_state.modeHoldPct = 0;
-        toggleDiagPage();
+        if (quickmenu_is_open())
+            quickmenu_close(); // leaves the menu; an unsaved edit is dropped
+        else
+            toggleDiagPage();
         return true;
     }
     if (ev == BtnEvent::RELEASED)
     {
         if (!knobLongHandled)
-            goToClock();
+            onKnobTap();
         return true;
     }
     return knobSw.lastStable; // held = still interacting
@@ -389,7 +462,8 @@ static void autoReturnToClock(bool activity)
         lastActivityMs = now;
         lastSeenMode = m;
     }
-    uint32_t limit = m == DisplayMode::CLOCK ? 0 : (m == DisplayMode::DIAG ? DIAG_RETURN_MS : DISPLAY_RETURN_MS);
+    // the quick menu has its own timeout (quickmenu_tick), which also drops an unsaved edit
+    uint32_t limit = (m == DisplayMode::CLOCK || m == DisplayMode::MENU) ? 0 : (m == DisplayMode::DIAG ? DIAG_RETURN_MS : DISPLAY_RETURN_MS);
     if (limit != 0 && (uint32_t)(now - lastActivityMs) >= limit)
     {
         g_state.displayMode = DisplayMode::CLOCK;
@@ -402,6 +476,7 @@ void touch_init()
 {
     pinMode(TOUCH_PAD_PIN, INPUT_PULLDOWN); // TTP223 drives the pin itself; the pull-down only keeps it defined (and makes a plain test button work)
     pinMode(ROTARY_SW_PIN, INPUT_PULLUP);
+    quickmenu_init();
     rotaryInit();
 }
 
@@ -413,5 +488,6 @@ void touch_tick()
     pet_tick(now);
     activity |= handleRotation(now);
     activity |= handleKnobButton();
+    quickmenu_tick(now); // menu time-out; closes it when the alarm starts to ring
     autoReturnToClock(activity);
 }
