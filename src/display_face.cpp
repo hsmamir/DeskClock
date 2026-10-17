@@ -570,9 +570,10 @@ namespace disp
         uint16_t dropCol = rgb(120, 200, 255);
         if (reaction == Reaction::WORRIED || reaction == Reaction::HOT)
         {
-            // sweat drop sliding down the left side of the face
-            float pd = (now % 2600) / 2600.0f;
-            int16_t sx = lcx - eyeW / 2 - u(9);
+            // sweat drop sliding down the face: worried = left side, hot = right temple and slower, so the two differ
+            const bool hot = reaction == Reaction::HOT;
+            float pd = (now % (hot ? 3400 : 2600)) / (hot ? 3400.0f : 2600.0f);
+            int16_t sx = hot ? rcx + eyeW / 2 + u(9) : lcx - eyeW / 2 - u(9);
             int16_t sy = (int16_t)(cy - R + pd * R * 2.2f);
             drawDrop(g, sx, sy, imax(2, u(3)), tint(dropCol, (255 - pd * 140) / 255.0f));
         }

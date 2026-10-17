@@ -496,8 +496,13 @@ namespace disp
         /* TIRED      32x34 */ SYM(2.0000f, 2.1250f, 0.72f, 0.50f, 0.0f, 0.0f),
         /* SURPRISED  37x42 */ SYM(2.3125f, 2.6250f, 0.90f, 0.00f, 0.0f, 0.0f),
         /* SUSPICIOUS       */ {{2.0f, 2.25f, 0.72f, 0.50f, 0.0f, 0.0f}, {2.0f, 2.25f, 0.72f, 0.00f, 0.0f, 0.0f}},
-        /* HOT              */ SYM(2.0000f, 2.2500f, 0.72f, 0.28f, 0.0f, 0.0f),
-        /* COLD             */ SYM(2.0000f, 2.2500f, 0.72f, 0.15f, 0.0f, 0.0f),
+        /* HOT              */ SYM(2.0000f, 2.2000f, 0.72f, 0.34f, -0.20f, 0.0f),  // lids droop, the outer corners a little more
+        /* COLD             */ SYM(2.0000f, 2.2500f, 0.72f, 0.15f, 0.0f, 0.0f),    // (the squash before a big pet reaction)
+        /* CALM       32x35 */ SYM(2.0000f, 2.2000f, 0.72f, 0.12f, -0.10f, 0.06f), // relaxed, no sad brows
+        /* ALARMED    36x41 */ SYM(2.2500f, 2.5500f, 0.84f, 0.08f, -0.35f, 0.0f),  // wide and worried
+        /* WONDER     34x39 */ SYM(2.1500f, 2.4500f, 0.80f, 0.00f, 0.0f, 0.12f),   // big, bright, a smile underneath
+        /* MISTY      32x33 */ SYM(2.0000f, 2.0800f, 0.72f, 0.32f, 0.0f, 0.10f),   // half-lidded
+        /* CHILLED    31x34 */ SYM(1.9000f, 2.1000f, 0.68f, 0.28f, 0.0f, 0.24f),   // squeezed shut a little from both sides
     };
 
     enum EyeParam : uint8_t
@@ -639,13 +644,20 @@ namespace disp
         switch (reaction)
         {
         case Reaction::WORRIED:
-        case Reaction::STORM:
-        case Reaction::SAD:
+        case Reaction::SAD: // heavy rain
             return EyeMood::SAD;
+        case Reaction::STORM:
+            return EyeMood::ALARMED;
+        case Reaction::RAIN:
+            return EyeMood::CALM;
+        case Reaction::SNOW:
+            return EyeMood::WONDER;
+        case Reaction::FOG:
+            return EyeMood::MISTY;
         case Reaction::HOT:
             return EyeMood::HOT;
         case Reaction::COLD:
-            return EyeMood::COLD;
+            return EyeMood::CHILLED;
         default:
             break;
         }
@@ -682,13 +694,17 @@ namespace disp
         {
         case WxMood::STORM:
             return Reaction::STORM;
-        case WxMood::RAIN:
-            return Reaction::SAD;
+        case WxMood::RAIN: // only heavy rain is sad; drizzle and ordinary rain are calm
+            return wxIsHeavyRain(scn.code) ? Reaction::SAD : Reaction::RAIN;
         case WxMood::HOT:
             return Reaction::HOT;
         case WxMood::COLD:
             return Reaction::COLD;
-        default: // NONE, SNOW, FOG: no face of their own yet
+        case WxMood::SNOW:
+            return Reaction::SNOW;
+        case WxMood::FOG:
+            return Reaction::FOG;
+        default:
             return Reaction::NONE;
         }
     }
@@ -957,10 +973,15 @@ namespace disp
             lookTX = ((now / 800) & 1) ? 1.0f : -1.0f; // nervously looks left and right
             lookTY = 0;
         }
-        else if (reaction == Reaction::SAD || reaction == Reaction::STORM)
+        else if (reaction == Reaction::SAD)
         {
             lookTX = 0;
             lookTY = 0.8f;
+        }
+        else if (reaction == Reaction::STORM)
+        {
+            lookTX = 0; // tense, eyes on the sky (the flashes come from there)
+            lookTY = -0.6f;
         }
         else if (now >= nextLookAtMs)
         {
@@ -985,6 +1006,10 @@ namespace disp
             }
             else if (r == 8)
                 lookTY = -1;
+            if (reaction == Reaction::RAIN) // the usual wandering look, but now and then up at the sky / the drops
+                lookTY = fminf(lookTY, -0.4f);
+            else if (reaction == Reaction::SNOW) // ... and for the flakes
+                lookTY = fminf(lookTY, -0.3f);
             if (persona.celestOk && random(0, 100) < SKY_LOOK_PERCENT) // now and then: a look at the sun / moon
             {
                 lookTX = persona.celestX;

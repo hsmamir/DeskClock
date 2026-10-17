@@ -13,6 +13,7 @@
 inline bool wxIsFog(int c) { return c == 45 || c == 48; }
 inline bool wxIsRain(int c) { return (c >= 51 && c <= 67) || (c >= 80 && c <= 82); } // drizzle, rain, rain showers
 inline bool wxIsSnow(int c) { return (c >= 71 && c <= 77) || c == 85 || c == 86; }   // snow, snow showers
+inline bool wxIsHeavyRain(int c) { return c == 65 || c == 67 || c == 82; }           // heavy rain, freezing rain, violent showers
 inline bool wxIsStorm(int c) { return c >= 95; }
 inline bool wxIsPrecip(int c) { return wxIsRain(c) || wxIsSnow(c); } // something falls from the sky (storm not counted)
 inline bool wxIsWet(int c) { return wxIsPrecip(c) || wxIsStorm(c); } // ... or it thunders

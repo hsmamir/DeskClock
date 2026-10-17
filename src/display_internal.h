@@ -212,8 +212,13 @@ namespace disp
         TIRED,
         SURPRISED,
         SUSPICIOUS, // left eye half shut, right eye open
-        HOT,        // heavy lids
-        COLD,       // slightly lowered lids
+        HOT,        // heavy, drooping lids
+        COLD,       // slightly lowered lids (only the squash before a big pet reaction uses it now)
+        CALM,       // light / moderate rain: relaxed, soft lids
+        ALARMED,    // thunderstorm: wide eyes, worried slant
+        WONDER,     // snow: big bright eyes, lower lids a little up (a smile in the eyes)
+        MISTY,      // fog: half-lidded, slow and dim
+        CHILLED,    // cold: small eyes squeezed from above and below
         COUNT
     };
 
@@ -237,9 +242,12 @@ namespace disp
         NONE,
         WORRIED, // WiFi has been gone for a while: worried brows, darting glances, sweat drop
         STORM,   // thunderstorm: worried brows, startled by every flash
-        SAD,     // rain / drizzle: sad brows, looking down, a tear now and then
-        HOT,     // heavy lids + sweat drop
-        COLD     // shivering
+        SAD,     // HEAVY rain: sad brows, looking down, a tear now and then
+        HOT,     // drooping lids + sweat drop at the temple
+        COLD,    // squeezed eyes, shivering
+        RAIN,    // light / moderate rain: calm, relaxed eyes, looks up at the sky now and then
+        SNOW,    // snow (above the COLD limit): wide bright eyes
+        FOG      // fog: half-lidded eyes
     };
 
     // Short one-off idle expressions, picked at random.
