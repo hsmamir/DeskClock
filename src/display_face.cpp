@@ -399,6 +399,41 @@ namespace disp
         }
     }
 
+    // The shiver of a cold day in bursts (SHIVER_*): 0 .. 1, how strong it is right now. `active` = the cold face is
+    // showing; when it is not, the schedule is forgotten, so every cold moment starts with a burst after a short delay.
+    static float coldShiverEnv(uint32_t now, bool active)
+    {
+        static bool on = false;
+        static uint32_t start = 0, len = 0, next = 0;
+        static float peak = 1.0f;
+        if (!active)
+        {
+            on = false;
+            next = 0;
+            return 0;
+        }
+        if (next == 0)
+            next = now + 250;
+        if (!on)
+        {
+            if ((int32_t)(now - next) < 0)
+                return 0;
+            on = true;
+            start = now;
+            len = random(SHIVER_BURST_MIN_MS, SHIVER_BURST_MAX_MS);
+            peak = 0.6f + 0.4f * (random(0, 101) / 100.0f); // every burst a little different
+        }
+        uint32_t el = now - start;
+        if (el >= len)
+        {
+            on = false;
+            next = now + random(SHIVER_GAP_MIN_MS, SHIVER_GAP_MAX_MS);
+            return 0;
+        }
+        float e = sinf((float)M_PI * (float)el / (float)len); // swells and fades
+        return sqrtf(e < 0 ? 0 : e) * peak;                   // sqrt: a longer strong middle
+    }
+
     // Both eyes from the spring rig. squeeze 0..1 = extra lid closing (yawn), dx = shiver offset.
     static void drawRigEyes(TFT_eSPI &g, int16_t lcx, int16_t rcx, int16_t cy, float squeeze, int16_t dx)
     {
@@ -550,9 +585,13 @@ namespace disp
 
         // normal / sleepy eyes (the blink is the lid spring inside the rig)
         int16_t shiver = 0;
-        if (persona.shiver || (reaction == Reaction::COLD && tempK > 0.35f)) // a cool day squints, only a cold one shivers
+        // a cool day squints, only a cold one shivers, and in bursts (the pre-alarm quiver of the persona stays steady)
+        const float shvEnv = coldShiverEnv(now, reaction == Reaction::COLD && tempK > 0.35f && !persona.shiver);
+        if (persona.shiver)
+            shiver = (((now / 40) & 1) ? 1 : -1) * u(1);
+        else if (shvEnv > 0)
         {
-            float amp = persona.shiver ? 1.0f : tempK * 1.5f; // 1 px when mildly cold, 2 px at full strength
+            float amp = tempK * 2.0f * shvEnv; // up to 1 px when mildly cold, up to 2 px at full strength; the edges of a burst round to 0
             shiver = (((now / 40) & 1) ? 1 : -1) * (int16_t)(u(1) * amp + 0.5f);
         }
         // peek-a-boo: the eyes rise from below the card's bottom edge (the sprite clips them)
@@ -574,6 +613,9 @@ namespace disp
                 edge = 1.0f;
             squeeze = (0.62f + 0.30f * exprYawnSize) * edge; // eyes squeeze shut mid-yawn (less in a small yawn)
         }
+
+        if (shvEnv > 0) // the eyes scrunch up a little during a burst
+            squeeze = fmaxf(squeeze, 0.18f * shvEnv);
 
         drawRigEyes(g, lcx, rcx, cyE, squeeze, shiver);
 

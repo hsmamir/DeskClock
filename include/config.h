@@ -469,6 +469,14 @@ static_assert(AMBIENT_MOTES >= 3 && AMBIENT_MOTES <= 5, "AMBIENT_MOTES must be 3
 #define WX_MOMENT_STORM_DUR_MIN_MS 4000
 #define WX_MOMENT_STORM_DUR_MAX_MS 6000
 
+// The shiver of a cold day comes in bursts, like a real one: the first burst a moment after the cold face appears,
+// then BURST_MIN..MAX ms of shivering (it swells and fades, a little different each time, the eyes squeeze a bit),
+// a pause of GAP_MIN..MAX ms, the next burst ... until the moment is over.
+#define SHIVER_BURST_MIN_MS 600
+#define SHIVER_BURST_MAX_MS 1100
+#define SHIVER_GAP_MIN_MS 1200
+#define SHIVER_GAP_MAX_MS 2800
+
 // ---- Pet button reactions (pet.cpp decides, display.cpp draws) ----
 // The Pet pad no longer always gives the same happy face. In priority order:
 //   fast repeated taps ... hearts for the eyes, then dizzy, then annoyed
