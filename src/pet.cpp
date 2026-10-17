@@ -180,7 +180,7 @@ void pet_on_press(uint32_t now)
 {
     // ---- what the situation looks like (read before taking our own mutex) ----
     bool synced, approx, wv;
-    float tempC;
+    float tempC, windKmh;
     int code;
     uint32_t wMs;
     xSemaphoreTake(g_stateMutex, portMAX_DELAY);
@@ -188,6 +188,7 @@ void pet_on_press(uint32_t now)
     approx = g_state.timeApprox;
     wv = g_state.weatherValid;
     tempC = g_state.weatherTempC;
+    windKmh = g_state.windKmh;
     code = g_state.weatherCode;
     wMs = g_state.weatherUpdatedMs;
     xSemaphoreGive(g_stateMutex);
@@ -264,7 +265,7 @@ void pet_on_press(uint32_t now)
             kind = PetKind::SLEEPY;
         else
         {
-            switch (weatherMood(weatherOk, code, tempC)) // same decision as the idle eyes (weather_mood.h)
+            switch (weatherMood(weatherOk, code, tempC, windKmh)) // same decision as the idle eyes (weather_mood.h)
             {
             case WxMood::STORM: // "rain? really?" fits a thunderstorm too
             case WxMood::RAIN:
@@ -276,7 +277,7 @@ void pet_on_press(uint32_t now)
             case WxMood::COLD:
                 kind = PetKind::COLD;
                 break;
-            default: // NONE, SNOW, FOG: plain happy for now
+            default: // NONE, SNOW, FOG, WIND: plain happy for now
                 break;
             }
         }

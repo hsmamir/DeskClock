@@ -219,6 +219,7 @@ namespace disp
         WONDER,     // snow: big bright eyes, lower lids a little up (a smile in the eyes)
         MISTY,      // fog: half-lidded, slow and dim
         CHILLED,    // cold: small eyes squeezed from above and below
+        WINDY,      // strong wind: narrowed into the gust, a little smaller than CHILLED and with a slight slant
         COUNT
     };
 
@@ -247,7 +248,8 @@ namespace disp
         COLD,    // squeezed eyes, shivering
         RAIN,    // light / moderate rain: calm, relaxed eyes, looks up at the sky now and then
         SNOW,    // snow (above the COLD limit): wide bright eyes
-        FOG      // fog: half-lidded eyes
+        FOG,     // fog: half-lidded eyes
+        WIND     // strong wind: squinting, looking away from the gust (streaks fly across the card)
     };
 
     // Short one-off idle expressions, picked at random.
@@ -270,6 +272,21 @@ namespace disp
 
     inline float clamp01(float v) { return v < 0 ? 0 : (v > 1 ? 1 : v); }
     inline bool lightningActive(uint32_t now) { return (now % 6500) < 260; }
+    // Which way the wind blows to: +1 = right (east) .. -1 = left (west), 0 = calm / unknown. The same maths as the
+    // clouds of the scene (windDirDeg is where the wind comes FROM).
+    inline float windBlowX(const SceneInfo &s)
+    {
+        if (!s.weatherKnown || s.windKmh < 1.0f || s.windDirDeg < 0)
+            return 0.0f;
+        return sinf((float)(s.windDirDeg + 180) * (float)M_PI / 180.0f);
+    }
+
+    // Colour of the blush under the eyes (drawCheek). C_CHEEK = the usual pink; the pet reactions in heat / cold
+    // set another one for the length of the reaction and put it back (display_face.cpp).
+    extern uint16_t cheekColor;
+    // Which way the wind blows the gaze: +1 = to the right, -1 = to the left, 0 = unknown (display_eyes.cpp, used by
+    // the WIND reaction). Call it every frame before updateLook().
+    void eyesSetWindDir(float vx);
 
     void drawHeart(TFT_eSPI &g, int16_t x, int16_t y, int16_t s, uint16_t c);
     void drawEye(TFT_eSPI &g, int16_t cx, int16_t cy, int16_t w, int16_t fullH,
@@ -339,6 +356,7 @@ namespace disp
         bool asleep = false;   // closed contented eyes + Zs (drawSleepFace)
         bool snoozed = false;  // "five more minutes" face
         bool frown = false;    // woken by a touch: small frown first
+        bool startled = false; // thunder woke him at night: wide eyes, worried brows, no Zs (display_face.cpp)
         bool thinking = false; // time / WiFi not there yet: look up-right, three dots
         bool exprOk = true;    // random idle expressions allowed
         bool sulking = false;
@@ -386,6 +404,10 @@ namespace disp
         int alarmSecsLeft; // seconds until the next alarm ring when <= PRE_ALARM_S, else -1
         bool celestOk;     // the sun / moon is visible: gaze target below
         float celestX, celestY;
+        bool storm;      // a thunderstorm on the display (WMO 95-99)
+        bool flash;      // lightningActive(now): a flash of the storm is on (the persona looks for the rising edge)
+        bool pollenHigh; // pollen at or above WX_POLLEN_SNEEZE_LEVEL (more sneezes)
+        bool brightUv;   // high UV in a bright sky, daytime (the squint in bright light happens on any bright day)
     };
     void personaUpdate(const PersonaIn &in);
     struct TouchResult

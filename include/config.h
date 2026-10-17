@@ -454,6 +454,40 @@ static_assert(AMBIENT_MOTES >= 3 && AMBIENT_MOTES <= 5, "AMBIENT_MOTES must be 3
 #define REACT_TEMP_MIN_K 0.25f       // strength at the start of the range
 #define REACT_OFFLINE_DELAY_MS 20000 // WiFi down this long -> worried eyes
 
+// Strong wind (weather_mood.h): from REACT_WIND_KMH the face starts to squint and glance sideways (a mild version),
+// at REACT_WIND_FULL_KMH it is at full strength (tight eyes, gust streaks). Like heat / cold it has a hysteresis:
+// once started it only ends REACT_WIND_HYST_KMH below the limit. 0 = no wind face. (A gale is also what makes the
+// weather page arrow / the clouds move fast; this is only the face.)
+#define REACT_WIND_KMH 40
+#define REACT_WIND_FULL_KMH 75
+#define REACT_WIND_HYST_KMH 8
+
+// Bad air (display_wx.cpp, weather_mood.h): the mask comes on at WX_AIRQ_MASK_AQI and goes off again only
+// WX_AIRQ_HYST_AQI below it, so an index hovering around the limit does not make the mask flicker (the model is
+// refreshed every 30 min). The worse the air, the more often he coughs (see WX_COUGH_PERIOD_MS: that is the period
+// at the start; at WX_AIRQ_FULL_AQI it is WX_COUGH_PERIOD_MIN_MS).
+#define WX_AIRQ_HYST_AQI 12
+#define WX_AIRQ_FULL_AQI 300
+#define WX_COUGH_PERIOD_MIN_MS 9000UL
+
+// High UV: the sunglasses need a sky that is bright (no rain, storm or fog on the display, whatever the UV index of
+// the model says) and the UV index has a hysteresis of WX_UV_HYST below WX_UV_SHADES_MIN. While the UV is high the
+// idle squint in bright light also happens in any bright weather, not only at noon on a cloudless sky.
+#define WX_UV_HYST 1.0f
+
+// Pollen: at or above this level (0 none .. 4 very high, see weather.cpp) he sneezes more often (same bonus as in
+// rain / cold: IDLE_SNEEZE_WEATHER_BONUS). 5 = never.
+#define WX_POLLEN_SNEEZE_LEVEL 3
+
+// Thunder at night (display_persona.cpp): while he sleeps (or is drowsy) every lightning flash of a thunderstorm can
+// wake him: a flinch with wide eyes looking up for STARTLE_HOLD_MS, then the lids sink again over STARTLE_SETTLE_MS
+// and he is asleep again. Not more often than STARTLE_COOLDOWN_MS (the storm has a flash every 6.5 s). Silent, and
+// the head stays still (it is night). 0 = thunder does not wake him.
+#define STARTLE_ENABLED 1
+#define STARTLE_HOLD_MS 1300
+#define STARTLE_SETTLE_MS 2200
+#define STARTLE_COOLDOWN_MS 30000UL
+
 // Weather "moments": nobody wears the same face for hours. With WX_MOMENT_ENABLED the weather faces (rain, storm,
 // snow, fog, heat, cold) show only now and then: when the weather changes, and after that every GAP_MIN..GAP_MAX ms
 // for DUR_MIN..DUR_MAX ms; in between the eyes are the plain idle eyes. A thunderstorm is livelier: its moments
@@ -472,6 +506,12 @@ static_assert(AMBIENT_MOTES >= 3 && AMBIENT_MOTES <= 5, "AMBIENT_MOTES must be 3
 // The shiver of a cold day comes in bursts, like a real one: the first burst a moment after the cold face appears,
 // then BURST_MIN..MAX ms of shivering (it swells and fades, a little different each time, the eyes squeeze a bit),
 // a pause of GAP_MIN..MAX ms, the next burst ... until the moment is over.
+// The pet reactions in heat and cold keep the same character as the idle weather faces (display_face.cpp): hot =
+// relaxed arches, a warm orange blush instead of pink, a slow sweat drop at the right temple, at most one small
+// warm heart; cold = the same burst shiver as the idle cold face, a pale blue blush, one heart (not two).
+// PET_HOT_HEARTS / PET_COLD_HEARTS = how many hearts rise during the reaction (0 = none).
+#define PET_HOT_HEARTS 1
+#define PET_COLD_HEARTS 1
 #define SHIVER_BURST_MIN_MS 600
 #define SHIVER_BURST_MAX_MS 1100
 #define SHIVER_GAP_MIN_MS 1200

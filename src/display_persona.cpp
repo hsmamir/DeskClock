@@ -37,9 +37,13 @@ namespace disp
         DROWSY,   // lids sink over SLEEP_RAMP_MS, two yawns
         SETTLING, // the last half-closed lids shut
         ASLEEP,
-        WAKING // lids open again by themselves (day came)
+        WAKING,  // lids open again by themselves (day came)
+        STARTLED // a flash of lightning woke him: wide eyes for a moment, then back to what he was doing
     };
     static Sleep slp = Sleep::AWAKE;
+    static Sleep startlePrev = Sleep::AWAKE; // what he was doing when the thunder came
+    static uint32_t lastStartleMs = 0;
+    static bool flashWas = false; // the previous tick had a lightning flash (for the rising edge)
     static uint32_t slpStartMs = 0;
     static uint8_t yawnsDone = 0;
     static float wakeFrom = 0;
@@ -251,7 +255,7 @@ namespace disp
         if (pe.streak == 0)
             return r;
 
-        if (slp == Sleep::ASLEEP || slp == Sleep::SETTLING)
+        if (slp == Sleep::ASLEEP || slp == Sleep::SETTLING || slp == Sleep::STARTLED)
         {
             // woken up: eyes open, a short frown, then the smile (not the night "contented" face)
             r.frownMs = SLEEP_FROWN_MS;
@@ -291,6 +295,7 @@ namespace disp
         P.lidBias = 0;
         P.lidRamp = false;
         P.asleep = false;
+        P.startled = false;
         P.snoozed = false;
         P.thinking = false;
         P.exprOk = true;
@@ -415,6 +420,20 @@ namespace disp
         const bool wantSleep = in.sleepWin && canRest;
         if (in.alarm || preAlarm)
             slp = Sleep::AWAKE;
+
+        // Thunder at night: the first tick of a lightning flash wakes him for a moment (not every flash: the storm
+        // has one every 6.5 s, STARTLE_COOLDOWN_MS apart). Only while the eyes are sleepy (drowsy / asleep).
+        const bool flashEdge = in.flash && !flashWas;
+        flashWas = in.flash;
+        if (STARTLE_ENABLED && flashEdge && in.storm && in.sleepy && !in.alarm && !preAlarm && slp != Sleep::STARTLED &&
+            slp != Sleep::WAKING && (lastStartleMs == 0 || (uint32_t)(now - lastStartleMs) >= STARTLE_COOLDOWN_MS))
+        {
+            lastStartleMs = now;
+            startlePrev = slp;
+            slp = Sleep::STARTLED;
+            slpStartMs = now;
+        }
+
         switch (slp)
         {
         case Sleep::AWAKE:
@@ -493,6 +512,53 @@ namespace disp
             else if (dreamKind == 2 && now - dreamStartMs > 3300)
                 scheduleDream(now);
             break;
+        case Sleep::STARTLED:
+        {
+            // 0 .. HOLD: the eyes fly open (a quick jump in size), worried brows, looking up at the sky;
+            // then the lids sink again over SETTLE to where they were (closed, half closed, or the plain awake eyes)
+            const uint32_t t = now - slpStartMs;
+            const float restLid = (startlePrev == Sleep::AWAKE) ? 0.0f : (startlePrev == Sleep::DROWSY ? 0.5f : 1.0f);
+            P.startled = true;
+            P.exprOk = false;
+            P.lidRamp = true;
+            if (t < (uint32_t)STARTLE_HOLD_MS)
+            {
+                P.lidBias = 0;
+                P.scalePulse = 1.0f + 0.22f * (1.0f - sstep(fmaxf(0.0f, (float)t - 250.0f) / ((float)STARTLE_HOLD_MS - 250.0f)));
+                setGaze(0.0f, -0.7f);
+            }
+            else
+            {
+                const float k = sstep(((float)t - (float)STARTLE_HOLD_MS) / (float)STARTLE_SETTLE_MS);
+                P.lidBias = restLid * k;
+                setGaze(0.0f, -0.7f * (1.0f - k));
+                if (t >= (uint32_t)(STARTLE_HOLD_MS + STARTLE_SETTLE_MS))
+                {
+                    P.startled = false;
+                    if (startlePrev == Sleep::AWAKE)
+                        slp = Sleep::AWAKE;
+                    else if (startlePrev == Sleep::DROWSY)
+                    {
+                        slp = Sleep::DROWSY; // the lids are at 0.5 again: carry on from there, no second pair of yawns
+                        slpStartMs = now - SLEEP_RAMP_MS;
+                        yawnsDone = 2;
+                    }
+                    else
+                    {
+                        slp = Sleep::ASLEEP;
+                        scheduleDream(now);
+                    }
+                }
+            }
+            if (startlePrev != Sleep::AWAKE && !wantDrowsy) // morning came meanwhile: wake up for real
+            {
+                P.startled = false;
+                slp = Sleep::WAKING;
+                slpStartMs = now;
+                wakeFrom = P.lidBias;
+            }
+            break;
+        }
         case Sleep::WAKING:
         {
             uint32_t t = now - slpStartMs;
@@ -582,7 +648,7 @@ namespace disp
                     xSemaphoreTake(g_stateMutex, portMAX_DELAY);
                     coldNow = g_state.weatherValid && wxIsCold(g_state.weatherTempC);
                     xSemaphoreGive(g_stateMutex);
-                    if ((in.weatherKnown && isPrecip(in.weatherCode)) || coldNow)
+                    if ((in.weatherKnown && isPrecip(in.weatherCode)) || coldNow || in.pollenHigh)
                         chance += IDLE_SNEEZE_WEATHER_BONUS;
                     sneezeNow = random(0, 100) < chance;
                 }
@@ -606,9 +672,10 @@ namespace disp
                 }
                 else
                 {
-                    Act pick = idleActForRoll(r, in.sunny);
+                    const bool bright = in.sunny || in.brightUv; // high UV in a bright sky squints like a cloudless noon
+                    Act pick = idleActForRoll(r, bright);
                     for (uint8_t tries = 0; tries < 6 && random(0, 100) < repeatRejectPercent(pick); tries++)
-                        pick = idleActForRoll(random(0, 100), in.sunny);
+                        pick = idleActForRoll(random(0, 100), bright);
                     rememberAct(pick);
                     actDir = pickDir();
                     switch (pick)

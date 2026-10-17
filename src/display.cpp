@@ -5,6 +5,7 @@
 #include "tls_lock.h"
 #include "display_menu.h"
 #include "display_wx.h"
+#include "weather_mood.h"
 
 using namespace disp;
 
@@ -301,12 +302,31 @@ void display_tick()
         pin.alarmSecsLeft = haveTime ? alarmSecondsLeft(ti) : -1;
         pin.celestX = pin.celestY = 0;
         pin.celestOk = celestialGaze(scn, pin.celestX, pin.celestY);
+        pin.storm = scn.weatherKnown && wxIsStorm(scn.code);
+        pin.flash = lightningActive(now);
+        pin.pollenHigh = false;
+        pin.brightUv = false;
+#if WX_ACCESSORIES
+        if (scn.weatherKnown)
+        {
+            WeatherExtra wx;
+            if (weather_extra_get(wx))
+            {
+                // the same answers as the face accessories (hysteresis inside), so the sneezes, the squint and the
+                // sunglasses / mask never disagree with each other
+                pin.pollenHigh = wx.pollenLevel >= WX_POLLEN_SNEEZE_LEVEL;
+                const bool fcFresh = wx.forecastValid && (uint32_t)(now - wx.forecastMs) <= (uint32_t)WEATHER_STALE_MS;
+                pin.brightUv = fcFresh && scn.day && wxIsBright(scn.code) && wxIsHighUv(wx.uvNow);
+            }
+        }
+#endif
         personaUpdate(pin);
     }
     momentUpdate(haveTime ? &ti : nullptr, mode == DisplayMode::CLOCK && !fullLayout, alarm, happy, now); // special minutes (easter eggs)
 
     occasionUpdate(haveTime ? &ti : nullptr, now);
 
+    eyesSetWindDir(windBlowX(scn)); // the WIND reaction looks the way the gust blows
     updateLook(now, alarm, sleepy, reaction);
     updateBlink(now, sleepy);
     float exprP = updateExpression(now, !alarm && !happy && reaction != Reaction::WORRIED && persona.exprOk, sleepy);
@@ -398,7 +418,7 @@ void display_tick()
                 !persona.snoozed && !persona.frown && !persona.thinking && !persona.sulking && !persona.flyOn &&
                 persona.peek <= 0.01f && persona.relief <= 0.15f && !persona.sneezeMouth && persona.hiccupHop <= 0.3f &&
                 persona.sneezeSpray <= 0.0f && persona.hiccupText <= 0.0f)
-                drawWeatherAccessory(g, now, scn.day);
+                drawWeatherAccessory(g, now, scn);
         }
         drawStatusIcons(g, now);
         drawHoldRing(g);

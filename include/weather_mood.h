@@ -27,9 +27,26 @@ bool wxIsCold(float tempC);
 float wxHotIntensity(float tempC);
 float wxColdIntensity(float tempC);
 
+// Strong wind, same idea (REACT_WIND_KMH / REACT_WIND_FULL_KMH / REACT_WIND_HYST_KMH). windKmh < 0 = unknown = the
+// answer stays as it was. wxWindIntensity is REACT_TEMP_MIN_K .. 1, only meaningful while wxIsWindy is true.
+bool wxIsWindy(float windKmh);
+float wxWindIntensity(float windKmh);
+
+// The extras (display_wx.cpp and the persona ask these, so the mask, the cough, the sunglasses and the sneezes all
+// agree with the faces above):
+//   wxIsBadAir     US AQI at or above WX_AIRQ_MASK_AQI (hysteresis WX_AIRQ_HYST_AQI). aqi < 0 = unknown = unchanged.
+//   wxAirIntensity 0..1: 0 at the mask limit, 1 at WX_AIRQ_FULL_AQI (the cough gets more frequent)
+//   wxIsHighUv     UV index at or above WX_UV_SHADES_MIN (hysteresis WX_UV_HYST). uv < 0 = unknown = unchanged.
+//   wxIsBright     the sky the display shows is bright enough for sunglasses / a squint: anything but rain, a
+//                  thunderstorm or fog (snow counts: it glares)
+bool wxIsBadAir(int usAqi);
+float wxAirIntensity(int usAqi);
+bool wxIsHighUv(float uvIndex);
+inline bool wxIsBright(int c) { return !wxIsRain(c) && !wxIsStorm(c) && !wxIsFog(c); }
+
 // What the situation is "about", one winner. Order = priority: a storm beats rain, rain beats the temperature
-// (a rainy day at 36 deg is about the rain), the temperature beats snow / fog.
-// SNOW and FOG have a kind of their own now, but no face of their own yet: the callers map them to "nothing special".
+// (a rainy day at 36 deg is about the rain), the temperature beats snow / fog, and a strong wind is the last one:
+// a windy day that is also hot, cold, snowy or foggy is about that, a plain windy day is about the wind.
 enum class WxMood : uint8_t
 {
     NONE,
@@ -38,10 +55,12 @@ enum class WxMood : uint8_t
     HOT,
     COLD,
     SNOW, // snow while it is not cold (when it is, the cold wins)
-    FOG
+    FOG,
+    WIND // strong wind and nothing above it
 };
 
-inline WxMood weatherMood(bool known, int code, float tempC)
+// windKmh < 0 (the default) = no wind reading: the wind never wins.
+inline WxMood weatherMood(bool known, int code, float tempC, float windKmh = -1.0f)
 {
     if (!known)
         return WxMood::NONE;
@@ -57,5 +76,7 @@ inline WxMood weatherMood(bool known, int code, float tempC)
         return WxMood::SNOW;
     if (wxIsFog(code))
         return WxMood::FOG;
+    if (REACT_WIND_KMH > 0 && windKmh >= 0 && wxIsWindy(windKmh))
+        return WxMood::WIND;
     return WxMood::NONE;
 }

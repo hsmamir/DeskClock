@@ -18,7 +18,7 @@ namespace disp
     // Small hearts rising from above the eyes. `age` = ms since they started; heart i starts
     // i*stepMs later and lives lifeMs.
     static void drawRisingHearts(TFT_eSPI &g, uint32_t age, int16_t cy, int16_t R, uint8_t n,
-                                 uint16_t stepMs, uint16_t lifeMs, int16_t size)
+                                 uint16_t stepMs, uint16_t lifeMs, int16_t size, uint16_t col = C_HEART)
     {
         for (uint8_t i = 0; i < n; i++)
         {
@@ -29,7 +29,7 @@ namespace disp
             float frac = fmodf(0.30f + i * 0.382f, 1.0f); // spread the hearts without a pattern
             int16_t hx = (int16_t)(W * (0.20f + 0.60f * frac)) + (int16_t)(sinf(p * 6.0f + i) * u(4));
             int16_t hy = (int16_t)(cy - R - u(2) - p * (cy - R - u(8)));
-            drawHeart(g, hx, hy, size, tint(C_HEART, (255 - p * 140) / 255.0f));
+            drawHeart(g, hx, hy, size, tint(col, (255 - p * 140) / 255.0f));
         }
     }
 
@@ -154,6 +154,11 @@ namespace disp
             return false;
         }
     }
+
+    // How strong the temperature is for the pet reaction that is showing (0..1, weather_mood.cpp); drawFace() sets it
+    // before drawPetFace(). The pet's hot / cold faces use the same grading and the same burst shiver as the idle ones.
+    static float petTempK = 1.0f;
+    static float coldShiverEnv(uint32_t now, bool active); // below, with the idle cold face
 
     // pop 0..1(+overshoot): how far the decorative glyphs (heart / spiral / arch eyes) have grown.
     static void drawPetFace(TFT_eSPI &g, uint32_t now, bool purr, bool sleepy, int16_t cy, int16_t lcx,
@@ -335,27 +340,43 @@ namespace disp
 
         case PetKind::HOT:
         {
+            // The same character as the idle hot face, only happy: relaxed arches, a WARM blush instead of the pink
+            // one, the slow sweat drop at the right temple (when it is really hot), at most one small warm heart.
+            cheekColor = rgb(255, 150, 70);
             drawHappyEye(g, lcx, cy, Re);
             drawHappyEye(g, rcx, cy, Re);
-            float pd = (age % 1400) / 1400.0f; // sweat drop, but still happy
-            drawDrop(g, lcx - eyeW / 2 - u(9), (int16_t)(cy - R + pd * R * 2.2f), imax(2, u(3)),
-                     tint(dropCol, (255 - pd * 140) / 255.0f));
-            drawRisingHearts(g, age, cy, R, 1, 0, 1100, u(4));
+            cheekColor = C_CHEEK;
+            if (petTempK >= 0.5f)
+            {
+                float pd = fminf(1.0f, age / 3400.0f);
+                drawDrop(g, rcx + eyeW / 2 + u(9), (int16_t)(cy - R + pd * R * 2.2f), imax(2, u(3)),
+                         tint(dropCol, (255 - pd * 140) / 255.0f));
+            }
+            if (PET_HOT_HEARTS > 0)
+                drawRisingHearts(g, age, cy, R, PET_HOT_HEARTS, 0, 1100, u(3), rgb(255, 140, 60));
             break;
         }
 
         case PetKind::COLD:
         {
-            int16_t sh = (((now / 40) & 1) ? 1 : -1) * u(1); // shiver
+            // The same shiver as the idle cold face (bursts, up to 1-2 px, only when it is really cold), a pale blue
+            // blush, snowflakes, one heart instead of two.
+            int16_t sh = 0;
+            const float env = coldShiverEnv(now, petTempK > 0.35f);
+            if (env > 0)
+                sh = (((now / 40) & 1) ? 1 : -1) * (int16_t)(u(1) * petTempK * 2.0f * env + 0.5f);
+            cheekColor = rgb(130, 185, 255);
             drawHappyEye(g, lcx + sh, cy, Re);
             drawHappyEye(g, rcx + sh, cy, Re);
+            cheekColor = C_CHEEK;
             for (uint8_t k = 0; k < 4; k++) // snowflakes drifting down
             {
                 int16_t sx = (int16_t)(W * (0.15f + 0.2f * k)) + (int16_t)(sinf(age / 300.0f + k) * u(3));
                 int16_t sy = (int16_t)((age / 9 + k * 23) % faceH);
                 g.fillCircle(sx, sy, imax(1, u(1.5f)), C_ICE);
             }
-            drawRisingHearts(g, age, cy, R, 2, 300, 1100, u(4));
+            if (PET_COLD_HEARTS > 0)
+                drawRisingHearts(g, age, cy, R, PET_COLD_HEARTS, 0, 1100, u(3), mixColor(C_HEART, C_ICE, 0.35f));
             break;
         }
 
@@ -447,6 +468,25 @@ namespace disp
         drawEyeShape(g, rcx + dx, cy, sr, 1.0f, 1, C_EYE_TOP, C_EYE_BOT, true);
     }
 
+    // Gust streaks flying across the card in the direction the wind blows (the WIND reaction); k = 0..1 strength.
+    static void drawWindStreaks(TFT_eSPI &g, uint32_t now, const SceneInfo &scn, float k)
+    {
+        const float vx = windBlowX(scn);
+        const int16_t dir = vx < 0 ? -1 : 1; // unknown direction: to the right
+        const uint16_t col = tint(C_ICE, 0.30f + 0.25f * k);
+        for (uint8_t i = 0; i < 3; i++)
+        {
+            const uint32_t period = (uint32_t)((1100 + i * 280) / (0.6f + 0.8f * k));
+            const float p = (float)((now + i * 410UL) % period) / (float)period;
+            const int16_t len = u(12 + 5 * i);
+            const int16_t y = (int16_t)(faceH * (0.20f + 0.27f * i)) + (int16_t)(sinf(now / 260.0f + i * 2.0f) * u(1));
+            const int16_t x0 = dir > 0 ? (int16_t)(-len + p * (W + len)) : (int16_t)(W - p * (W + len));
+            const int16_t xa = dir > 0 ? x0 : x0 - len;
+            g.drawFastHLine(xa, y, len, col);
+            g.drawFastHLine(xa + dir * u(3), y + 2, len / 2, dimColor(col, 150));
+        }
+    }
+
     void drawFace(TFT_eSPI &g, uint32_t now, bool alarm, bool happy, bool purr, bool sleepy,
                   const SceneInfo &scn, Reaction reaction, float exprP)
     {
@@ -476,6 +516,8 @@ namespace disp
             drawStars(g, now);
         if (!alarm)
             drawOccasionBack(g, now); // bats, snow, fireworks ... behind the eyes
+        if (!alarm && reaction == Reaction::WIND && !happy)
+            drawWindStreaks(g, now, scn, wxWindIntensity(scn.windKmh));
 
         // ---- Eye pose: situation -> presets -> spring targets. The springs run every frame, also
         // while the alarm / a pet reaction is drawn, so the eyes never jump when they come back. ----
@@ -492,6 +534,8 @@ namespace disp
         EyeMood moodR = (ex == Expr::WINK) ? EyeMood::HAPPY : mood; // a wink is just one eye's preset
         if (persona.frown)                                          // woken by a touch: a small frown before the smile
             mood = moodR = EyeMood::ANGRY;
+        if (persona.startled) // woken by thunder: wide eyes, worried brows
+            mood = moodR = EyeMood::ALARMED;
         float scale = 1.0f;
         if (reaction == Reaction::STORM && lightningActive(now))
             scale = 1.25f;           // flinch at every flash
@@ -534,6 +578,8 @@ namespace disp
             tempK = wxHotIntensity(scn.tempC);
         else if (reaction == Reaction::COLD)
             tempK = wxColdIntensity(scn.tempC);
+        else if (reaction == Reaction::WIND)
+            tempK = wxWindIntensity(scn.windKmh);
         eyesSetMoodK(tempK);
         eyesSetCross(persona.cross * R * IDLE_FLYLAND_CROSS);
         if (ex == Expr::WINK && exprWinkLeft) // the wink is the right eye's preset; this time it is the left one
@@ -578,6 +624,7 @@ namespace disp
             // Cross-fade: the (shrinking) eyes stay underneath until they are gone, the glyphs grow on top.
             if (decor)
                 drawRigEyes(g, lcx, rcx, cy, 0, 0);
+            petTempK = petEv.kind == PetKind::HOT ? wxHotIntensity(scn.tempC) : (petEv.kind == PetKind::COLD ? wxColdIntensity(scn.tempC) : 1.0f);
             drawPetFace(g, now, purr, sleepy, cy, lcx, rcx, R, eyeW, eyeH, decor ? eyesDecorPop() : 1.0f);
             drawMouth(g, W / 2, mouthY);
             return;
@@ -658,7 +705,7 @@ namespace disp
 
         drawMouth(g, W / 2, mouthY);
 
-        if (sleepy && !persona.snoozed)
+        if (sleepy && !persona.snoozed && !persona.startled)
             drawSleepZ(g, now, cy, R);
         drawPersonaExtras(g, now, cy, R, eyeH);
     }

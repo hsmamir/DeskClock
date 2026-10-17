@@ -11,8 +11,10 @@ namespace disp
     void drawWxDailySection(TFT_eSPI &g, const WeatherPage &p, int16_t oy);
     void drawWxAirSection(TFT_eSPI &g, const WeatherPage &p, int16_t oy);
 
-    // Draws at most one of: face mask + cough (bad air), umbrella with a countdown (rain soon), sunglasses (high UV).
+    // Draws the accessories that belong to the weather: umbrella with a countdown (rain soon) OR sunglasses (high UV in
+    // a bright sky), and on top of either the face mask + cough (bad air; it sits below the eyes). The yes / no
+    // answers come from weather_mood.h, so they have the same hysteresis as the faces.
     // Call it after the eyes are drawn, only while the face is calm (no pet reaction, no sleep, no one-off act).
-    // now = millis(); dayNow = the sun is up.
-    void drawWeatherAccessory(TFT_eSPI &g, uint32_t now, bool dayNow);
+    // now = millis(); scn = what display_tick() found out (daytime, weather code).
+    void drawWeatherAccessory(TFT_eSPI &g, uint32_t now, const SceneInfo &scn);
 } // namespace disp

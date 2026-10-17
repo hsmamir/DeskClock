@@ -261,6 +261,8 @@ namespace disp
     // Cheek = three concentric ellipses (outer -> inner), tint 0.12 / 0.20 / 0.30, times strength 0..1.
     // On the face sprite they are translucent pink over the real background (the layers are chained so the
     // centre ends up at exactly 0.30); in the viewport fallback they are opaque tints of the background colour.
+    uint16_t cheekColor = C_CHEEK;
+
     void drawCheek(TFT_eSPI &g, int16_t cx, int16_t cy, int16_t rx, int16_t ry, float strength)
     {
         if (strength < 0.03f)
@@ -278,10 +280,10 @@ namespace disp
             {
                 float a = prev < 0.999f ? 1.0f - (1.0f - want) / (1.0f - prev) : 0.0f; // alpha of this layer
                 if (a > 0.005f)
-                    blendEllipse(g, rd, cx, cy, erx, ery, C_CHEEK, a);
+                    blendEllipse(g, rd, cx, cy, erx, ery, cheekColor, a);
             }
             else
-                g.fillEllipse(cx, cy, erx, ery, tint(C_CHEEK, want));
+                g.fillEllipse(cx, cy, erx, ery, tint(cheekColor, want));
             prev = want;
         }
     }
@@ -503,6 +505,7 @@ namespace disp
         /* WONDER     34x39 */ SYM(2.1500f, 2.4500f, 0.80f, 0.00f, 0.0f, 0.12f),   // big, bright, a smile underneath
         /* MISTY      32x33 */ SYM(2.0000f, 2.0800f, 0.72f, 0.32f, 0.0f, 0.10f),   // half-lidded
         /* CHILLED    31x34 */ SYM(1.9000f, 2.1000f, 0.68f, 0.28f, 0.0f, 0.24f),   // squeezed shut a little from both sides
+        /* WINDY      30x32 */ SYM(1.9000f, 2.0000f, 0.66f, 0.36f, -0.12f, 0.20f), // narrowed into the gust, brows a touch lowered outside
     };
 
     enum EyeParam : uint8_t
@@ -671,6 +674,8 @@ namespace disp
             return EyeMood::HOT;
         case Reaction::COLD:
             return EyeMood::CHILLED;
+        case Reaction::WIND:
+            return EyeMood::WINDY;
         default:
             break;
         }
@@ -700,7 +705,7 @@ namespace disp
     // What the weather makes the eyes do, as a steady situation (no timing).
     static Reaction weatherSituation(const SceneInfo &scn)
     {
-        switch (weatherMood(scn.weatherKnown, scn.code, scn.tempC)) // the one shared weather decision (weather_mood.h)
+        switch (weatherMood(scn.weatherKnown, scn.code, scn.tempC, scn.windKmh)) // the one shared weather decision (weather_mood.h)
         {
         case WxMood::STORM:
             return Reaction::STORM;
@@ -714,6 +719,8 @@ namespace disp
             return Reaction::SNOW;
         case WxMood::FOG:
             return Reaction::FOG;
+        case WxMood::WIND:
+            return Reaction::WIND;
         default:
             return Reaction::NONE;
         }
@@ -992,6 +999,9 @@ namespace disp
         nextTremorAtMs = now + SACCADE_MS + random(300, 900);
     }
 
+    static float windLookX = 0; // where the wind blows to: +1 right .. -1 left, 0 = unknown
+    void eyesSetWindDir(float vx) { windLookX = vx; }
+
     void updateLook(uint32_t now, bool alarm, bool sleepy, Reaction reaction)
     {
         bool idlePick = false; // a random idle look was chosen this frame
@@ -1048,6 +1058,13 @@ namespace disp
         {
             lookTX = 0; // tense, eyes on the sky (the flashes come from there)
             lookTY = -0.6f;
+        }
+        else if (reaction == Reaction::WIND)
+        {
+            // squinting, looking away from the gust (the way it blows to); every few seconds a quick look back at it
+            float side = windLookX > 0.1f ? 1.0f : (windLookX < -0.1f ? -1.0f : (((now / 2600) & 1) ? 1.0f : -1.0f));
+            lookTX = ((now / 1900) % 4 == 3) ? -0.5f * side : side;
+            lookTY = 0.15f;
         }
         else if (now >= nextLookAtMs)
         {

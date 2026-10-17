@@ -16,7 +16,7 @@ Everything else - alarm time, volume, city, timezone - is set from a small web p
 - **Clock** with smooth digit animation, a breathing colon, an alarm indicator and a time-of-day colour theme
   (night / dawn / day / dusk) that follows the real sunrise and sunset.
 - **Eyes with character**: blinking, looking around, winking, yawning, squinting, peek-a-boo, sleepy at night,
-  worried when WiFi is gone, sweating when hot, shivering when cold, startled by lightning.
+  worried when WiFi is gone, sweating when hot, shivering when cold, squinting into a strong wind, startled by lightning (and woken by it at night, then back to sleep).
 - **Idle life**: now and then he thinks ("hmm", sometimes an "oh!"), checks the time, chases a little fly with his eyes
   and head, and yawns in the evening or when you keep him up at night. See [Idle life](#idle-life).
 - **Living background**: the sky behind the eyes follows the weather and the hour - sun and moon travelling
