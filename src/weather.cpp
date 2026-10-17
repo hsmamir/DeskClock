@@ -6,6 +6,7 @@
 #include <string.h>
 #include "weather.h"
 #include "weather_extras.h"
+#include "weather_mood.h"
 #include "config.h"
 #include "settings.h"
 #include "state.h"
@@ -40,17 +41,17 @@ const char *weather_code_to_label(int code)
         return "P.Cloudy";
     if (code == 3)
         return "Cloudy";
-    if (code == 45 || code == 48)
+    if (wxIsFog(code))
         return "Fog";
     if (code >= 51 && code <= 57)
         return "Drizzle";
     if (code >= 61 && code <= 67)
         return "Rain";
-    if ((code >= 71 && code <= 77) || code == 85 || code == 86) // 85/86 = snow showers
+    if (wxIsSnow(code)) // includes 85/86 = snow showers
         return "Snow";
     if (code >= 80 && code <= 82)
         return "Showers";
-    if (code >= 95)
+    if (wxIsStorm(code))
         return "Storm";
     return "N/A";
 }
@@ -64,10 +65,7 @@ bool weather_extra_get(WeatherExtra &out)
 }
 
 // It is already raining / snowing / storming right now (the eyes show that by themselves; no "soon" warning then).
-static bool isWetCode(int c)
-{
-    return (c >= 51 && c <= 67) || (c >= 71 && c <= 77) || (c >= 80 && c <= 86) || c >= 95;
-}
+static bool isWetCode(int c) { return wxIsWet(c); }
 
 // "2026-10-17" -> weekday, 0 = Sunday (Sakamoto's method). 0 if the text is not a date.
 static uint8_t dowFromDate(const char *s)

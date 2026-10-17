@@ -7,6 +7,7 @@
 #include "settings.h"
 #include "sun.h"
 #include "config.h"
+#include "weather_mood.h"
 
 static const char *NVS_NS = "pet";
 
@@ -175,11 +176,6 @@ uint32_t pet_hold_ms(PetKind kind)
     }
 }
 
-static bool isRain(int code)
-{
-    return (code >= 51 && code <= 67) || (code >= 80 && code <= 82); // same codes as the SAD eyes
-}
-
 void pet_on_press(uint32_t now)
 {
     // ---- what the situation looks like (read before taking our own mutex) ----
@@ -266,12 +262,24 @@ void pet_on_press(uint32_t now)
             kind = (esp_random() & 1) ? PetKind::RARE_WINK : PetKind::RARE_SURPRISE;
         else if (night)
             kind = PetKind::SLEEPY;
-        else if (weatherOk && isRain(code))
-            kind = PetKind::RAISED_BROW;
-        else if (weatherOk && tempC >= REACT_HOT_C)
-            kind = PetKind::HOT;
-        else if (weatherOk && tempC <= REACT_COLD_C)
-            kind = PetKind::COLD;
+        else
+        {
+            switch (weatherMood(weatherOk, code, tempC)) // same decision as the idle eyes (weather_mood.h)
+            {
+            case WxMood::STORM: // "rain? really?" fits a thunderstorm too
+            case WxMood::RAIN:
+                kind = PetKind::RAISED_BROW;
+                break;
+            case WxMood::HOT:
+                kind = PetKind::HOT;
+                break;
+            case WxMood::COLD:
+                kind = PetKind::COLD;
+                break;
+            default: // NONE, SNOW, FOG: plain happy for now
+                break;
+            }
+        }
     }
 
     if (bondOn && kind == PetKind::ANNOYED && s_streak == annoyedAt)

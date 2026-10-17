@@ -6,6 +6,7 @@
 // the drawing and the gaze / lid machines elsewhere only read it.
 #include "display_internal.h"
 #include "audio.h"
+#include "weather_mood.h"
 #include "servo_ctrl.h"
 
 namespace disp
@@ -225,10 +226,7 @@ namespace disp
         xSemaphoreGive(g_stateMutex);
     }
 
-    static bool isPrecip(int code)
-    {
-        return (code >= 51 && code <= 67) || (code >= 71 && code <= 77) || (code >= 80 && code <= 86);
-    }
+    static bool isPrecip(int code) { return wxIsPrecip(code); } // rain AND snow (weather_mood.h)
 
     static void setGaze(float x, float y, bool direct = false)
     {
@@ -582,7 +580,7 @@ namespace disp
                     int chance = IDLE_SNEEZE_PERCENT;
                     bool coldNow = false;
                     xSemaphoreTake(g_stateMutex, portMAX_DELAY);
-                    coldNow = g_state.weatherValid && g_state.weatherTempC <= REACT_COLD_C;
+                    coldNow = g_state.weatherValid && wxIsCold(g_state.weatherTempC);
                     xSemaphoreGive(g_stateMutex);
                     if ((in.weatherKnown && isPrecip(in.weatherCode)) || coldNow)
                         chance += IDLE_SNEEZE_WEATHER_BONUS;

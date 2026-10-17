@@ -2,6 +2,7 @@
 // and the reaction picker (what the weather / WiFi make the eyes do).
 #include "display_internal.h"
 #include "audio.h"
+#include "weather_mood.h"
 
 namespace disp
 {
@@ -677,17 +678,19 @@ namespace disp
             return Reaction::NONE;
         if (offline)
             return Reaction::WORRIED;
-        if (!scn.weatherKnown)
-            return Reaction::NONE;
-        if (scn.code >= 95)
+        switch (weatherMood(scn.weatherKnown, scn.code, scn.tempC)) // the one shared weather decision (weather_mood.h)
+        {
+        case WxMood::STORM:
             return Reaction::STORM;
-        if ((scn.code >= 51 && scn.code <= 67) || (scn.code >= 80 && scn.code <= 82))
+        case WxMood::RAIN:
             return Reaction::SAD;
-        if (scn.tempC >= REACT_HOT_C)
+        case WxMood::HOT:
             return Reaction::HOT;
-        if (scn.tempC <= REACT_COLD_C)
+        case WxMood::COLD:
             return Reaction::COLD;
-        return Reaction::NONE;
+        default: // NONE, SNOW, FOG: no face of their own yet
+            return Reaction::NONE;
+        }
     }
 
     Expr exprCur = Expr::NONE;

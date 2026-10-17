@@ -1,5 +1,6 @@
 // display_scene.cpp - weather glyphs (sun, moon, clouds ...), the face background scene and the weather icon.
 #include "display_internal.h"
+#include "weather_mood.h"
 
 namespace disp
 {
@@ -341,10 +342,10 @@ namespace disp
         int code = scn.weatherKnown ? scn.code : -1;
         bool partly = (code == 1 || code == 2);
         bool clearish = !scn.weatherKnown || code == 0 || partly; // sky is (mostly) visible
-        bool fog = (code == 45 || code == 48);
-        bool rain = (code >= 51 && code <= 67) || (code >= 80 && code <= 82);
-        bool snow = (code >= 71 && code <= 77) || code == 85 || code == 86;
-        bool storm = code >= 95;
+        bool fog = wxIsFog(code);
+        bool rain = wxIsRain(code);
+        bool snow = wxIsSnow(code);
+        bool storm = wxIsStorm(code);
         bool overcast = scn.weatherKnown && !clearish && !fog && !rain && !snow && !storm; // code 3 etc.
 
         uint16_t cloudCol = tint(rgb(165, 180, 215), scn.day ? 0.55f : 0.41f);
@@ -434,7 +435,7 @@ namespace disp
             drawSun(g, cx - r * 0.35f, cy - r * 0.3f, r * 0.75f, now, false);
             drawCloud(g, cx + r * 0.15f, cy + r * 0.25f, r * 0.85f, lightCloud);
         }
-        else if (code == 45 || code == 48)
+        else if (wxIsFog(code))
         {
             for (int i = 0; i < 3; i++)
             {
@@ -443,7 +444,7 @@ namespace disp
                                 r * 1.4f, imax(2, (int16_t)(r * 0.22f)), 2, greyCloud);
             }
         }
-        else if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82))
+        else if (wxIsRain(code))
         {
             drawCloud(g, cx, cy - r * 0.3f, r * 0.9f, greyCloud);
             for (int i = 0; i < 3; i++)
@@ -454,7 +455,7 @@ namespace disp
                 g.drawLine(x, y, x - 2, y + r * 0.3f, rain);
             }
         }
-        else if ((code >= 71 && code <= 77) || code == 85 || code == 86)
+        else if (wxIsSnow(code))
         {
             drawCloud(g, cx, cy - r * 0.3f, r * 0.9f, greyCloud);
             for (int i = 0; i < 3; i++)
@@ -464,7 +465,7 @@ namespace disp
                 g.fillCircle(x, cy + r * 0.5f + dy, imax(1, r / 9), C_WHITE);
             }
         }
-        else if (code >= 95)
+        else if (wxIsStorm(code))
         {
             drawCloud(g, cx, cy - r * 0.3f, r * 0.9f, darkCloud);
             if ((now / 300) % 3 != 0)
