@@ -446,6 +446,21 @@ static_assert(AMBIENT_MOTES >= 3 && AMBIENT_MOTES <= 5, "AMBIENT_MOTES must be 3
 #define REACT_COLD_C 0               // at or below (deg C): shivering
 #define REACT_OFFLINE_DELAY_MS 20000 // WiFi down this long -> worried eyes
 
+// Weather "moments": nobody wears the same face for hours. With WX_MOMENT_ENABLED the weather faces (rain, storm,
+// snow, fog, heat, cold) show only now and then: when the weather changes, and after that every GAP_MIN..GAP_MAX ms
+// for DUR_MIN..DUR_MAX ms; in between the eyes are the plain idle eyes. A thunderstorm is livelier: its moments
+// start at a lightning flash (but not more often than STORM_GAP) and every flash while one runs extends it.
+// The worried face of a lost WiFi connection is not a mood but a warning: it stays on. 0 = the old steady faces.
+#define WX_MOMENT_ENABLED 1
+#define WX_MOMENT_GAP_MIN_MS 20000
+#define WX_MOMENT_GAP_MAX_MS 60000
+#define WX_MOMENT_DUR_MIN_MS 3000
+#define WX_MOMENT_DUR_MAX_MS 5000
+#define WX_MOMENT_STORM_GAP_MIN_MS 8000
+#define WX_MOMENT_STORM_GAP_MAX_MS 20000
+#define WX_MOMENT_STORM_DUR_MIN_MS 4000
+#define WX_MOMENT_STORM_DUR_MAX_MS 6000
+
 // ---- Pet button reactions (pet.cpp decides, display.cpp draws) ----
 // The Pet pad no longer always gives the same happy face. In priority order:
 //   fast repeated taps ... hearts for the eyes, then dizzy, then annoyed

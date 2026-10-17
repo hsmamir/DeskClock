@@ -311,7 +311,7 @@ namespace disp
     float eyesDecorPop();              // 0..1 (slightly more while overshooting): how far that decoration has grown
     void eyesStep(uint32_t now);       // advance all springs by the real frame time (max 0.05 s)
     EyeShape eyeShapeNow(uint8_t eye); // 0 = left, 1 = right
-    Reaction pickReaction(const SceneInfo &scn, bool offline, bool sleepy);
+    Reaction pickReaction(const SceneInfo &scn, bool offline, bool sleepy, uint32_t now);
     float updateExpression(uint32_t now, bool can, bool sleepy);
     void drawStars(TFT_eSPI &g, uint32_t now);
     void updateBlink(uint32_t now, bool sleepy);

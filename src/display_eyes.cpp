@@ -684,12 +684,9 @@ namespace disp
     //  Face
     // =====================================================================
 
-    Reaction pickReaction(const SceneInfo &scn, bool offline, bool sleepy)
+    // What the weather makes the eyes do, as a steady situation (no timing).
+    static Reaction weatherSituation(const SceneInfo &scn)
     {
-        if (!EXPR_ENABLED || sleepy) // sleepy eyes at night stay sleepy
-            return Reaction::NONE;
-        if (offline)
-            return Reaction::WORRIED;
         switch (weatherMood(scn.weatherKnown, scn.code, scn.tempC)) // the one shared weather decision (weather_mood.h)
         {
         case WxMood::STORM:
@@ -707,6 +704,62 @@ namespace disp
         default:
             return Reaction::NONE;
         }
+    }
+
+    // Weather moments (WX_MOMENT_*): the situation only shows while a "moment" runs.
+    static Reaction momKind = Reaction::NONE; // the situation the schedule below was made for
+    static bool momOn = false;
+    static uint32_t momEndMs = 0, momNextMs = 0;
+
+    static uint32_t momDuration(Reaction r)
+    {
+        return r == Reaction::STORM ? random(WX_MOMENT_STORM_DUR_MIN_MS, WX_MOMENT_STORM_DUR_MAX_MS)
+                                    : random(WX_MOMENT_DUR_MIN_MS, WX_MOMENT_DUR_MAX_MS);
+    }
+    static uint32_t momGap(Reaction r)
+    {
+        return r == Reaction::STORM ? random(WX_MOMENT_STORM_GAP_MIN_MS, WX_MOMENT_STORM_GAP_MAX_MS)
+                                    : random(WX_MOMENT_GAP_MIN_MS, WX_MOMENT_GAP_MAX_MS);
+    }
+
+    Reaction pickReaction(const SceneInfo &scn, bool offline, bool sleepy, uint32_t now)
+    {
+        if (!EXPR_ENABLED || sleepy) // sleepy eyes at night stay sleepy
+            return Reaction::NONE;
+        if (offline)
+            return Reaction::WORRIED; // a warning, not a mood: always on
+        const Reaction sit = weatherSituation(scn);
+        if (!WX_MOMENT_ENABLED)
+            return sit;
+        if (sit == Reaction::NONE)
+        {
+            momKind = Reaction::NONE;
+            momOn = false;
+            return Reaction::NONE;
+        }
+        const bool flash = sit == Reaction::STORM && lightningActive(now);
+        if (sit != momKind) // new kind of weather = news: show it at once
+        {
+            momKind = sit;
+            momOn = true;
+            momEndMs = now + momDuration(sit);
+        }
+        else if (momOn)
+        {
+            if (flash && (int32_t)(momEndMs - now) < 1500)
+                momEndMs = now + 1500; // every flash while it runs keeps the flinch going
+            if ((int32_t)(now - momEndMs) >= 0)
+            {
+                momOn = false;
+                momNextMs = now + momGap(sit);
+            }
+        }
+        else if ((int32_t)(now - momNextMs) >= 0 && (sit != Reaction::STORM || flash))
+        {
+            momOn = true; // a storm waits for its next flash
+            momEndMs = now + momDuration(sit);
+        }
+        return momOn ? sit : Reaction::NONE;
     }
 
     Expr exprCur = Expr::NONE;
