@@ -4,6 +4,7 @@
 #include <WiFi.h>
 #include "tls_lock.h"
 #include "display_menu.h"
+#include "display_wx.h"
 
 using namespace disp;
 
@@ -391,6 +392,13 @@ void display_tick()
         {
             drawOccasionFront(g, now);
             drawMomentFront(g, now);
+            // umbrella (rain soon), face mask (bad air), sunglasses (high UV): only while the face is calm, so they
+            // never fight with a pet reaction, sleep, a one-off act or an occasion (weather_extras.h, display_wx.cpp)
+            if (!happy && !sleepy && occ.kind == Occasion::NONE && exprCur == Expr::NONE && !persona.asleep &&
+                !persona.snoozed && !persona.frown && !persona.thinking && !persona.sulking && !persona.flyOn &&
+                persona.peek <= 0.01f && persona.relief <= 0.15f && !persona.sneezeMouth && persona.hiccupHop <= 0.3f &&
+                persona.sneezeSpray <= 0.0f && persona.hiccupText <= 0.0f)
+                drawWeatherAccessory(g, now, scn.day);
         }
         drawStatusIcons(g, now);
         drawHoldRing(g);

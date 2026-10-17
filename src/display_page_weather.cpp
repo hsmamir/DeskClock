@@ -1,12 +1,16 @@
 // display_page_weather.cpp - the Weather page (full screen): ONE page that the rotary knob scrolls.
 //
-// The page is twice as tall as the screen. Its first half ("now") and second half ("forecast") are laid out the way
+// The page is (at least) twice as tall as the screen. Its first half ("now") and second half ("forecast") are laid out the way
 // the two views used to be, one below the other:
 //
 //   now        upper part: icon, big temperature, condition, today's high / low
 //              lower part: feels like, humidity, wind (speed + arrow), chance of rain
 //   forecast   upper part: hourly bars with the temperature above and the chance of rain below
 //              lower part: sunrise, sunset (computed on the chip), UV, pressure
+//
+// Two more screens follow when they are enabled (weather_extras.h, drawn in display_wx.cpp): "Next days" (the 7-day
+// forecast, one row per day) and "Air quality" (US AQI, PM2.5, PM10, pollen). Each of them is one block that is a whole
+// screen tall.
 //
 // Turning the knob scrolls the page (touch.cpp sets the target, display_pages.cpp eases the pixel offset toward it).
 // Without the extra details (no forecast yet) only the "now" part exists and nothing scrolls.
@@ -16,6 +20,7 @@
 // in its own canvas coordinates, shifted by `oy` = the canvas y of the block's top edge; the sprite clips whatever
 // sticks out. Fixed parts (the coloured line at the top, the footer with the page dots, the scroll bar) are drawn last.
 #include "display_internal.h"
+#include "display_wx.h"
 
 namespace disp
 {
@@ -436,6 +441,23 @@ namespace disp
     //  The page
     // =====================================================================
 
+    // Section s (>= 2) of the page: the 7-day part first (when enabled), then the air quality part (when enabled).
+    static void drawExtraSection(TFT_eSPI &g, const WeatherPage &p, int s, int16_t oy)
+    {
+        int idx = s - 2;
+        if (WX_DAILY_ENABLED)
+        {
+            if (idx == 0)
+            {
+                drawWxDailySection(g, p, oy);
+                return;
+            }
+            idx--;
+        }
+        if (WX_AIRQ_ENABLED && idx == 0)
+            drawWxAirSection(g, p, oy);
+    }
+
     // Draws the part of the tall page that lies in this canvas. lower = the lower card (infoCv), else the upper card
     // (faceCv); the page runs through both: the upper card shows page rows 0 .. faceH, the lower card faceH .. faceH + infoH,
     // moved up by the scroll offset.
@@ -444,12 +466,18 @@ namespace disp
         const int16_t ph = (int16_t)(faceH + infoH); // height of one section = height of the screen's page area
         const int16_t base = lower ? faceH : (int16_t)0;
         const int16_t ch = lower ? infoH : faceH;
-        const int sections = p.scrollable ? 2 : 1;
+        const int sections = p.scrollable ? WX_SECTIONS : 1;
         for (int s = 0; s < sections; s++)
         {
             const bool forecast = (s == 1);
             const int16_t oyTop = (int16_t)(s * ph - p.scrollPx - base); // canvas y of this section's upper block
             const int16_t oyBot = (int16_t)(oyTop + faceH);              // ... and of its lower block
+            if (s >= 2)                                                  // "Next days" / "Air quality": one block that is a whole screen tall (display_wx.cpp)
+            {
+                if (oyTop < ch && oyTop + ph > 0)
+                    drawExtraSection(g, p, s, oyTop);
+                continue;
+            }
             if (oyTop < ch && oyTop + faceH > 0)
             {
                 if (forecast)

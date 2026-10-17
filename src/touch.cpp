@@ -3,6 +3,7 @@
 #include "touch.h"
 #include "pins.h"
 #include "config.h"
+#include "weather_extras.h"
 #include "state.h"
 #include "audio.h"
 #include "alarm_ctrl.h"
@@ -299,7 +300,7 @@ static bool handlePad()
 // the diagnostics page goes back to the clock (while the menu is open a turn drives the menu instead).
 //
 // The Weather page is ONE scrollable page: while it has something to scroll (the forecast below "now") a turn scrolls it
-// (WEATHER_SCROLL_STEPS clicks from top to bottom) instead of changing pages. A turn at the top / bottom edge moves on to
+// (WX_SCROLL_STEPS_TOTAL clicks from top to bottom: WEATHER_SCROLL_STEPS per screen, weather_extras.h) instead of changing pages. A turn at the top / bottom edge moves on to
 // the previous / next page, but only after the knob was still for WEATHER_SCROLL_EDGE_PAUSE_MS, so spinning fast scrolls
 // to the end and stops there instead of flying through the whole page. Coming from the next page (counter-clockwise) the
 // page opens at its bottom, coming from the previous one (clockwise) at its top.
@@ -317,13 +318,13 @@ static void turnPages(int steps, uint32_t now)
         bool still = (uint32_t)(now - lastWeatherTurnMs) >= (uint32_t)WEATHER_SCROLL_EDGE_PAUSE_MS;
         lastWeatherTurnMs = now;
         int cur = g_state.weatherScrollStep;
-        if (cur > WEATHER_SCROLL_STEPS)
-            cur = WEATHER_SCROLL_STEPS;
+        if (cur > WX_SCROLL_STEPS_TOTAL)
+            cur = WX_SCROLL_STEPS_TOTAL;
         int next = cur + steps;
         if (next < 0)
             next = 0;
-        if (next > WEATHER_SCROLL_STEPS)
-            next = WEATHER_SCROLL_STEPS;
+        if (next > WX_SCROLL_STEPS_TOTAL)
+            next = WX_SCROLL_STEPS_TOTAL;
         if (next != cur)
         {
             g_state.weatherScrollStep = (uint8_t)next;
@@ -350,7 +351,7 @@ static void turnPages(int steps, uint32_t now)
     if (kOrder[idx] == DisplayMode::WEATHER && g_state.displayMode != DisplayMode::WEATHER)
     {
         // entering the Weather page: from the top when coming from the Date page, from the bottom when coming back from the clock
-        g_state.weatherScrollStep = dir > 0 ? 0 : (uint8_t)WEATHER_SCROLL_STEPS;
+        g_state.weatherScrollStep = dir > 0 ? 0 : (uint8_t)WX_SCROLL_STEPS_TOTAL;
         lastWeatherTurnMs = now; // the turn that brought us here must not also leave again
     }
     g_state.displayMode = kOrder[idx];

@@ -3,9 +3,11 @@
 // Only the clock page shows the face (eyes) above the info card. The Date and Weather pages are ONE full-screen
 // page: its upper half is drawn into faceCv, its lower half into infoCv (the same two canvases, so no extra RAM),
 // and the 3 px strip between the cards gets the page background instead of the frame colour. The contents of the
-// pages are in display_page_date.cpp and display_page_weather.cpp. The Weather page is twice as tall as the screen and
-// scrolls with the rotary knob: this file owns the scroll position (it eases toward the step touch.cpp has set).
+// pages are in display_page_date.cpp and display_page_weather.cpp. The Weather page is WX_SECTIONS times as tall as the
+// screen (2 .. 4, see weather_extras.h) and scrolls with the rotary knob: this file owns the scroll position (it eases
+// toward the step touch.cpp has set).
 #include "display_internal.h"
+#include "weather_extras.h"
 
 namespace disp
 {
@@ -135,9 +137,10 @@ namespace disp
     }
 
     // ---- Weather page scroll ----
-    // touch.cpp sets the step the knob has scrolled to (g_state.weatherScrollStep: 0 = top .. WEATHER_SCROLL_STEPS =
-    // bottom); the pixel offset below glides toward it. The page is twice the height of the screen's page area, so
-    // the largest offset is one page height and every step is an equal share of it.
+    // touch.cpp sets the step the knob has scrolled to (g_state.weatherScrollStep: 0 = top .. WX_SCROLL_STEPS_TOTAL =
+    // bottom); the pixel offset below glides toward it. The page is WX_SECTIONS times the height of the screen's page
+    // area, so the largest offset is (WX_SECTIONS - 1) page heights and every step is an equal share of it (one screen
+    // is WEATHER_SCROLL_STEPS steps).
     static float scrollF = 0;        // current offset, px (0 = top of the page)
     static uint32_t scrollMs = 0;    // when it was last advanced
     static bool barsOn = false;      // the hourly bars are (about to be) in view
@@ -148,8 +151,8 @@ namespace disp
         xSemaphoreTake(g_stateMutex, portMAX_DELAY);
         int s = g_state.weatherScrollStep;
         xSemaphoreGive(g_stateMutex);
-        if (s > WEATHER_SCROLL_STEPS)
-            s = WEATHER_SCROLL_STEPS;
+        if (s > WX_SCROLL_STEPS_TOTAL)
+            s = WX_SCROLL_STEPS_TOTAL;
         return s;
     }
 
@@ -177,10 +180,10 @@ namespace disp
                 readWeatherDetail(wp.wd);
                 wp.scrollable = wp.wd.valid && wp.valid;
             }
-            wp.maxScrollPx = wp.scrollable ? (int16_t)pageH : (int16_t)0;
+            wp.maxScrollPx = wp.scrollable ? (int16_t)(pageH * (float)(WX_SECTIONS - 1)) : (int16_t)0;
 
             // where the knob wants the page, and the glide toward it
-            float target = wp.scrollable ? pageH * (float)readWeatherScrollStep() / (float)WEATHER_SCROLL_STEPS : 0.0f;
+            float target = wp.scrollable ? (float)wp.maxScrollPx * (float)readWeatherScrollStep() / (float)WX_SCROLL_STEPS_TOTAL : 0.0f;
             if (lastMode != DisplayMode::WEATHER)
             {
                 scrollF = target; // the page opens right where the knob left it (no glide from the old position)
