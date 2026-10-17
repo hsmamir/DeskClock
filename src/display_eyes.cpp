@@ -532,13 +532,26 @@ namespace disp
     static float crossPxV = 0; // cross-eyed: the left eye moves this far right, the right eye the same far left
     void eyesSetCross(float px) { crossPxV = px; }
 
+    static float moodKV = 1.0f; // how far the mood presets are applied (hot / cold are graded)
+    void eyesSetMoodK(float k) { moodKV = clamp01(k); }
+
+    // The preset p, blended from the NEUTRAL eyes by moodKV.
+    static EyePreset gradedPreset(const EyePreset &p, const EyePreset &n)
+    {
+        const float k = moodKV;
+        if (k >= 0.999f)
+            return p;
+        return {n.w + (p.w - n.w) * k, n.h + (p.h - n.h) * k, n.radius + (p.radius - n.radius) * k,
+                n.lidTop + (p.lidTop - n.lidTop) * k, n.slant + (p.slant - n.slant) * k, n.lidBot + (p.lidBot - n.lidBot) * k};
+    }
+
     void eyesSetTargets(EyeMood left, EyeMood right, float scale, float lookPxX, float lookPxY, float gazeN, int16_t R)
     {
         const EyeMood mood[2] = {left, right};
         gazeNorm = gazeN < -1 ? -1 : (gazeN > 1 ? 1 : gazeN);
         for (uint8_t i = 0; i < 2; i++)
         {
-            const EyePreset &p = PRESETS[(uint8_t)mood[i]][i];
+            const EyePreset p = gradedPreset(PRESETS[(uint8_t)mood[i]][i], PRESETS[(uint8_t)EyeMood::NEUTRAL][i]);
             Spring *sp = eyeSp[i];
             sp[P_W].target = p.w * R * scale;
             sp[P_H].target = p.h * R * scale;

@@ -442,8 +442,16 @@ static_assert(AMBIENT_MOTES >= 3 && AMBIENT_MOTES <= 5, "AMBIENT_MOTES must be 3
 #define EXPR_ENABLED 1
 #define EXPR_MIN_GAP_MS 12000 // a random idle expression every MIN..MAX ms
 #define EXPR_MAX_GAP_MS 30000
-#define REACT_HOT_C 35               // at or above (deg C): sweating, heavy lids
-#define REACT_COLD_C 0               // at or below (deg C): shivering
+// Temperature faces are graded (weather_mood.h / weather_mood.cpp): the face starts at REACT_HOT_C / REACT_COLD_C with
+// a mild version (drooping lids / squeezed eyes) and grows to the full one at REACT_HOT_FULL_C / REACT_COLD_FULL_C
+// (sweat drop, stronger shiver). A face that has started only ends REACT_TEMP_HYST_C degrees on the other side, so a
+// temperature hovering around the limit does not make it flicker. REACT_TEMP_MIN_K = how strong the mild start is (0..1).
+#define REACT_HOT_C 29               // at or above (deg C): the "warm" face starts
+#define REACT_HOT_FULL_C 37          // ... and is at its full strength here
+#define REACT_COLD_C 6               // at or below (deg C): the "cold" face starts
+#define REACT_COLD_FULL_C -5         // ... and is at its full strength here
+#define REACT_TEMP_HYST_C 2          // degrees of margin before a started hot / cold face ends again
+#define REACT_TEMP_MIN_K 0.25f       // strength at the start of the range
 #define REACT_OFFLINE_DELAY_MS 20000 // WiFi down this long -> worried eyes
 
 // Weather "moments": nobody wears the same face for hours. With WX_MOMENT_ENABLED the weather faces (rain, storm,

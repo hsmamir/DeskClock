@@ -1,5 +1,6 @@
 // display_face.cpp - the face: pet reaction expressions and drawFace() (eyes, brows, sleepy Zs ...).
 #include "display_internal.h"
+#include "weather_mood.h"
 
 namespace disp
 {
@@ -492,6 +493,13 @@ namespace disp
         eyesSetFast(antic);
         eyesSetDecor(decor);
         eyesSetLidBias(persona.lidBias);
+        // warm / hot, cool / cold: the face is graded by the temperature (weather_mood.cpp); everything else is full strength
+        float tempK = 1.0f;
+        if (reaction == Reaction::HOT)
+            tempK = wxHotIntensity(scn.tempC);
+        else if (reaction == Reaction::COLD)
+            tempK = wxColdIntensity(scn.tempC);
+        eyesSetMoodK(tempK);
         eyesSetCross(persona.cross * R * IDLE_FLYLAND_CROSS);
         if (ex == Expr::WINK && exprWinkLeft) // the wink is the right eye's preset; this time it is the left one
         {
@@ -542,8 +550,11 @@ namespace disp
 
         // normal / sleepy eyes (the blink is the lid spring inside the rig)
         int16_t shiver = 0;
-        if (reaction == Reaction::COLD || persona.shiver)
-            shiver = (((now / 40) & 1) ? 1 : -1) * u(1);
+        if (persona.shiver || (reaction == Reaction::COLD && tempK > 0.35f)) // a cool day squints, only a cold one shivers
+        {
+            float amp = persona.shiver ? 1.0f : tempK * 1.5f; // 1 px when mildly cold, 2 px at full strength
+            shiver = (((now / 40) & 1) ? 1 : -1) * (int16_t)(u(1) * amp + 0.5f);
+        }
         // peek-a-boo: the eyes rise from below the card's bottom edge (the sprite clips them)
         int16_t cyE = cy + (int16_t)(persona.peek * ((faceH - cy) + eyeH / 2));
         if (persona.sneezeJerk > 0)
@@ -568,7 +579,7 @@ namespace disp
 
         // extras
         uint16_t dropCol = rgb(120, 200, 255);
-        if (reaction == Reaction::WORRIED || reaction == Reaction::HOT)
+        if (reaction == Reaction::WORRIED || (reaction == Reaction::HOT && tempK >= 0.5f)) // sweat only when really hot
         {
             // sweat drop sliding down the face: worried = left side, hot = right temple and slower, so the two differ
             const bool hot = reaction == Reaction::HOT;

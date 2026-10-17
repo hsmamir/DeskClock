@@ -403,6 +403,7 @@ namespace disp
     void blinkOpenSlow(uint32_t now, uint16_t ms); // release the lids: they open over ms
     void blinkTrigger(uint32_t now);               // one blink right now
     void eyesSetLidBias(float v);
+    void eyesSetMoodK(float k); // 0..1: how far the preset is applied (0 = plain NEUTRAL eyes, 1 = the full preset)
     void exprForce(Expr e, uint32_t now, uint32_t durMs);
     // where the sun / moon is, as a gaze target (display_scene.cpp)
     bool celestialGaze(const SceneInfo &scn, float &gx, float &gy);

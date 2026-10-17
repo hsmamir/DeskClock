@@ -18,8 +18,14 @@ inline bool wxIsStorm(int c) { return c >= 95; }
 inline bool wxIsPrecip(int c) { return wxIsRain(c) || wxIsSnow(c); } // something falls from the sky (storm not counted)
 inline bool wxIsWet(int c) { return wxIsPrecip(c) || wxIsStorm(c); } // ... or it thunders
 
-inline bool wxIsHot(float tempC) { return tempC >= REACT_HOT_C; }   // false for NaN
-inline bool wxIsCold(float tempC) { return tempC <= REACT_COLD_C; } // false for NaN
+// Hot / cold with a hysteresis (weather_mood.cpp): true from REACT_HOT_C / REACT_COLD_C on, and it stays true until
+// the temperature is REACT_TEMP_HYST_C degrees back. NaN = no reading = the answer stays as it was.
+bool wxIsHot(float tempC);
+bool wxIsCold(float tempC);
+// How strong the face should be, REACT_TEMP_MIN_K (just started) .. 1 (REACT_*_FULL_C or beyond). Only meaningful
+// while wxIsHot / wxIsCold is true.
+float wxHotIntensity(float tempC);
+float wxColdIntensity(float tempC);
 
 // What the situation is "about", one winner. Order = priority: a storm beats rain, rain beats the temperature
 // (a rainy day at 36 deg is about the rain), the temperature beats snow / fog.
@@ -31,7 +37,7 @@ enum class WxMood : uint8_t
     RAIN, // drizzle, rain, rain showers
     HOT,
     COLD,
-    SNOW, // snow above REACT_COLD_C (colder than that it is COLD, as before)
+    SNOW, // snow while it is not cold (when it is, the cold wins)
     FOG
 };
 
