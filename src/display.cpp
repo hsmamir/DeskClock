@@ -302,6 +302,7 @@ void display_tick()
         pin.celestOk = celestialGaze(scn, pin.celestX, pin.celestY);
         personaUpdate(pin);
     }
+    momentUpdate(haveTime ? &ti : nullptr, mode == DisplayMode::CLOCK && !fullLayout, alarm, happy, now); // special minutes (easter eggs)
 
     occasionUpdate(haveTime ? &ti : nullptr, now);
 
@@ -387,7 +388,10 @@ void display_tick()
     if (persona.stage == PStage::RUN) // not over the black boot screen
     {
         if (!alarm)
+        {
             drawOccasionFront(g, now);
+            drawMomentFront(g, now);
+        }
         drawStatusIcons(g, now);
         drawHoldRing(g);
     }

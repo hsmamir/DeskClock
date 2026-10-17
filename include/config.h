@@ -97,6 +97,19 @@ static_assert(MODE_HOLD_RING_DELAY_MS < MODE_LONG_PRESS_MS, "ring delay must be 
 #define EGG_CREDITS_AUTHOR "AmirHosseinHasoomi"
 static_assert(EGG_CREDITS_TAPS >= 2, "EGG_CREDITS_TAPS must be at least 2");
 
+// ---- Special minutes (easter eggs, display_moments.cpp) ----
+// Once a day, if the clock page is up and the eyes are awake and idle when the minute arrives:
+//   11:11  a shooting star crosses the face, the eyes follow it, close and "make a wish"
+//   12:34  the eyes look down and read the digits from left to right, the digits glow once
+//   13:37  sunglasses drop onto the eyes ("deal with it"), a glint runs over the lenses, they lift off again
+//   15:14  the eyes look up, "pi = 3.14159" is typed above them
+// A pet reaction or an alarm cuts a moment short (it can start again while the minute lasts).
+//   EGG_MOMENTS_ENABLED  0 = removed
+//   EGG_MOMENTS_DEMO     1 = wish, 2 = digits, 3 = sunglasses, 4 = pi: play that one every ~25 s, at any time
+//                        (to try it out, also in Wokwi); 0 = only at the real minutes
+#define EGG_MOMENTS_ENABLED 1
+#define EGG_MOMENTS_DEMO 0
+
 // ---- Full-screen pages ----
 // Only the clock page shows the face (eyes). The Date and Weather pages use the whole screen:
 // the two cards are drawn as ONE page (the 3 px gap between them gets the page background).

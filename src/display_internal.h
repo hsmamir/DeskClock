@@ -544,6 +544,11 @@ namespace disp
     void drawStatusIcons(TFT_eSPI &g, uint32_t now);
     void drawHoldRing(TFT_eSPI &g);
     void drawDiagScreen(uint32_t now);
+    // ---- Special minutes: 11:11, 12:34, 13:37, 15:14 (easter eggs, display_moments.cpp) ----
+    // momentUpdate() runs once per tick right after personaUpdate() (ti = nullptr: time not known; clockPage = the
+    // clock page is up; happy = a pet reaction is showing); it may set the persona's gaze / lids / digit flash.
+    void momentUpdate(const struct tm *ti, bool clockPage, bool alarm, bool happy, uint32_t now);
+    void drawMomentFront(TFT_eSPI &g, uint32_t now); // over the eyes (shooting star, sunglasses, text)
     // Hidden credits (easter egg, display_credits.cpp): drawn instead of the diagnostics page while they run.
     bool drawCreditsScreen(uint32_t now); // true = it drew this frame; false = not running (draw the diagnostics page)
     void creditsStop();                   // call on every frame the diagnostics page is not shown
