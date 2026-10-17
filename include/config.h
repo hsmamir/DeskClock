@@ -83,6 +83,20 @@ static_assert(MODE_HOLD_RING_DELAY_MS < MODE_LONG_PRESS_MS, "ring delay must be 
 #define DISPLAY_RETURN_MS 45000
 #define DIAG_RETURN_MS 15000
 
+// ---- Hidden credits (easter egg, display_credits.cpp) ----
+// Tap the touch pad EGG_CREDITS_TAPS times in a row (at most EGG_CREDITS_TAP_GAP_MS between two taps) while the
+// diagnostics page is open: the credits scroll by and the little eyes read them. A tap during the credits skips
+// them. The pad does not pet while the diagnostics page is open (the taps would only inflate the pet statistics).
+//   EGG_CREDITS_ENABLED  0 = removed
+//   EGG_CREDITS_SPEED    scroll speed in px per second on the 128 px display (scaled up on bigger ones)
+//   EGG_CREDITS_AUTHOR   the name shown under "made by" (about 18 characters fit)
+#define EGG_CREDITS_ENABLED 1
+#define EGG_CREDITS_TAPS 5
+#define EGG_CREDITS_TAP_GAP_MS 1200
+#define EGG_CREDITS_SPEED 28
+#define EGG_CREDITS_AUTHOR "AmirHosseinHasoomi"
+static_assert(EGG_CREDITS_TAPS >= 2, "EGG_CREDITS_TAPS must be at least 2");
+
 // ---- Full-screen pages ----
 // Only the clock page shows the face (eyes). The Date and Weather pages use the whole screen:
 // the two cards are drawn as ONE page (the 3 px gap between them gets the page background).

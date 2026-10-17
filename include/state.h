@@ -66,6 +66,12 @@ struct AppState
     // Last successful NTP sync (diagnostics page). 0 = no NTP sync since boot.
     uint32_t ntpSyncEpoch = 0; // wall-clock time of that sync
     uint32_t ntpSyncMs = 0;    // millis() of that sync (age = millis() - this)
+
+    // Hidden credits (easter egg, display_credits.cpp): touch.cpp bumps creditsSeq after the secret taps on the
+    // diagnostics page; the display starts the credits when it sees a new number and keeps creditsActive true while
+    // they run (the page then stays open). A tap on the pad clears the flag = skip.
+    volatile uint8_t creditsSeq = 0;
+    volatile bool creditsActive = false;
 };
 
 extern AppState g_state;

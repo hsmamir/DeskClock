@@ -322,6 +322,7 @@ void display_tick()
                 backlightUpdate(false, true);
             lastMode = DisplayMode::DIAG; // so the page change back is noticed (and does not slide)
             diagShown = false;
+            creditsStop();
             // (the strip between the cards is painted by drawReminderScreen: one seamless page)
             drawReminderScreen(rv, now);
             return;
@@ -333,6 +334,11 @@ void display_tick()
     if (mode == DisplayMode::DIAG && !alarm)
     {
         lastMode = DisplayMode::DIAG; // so the page change is noticed on the way out
+        if (drawCreditsScreen(now))   // the hidden credits (easter egg) replace the page while they run
+        {
+            diagShown = false; // the diagnostics page is drawn again at once when they end
+            return;
+        }
         // drawDiagScreen() paints the strip between the cards as page background and sets gapIsFull; if something
         // repainted it as frame colour meanwhile (gapIsFull false) the page is redrawn at once
         if (!diagShown || !gapIsFull || now - lastDiagDrawMs >= 500)
@@ -344,6 +350,7 @@ void display_tick()
         return;
     }
     diagShown = false;
+    creditsStop();
 
     // Quick menu (rotary knob): full screen like the diagnostics page, one seamless page. An alarm always wins
     // (the touch task also closes the menu when the alarm starts). Redraws itself only when something changed.

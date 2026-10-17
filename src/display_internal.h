@@ -544,6 +544,9 @@ namespace disp
     void drawStatusIcons(TFT_eSPI &g, uint32_t now);
     void drawHoldRing(TFT_eSPI &g);
     void drawDiagScreen(uint32_t now);
+    // Hidden credits (easter egg, display_credits.cpp): drawn instead of the diagnostics page while they run.
+    bool drawCreditsScreen(uint32_t now); // true = it drew this frame; false = not running (draw the diagnostics page)
+    void creditsStop();                   // call on every frame the diagnostics page is not shown
     // The full-screen reminder (display_reminder.cpp): drawn into the two cards like the diagnostics page.
     void drawReminderScreen(const ReminderView &rv, uint32_t now);
     void backlightInit();

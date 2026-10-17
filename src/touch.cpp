@@ -160,6 +160,45 @@ static void triggerPetHappy()
     }
 }
 
+// ---------------------------------------------------------------------------------------
+// Easter egg: EGG_CREDITS_TAPS quick taps on the diagnostics page start the credits (display_credits.cpp)
+// ---------------------------------------------------------------------------------------
+#if EGG_CREDITS_ENABLED
+static uint8_t eggTaps = 0;
+static uint32_t eggLastTapMs = 0;
+
+// Every touch while no alarm rings and no reminder is up. Returns true when the touch belongs to the diagnostics
+// page: it does not pet there (no reaction, no statistics, no bond), it only counts toward the secret.
+static bool diagPadTap(uint32_t now)
+{
+    xSemaphoreTake(g_stateMutex, portMAX_DELAY);
+    bool onDiag = g_state.displayMode == DisplayMode::DIAG;
+    xSemaphoreGive(g_stateMutex);
+    if (!onDiag)
+    {
+        eggTaps = 0;
+        return false;
+    }
+    if (g_state.creditsActive) // a tap while the credits run skips them
+    {
+        g_state.creditsActive = false;
+        eggTaps = 0;
+        return true;
+    }
+    if (eggTaps > 0 && (uint32_t)(now - eggLastTapMs) > EGG_CREDITS_TAP_GAP_MS)
+        eggTaps = 0; // too slow: start counting again
+    eggLastTapMs = now;
+    if (++eggTaps >= EGG_CREDITS_TAPS)
+    {
+        eggTaps = 0;
+        g_state.creditsSeq = (uint8_t)(g_state.creditsSeq + 1); // the display starts the credits
+    }
+    return true;
+}
+#else
+static bool diagPadTap(uint32_t) { return false; }
+#endif
+
 static void onPadTouched(uint32_t now)
 {
     padPressedAtMs = now;
@@ -185,6 +224,11 @@ static void onPadTouched(uint32_t now)
     }
     if (PAD_HOLD_DISMISSES_SNOOZE && alarm_get_state() == AlarmState::SNOOZED)
         padOffArmed = true; // pet as usual, but a long hold switches the pending alarm off
+    if (diagPadTap(now))
+    {
+        padPurrHandled = true; // no purring on the diagnostics page either
+        return;
+    }
     triggerPetHappy();
 }
 
@@ -501,7 +545,7 @@ static void autoReturnToClock(bool activity)
     uint32_t now = millis();
     xSemaphoreTake(g_stateMutex, portMAX_DELAY);
     DisplayMode m = g_state.displayMode;
-    if (activity || m != lastSeenMode)
+    if (activity || g_state.creditsActive || m != lastSeenMode) // the credits keep the diagnostics page open
     {
         lastActivityMs = now;
         lastSeenMode = m;
