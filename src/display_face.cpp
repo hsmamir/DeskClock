@@ -493,6 +493,12 @@ namespace disp
         eyesSetDecor(decor);
         eyesSetLidBias(persona.lidBias);
         eyesSetCross(persona.cross * R * IDLE_FLYLAND_CROSS);
+        if (ex == Expr::WINK && exprWinkLeft) // the wink is the right eye's preset; this time it is the left one
+        {
+            EyeMood tmp = mood;
+            mood = moodR;
+            moodR = tmp;
+        }
         eyesSetTargets(mood, moodR, scale, lookX * u(5) + lookTremX, lookY * u(4) + lookTremY, lookX, R);
         eyesStep(now);
 
@@ -555,7 +561,7 @@ namespace disp
             float edge = (exprP < 1.0f - exprP ? exprP : 1.0f - exprP) / 0.15f; // ease in/out
             if (edge > 1.0f)
                 edge = 1.0f;
-            squeeze = 0.92f * edge; // eyes squeeze shut mid-yawn
+            squeeze = (0.62f + 0.30f * exprYawnSize) * edge; // eyes squeeze shut mid-yawn (less in a small yawn)
         }
 
         drawRigEyes(g, lcx, rcx, cyE, squeeze, shiver);
@@ -590,7 +596,7 @@ namespace disp
         {
             float s = sinf(exprP * (float)M_PI); // mouth opens, then closes
             int16_t my = cy + R + u(10);
-            int16_t rx = u(2) + (int16_t)(u(7) * s), ry = u(2) + (int16_t)(u(6) * s);
+            int16_t rx = u(2) + (int16_t)(u(7) * s * exprYawnSize), ry = u(2) + (int16_t)(u(6) * s * exprYawnSize);
             g.fillEllipse(W / 2, my, rx, ry, dimColor(C_HEART, 200));
             if (rx > 3 && ry > 3)
                 g.fillEllipse(W / 2, my, rx - 2, ry - 2, rgb(40, 6, 22));

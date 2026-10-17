@@ -251,6 +251,8 @@ namespace disp
         SURPRISE
     };
     extern Expr exprCur;
+    extern bool exprWinkLeft;  // the running wink: left eye (else right)
+    extern float exprYawnSize; // the running yawn: 0.55 (small) .. 1 (big)
     extern float lookX, lookY;
     extern float lookTremX, lookTremY; // px, micro-tremor while the gaze holds still
     extern uint32_t glanceUntilMs;

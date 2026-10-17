@@ -71,6 +71,54 @@ namespace disp
     static uint32_t nextMicroAtMs = 0;
     static uint32_t nextBondActMs = 0; // next sigh / self-started smile that comes from the bond level
 
+    // ---- anti-repetition for the random idle acts ----
+    // He remembers the last three random acts: the same one never comes twice in a row, and one of the last three
+    // is unlikely to come back soon. The base weights stay as they were (idleActForRoll); only a repeat is re-rolled.
+    // Direction-like variants (which way he rolls, peeks, thinks, glances) tend to alternate.
+    static Act recentActs[3] = {Act::NONE, Act::NONE, Act::NONE}; // newest first
+    static int8_t lastDir = 1;                                    // +1 / -1: direction of the last act that had one
+    static int8_t actDir = 1;                                     // direction of the running act
+    static float glanceX = 0;                                     // where the glance goes (the hour digits, the minute digits, or the middle)
+
+    static void rememberAct(Act a)
+    {
+        recentActs[2] = recentActs[1];
+        recentActs[1] = recentActs[0];
+        recentActs[0] = a;
+    }
+    // chance (percent) that a pick is thrown away because it is too recent
+    static int repeatRejectPercent(Act a)
+    {
+        if (a == recentActs[0])
+            return 100;
+        if (a == recentActs[1])
+            return 65;
+        if (a == recentActs[2])
+            return 30;
+        return 0;
+    }
+    // the weights of the random idle acts: PEEK 18, SQUINT 12 (bright day only), THINK, GLANCE, FLY 16 each, the rest ROLL
+    static Act idleActForRoll(int r, bool sunny)
+    {
+        if (r < 18)
+            return Act::PEEK;
+        if (r < 30 && sunny)
+            return Act::SQUINT;
+        if (r < 46 && IDLE_THINK_ENABLED)
+            return Act::THINK;
+        if (r < 62 && IDLE_GLANCE_ENABLED)
+            return Act::GLANCE;
+        if (r < 78 && IDLE_FLY_ENABLED)
+            return Act::FLY;
+        return Act::ROLL;
+    }
+    static int8_t pickDir()
+    {
+        int8_t d = random(0, 100) < 70 ? (int8_t)-lastDir : lastDir;
+        lastDir = d;
+        return d;
+    }
+
     // ---- idle life ----
     static uint32_t nextYawnAtMs = 0;
     static bool eveningArmed = false;                                                   // the evening window was entered and the first yawn is scheduled
@@ -543,43 +591,63 @@ namespace disp
                 bool hiccupNow = false;
                 if (!sneezeNow && IDLE_HICCUP_ENABLED)
                     hiccupNow = random(0, 100) < IDLE_HICCUP_PERCENT;
+                if (recentActs[0] == Act::SNEEZE) // never the same one twice in a row
+                    sneezeNow = false;
+                if (recentActs[0] == Act::HICCUP)
+                    hiccupNow = false;
                 if (sneezeNow)
                 {
+                    rememberAct(Act::SNEEZE);
                     sneezeBurstDone = false;
                     startAct(Act::SNEEZE, now, IDLE_SNEEZE_MS);
                 }
                 else if (hiccupNow)
+                {
+                    rememberAct(Act::HICCUP);
                     startHiccup(now);
-                else if (r < 18)
-                    startAct(Act::PEEK, now, 3400);
-                else if (r < 30 && in.sunny)
-                    startAct(Act::SQUINT, now, 2200);
-                else if (r < 46 && IDLE_THINK_ENABLED)
-                {
-                    thinkIdea = random(0, 100) < 50;
-                    thinkIdeaShown = false;
-                    startAct(Act::THINK, now, 2600);
-                }
-                else if (r < 62 && IDLE_GLANCE_ENABLED)
-                {
-                    startAct(Act::GLANCE, now, 1500);
-                    pulseOn = true; // the digits glow once while he looks
-                    pulseStartMs = now;
-                }
-                else if (r < 78 && IDLE_FLY_ENABLED)
-                {
-                    flySide = random(0, 2) ? 1.0f : -1.0f;
-                    flyPhase = random(0, 628) / 100.0f;
-                    if (IDLE_FLYLAND_PERCENT > 0 && random(0, 100) < IDLE_FLYLAND_PERCENT)
-                    {
-                        flyLandBuzzIn = flyLandBuzzOut = flyLandShakeSnd = false;
-                        startAct(Act::FLY_LAND, now, IDLE_FLYLAND_MS);
-                    }
-                    else
-                        startAct(Act::FLY, now, IDLE_FLY_MS);
                 }
                 else
-                    startAct(Act::ROLL, now, 1100);
+                {
+                    Act pick = idleActForRoll(r, in.sunny);
+                    for (uint8_t tries = 0; tries < 6 && random(0, 100) < repeatRejectPercent(pick); tries++)
+                        pick = idleActForRoll(random(0, 100), in.sunny);
+                    rememberAct(pick);
+                    actDir = pickDir();
+                    switch (pick)
+                    {
+                    case Act::PEEK:
+                        startAct(Act::PEEK, now, 3400);
+                        break;
+                    case Act::SQUINT:
+                        startAct(Act::SQUINT, now, 2200);
+                        break;
+                    case Act::THINK:
+                        thinkIdea = random(0, 100) < 50;
+                        thinkIdeaShown = false;
+                        startAct(Act::THINK, now, 2600);
+                        break;
+                    case Act::GLANCE:
+                        glanceX = random(0, 100) < 60 ? actDir * 0.45f : 0.0f;
+                        startAct(Act::GLANCE, now, 1500);
+                        pulseOn = true; // the digits glow once while he looks
+                        pulseStartMs = now;
+                        break;
+                    case Act::FLY:
+                        flySide = random(0, 2) ? 1.0f : -1.0f;
+                        flyPhase = random(0, 628) / 100.0f;
+                        if (IDLE_FLYLAND_PERCENT > 0 && random(0, 100) < IDLE_FLYLAND_PERCENT)
+                        {
+                            flyLandBuzzIn = flyLandBuzzOut = flyLandShakeSnd = false;
+                            startAct(Act::FLY_LAND, now, IDLE_FLYLAND_MS);
+                        }
+                        else
+                            startAct(Act::FLY, now, IDLE_FLY_MS);
+                        break;
+                    default:
+                        startAct(Act::ROLL, now, 1100);
+                        break;
+                    }
+                }
                 nextMicroAtMs = now + (uint32_t)random(MICRO_MIN_S, MICRO_MAX_S + 1) * 1000UL;
             }
         }
@@ -615,7 +683,7 @@ namespace disp
                 P.peek = p;
                 P.exprOk = false;
                 if (t >= 500 && t < 1600)
-                    setGaze(-sinf(6.2832f * (t - 500.0f) / 1100.0f), 0, true);
+                    setGaze(-actDir * sinf(6.2832f * (t - 500.0f) / 1100.0f), 0, true);
                 else
                     setGaze(0, 0, true);
                 break;
@@ -627,12 +695,12 @@ namespace disp
                 if (t < 900)
                 {
                     float p = t / 900.0f;
-                    setGaze(-cosf(3.14159f * p), -sinf(3.14159f * p), true);
+                    setGaze(-actDir * cosf(3.14159f * p), -sinf(3.14159f * p), true);
                 }
                 else
                 {
                     float k = 1.0f - sstep((t - 900.0f) / 200.0f);
-                    setGaze(k, 0, true);
+                    setGaze(actDir * k, 0, true);
                 }
                 break;
             }
@@ -662,7 +730,7 @@ namespace disp
                     P.exprOk = false;
                     P.thinking = true;
                     P.lidBias = 0.10f * sstep(t / 400.0f);
-                    setGaze(0.9f, -0.8f);
+                    setGaze(actDir * 0.9f, -0.8f);
                 }
                 else
                 {
@@ -677,7 +745,7 @@ namespace disp
             }
             case Act::GLANCE: // check the time
                 if (t < 1200)
-                    setGaze(0, CHIME_LOOK_Y);
+                    setGaze(glanceX, CHIME_LOOK_Y);
                 break;
             case Act::FLY: // in from one side, loops, out on the other; the eyes (and head) follow
             {

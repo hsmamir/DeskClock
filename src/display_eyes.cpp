@@ -692,6 +692,11 @@ namespace disp
 
     Expr exprCur = Expr::NONE;
     static uint32_t exprStartMs = 0, exprDurMs = 0, nextExprAtMs = 0;
+    // Variants, so the same expression does not look the same every time:
+    bool exprWinkLeft = false; // which eye winks (display_face.cpp); tends to alternate
+    float exprYawnSize = 1.0f; // how wide this yawn opens: 0.55 (small) .. 1 (big)
+    static Expr lastExpr = Expr::NONE;
+    static bool lastWinkLeft = false;
 
     // Returns the progress 0..1 of the running expression (0 when none).
     float updateExpression(uint32_t now, bool can, bool sleepy)
@@ -718,13 +723,23 @@ namespace disp
             nextExprAtMs = now + random(8000, 16000);
         if (now >= nextExprAtMs)
         {
-            long r = random(0, 100);
-            if (sleepy)
-                exprCur = r < 80 ? Expr::YAWN : Expr::WINK;
-            else
-                exprCur = r < 50 ? Expr::WINK : (r < 70 ? Expr::SURPRISE : Expr::YAWN);
+            // The weights are as before (sleepy: yawn 80 / wink 20, else wink 50 / surprise 20 / yawn 30), but the one
+            // shown last time counts a quarter: the same face rarely comes twice in a row.
+            float wW = sleepy ? 20.0f : 50.0f, wS = sleepy ? 0.0f : 20.0f, wY = sleepy ? 80.0f : 30.0f;
+            if (lastExpr == Expr::WINK)
+                wW *= 0.25f;
+            else if (lastExpr == Expr::SURPRISE)
+                wS *= 0.25f;
+            else if (lastExpr == Expr::YAWN)
+                wY *= 0.25f;
+            float r = random(0, 1000) / 1000.0f * (wW + wS + wY);
+            exprCur = r < wW ? Expr::WINK : (r < wW + wS ? Expr::SURPRISE : Expr::YAWN);
+            lastExpr = exprCur;
+            exprWinkLeft = random(0, 100) < 70 ? !lastWinkLeft : lastWinkLeft;
+            lastWinkLeft = exprWinkLeft;
+            exprYawnSize = 0.55f + 0.45f * (random(0, 100) / 100.0f);
             exprStartMs = now;
-            exprDurMs = exprCur == Expr::WINK ? 450 : (exprCur == Expr::YAWN ? 2200 : 900);
+            exprDurMs = exprCur == Expr::WINK ? 450 : (exprCur == Expr::YAWN ? (uint32_t)(1700.0f + 500.0f * exprYawnSize) : 900);
             if (exprCur == Expr::YAWN)
                 audio_play_async(SOUND_INDEX_YAWN);
         }
@@ -735,10 +750,14 @@ namespace disp
     void exprForce(Expr e, uint32_t now, uint32_t durMs)
     {
         exprCur = e;
+        lastExpr = e; // a random expression does not repeat this one right away
         exprStartMs = now;
         exprDurMs = durMs;
         if (e == Expr::YAWN)
+        {
+            exprYawnSize = 0.7f + 0.3f * (random(0, 100) / 100.0f);
             audio_play_async(SOUND_INDEX_YAWN);
+        }
     }
 
     // The first ANTICIPATE_MS of a surprise: the eyes squash a little before they pop (see drawFace).
