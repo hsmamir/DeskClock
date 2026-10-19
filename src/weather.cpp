@@ -73,13 +73,25 @@ static bool fetchWeather()
 
     http.setConnectTimeout(8000); // never hang the weather task on a dead connection
     http.setTimeout(8000);
+    // HTTP/1.0 = the server answers without chunked transfer encoding, so the raw stream below is plain JSON
+    // (update_check.cpp needs its BodyStream wrapper only because GitHub answers chunked).
+    http.useHTTP10(true);
     int status = http.GET();
     if (status == HTTP_CODE_OK)
     {
-        String body = http.getString();
+        // Parse straight from the socket instead of http.getString(): no ~1.5 KB String that grows in steps
+        // (heap fragmentation next to the 40 KB sprites), and the filter keeps only the fields used below.
+        JsonDocument filter;
+        filter["current"] = true;
+        filter["daily"]["temperature_2m_max"] = true;
+        filter["daily"]["temperature_2m_min"] = true;
+        filter["daily"]["uv_index_max"] = true;
+        filter["hourly"]["time"] = true;
+        filter["hourly"]["temperature_2m"] = true;
+        filter["hourly"]["precipitation_probability"] = true;
 
         JsonDocument doc; // ArduinoJson v7 — auto-sized
-        if (deserializeJson(doc, body) == DeserializationError::Ok)
+        if (deserializeJson(doc, http.getStream(), DeserializationOption::Filter(filter)) == DeserializationError::Ok)
         {
             float temp = doc["current"]["temperature_2m"] | NAN;
             int code = doc["current"]["weather_code"] | -1;

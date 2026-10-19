@@ -117,12 +117,20 @@ static void displayTask(void *pvParameters)
 {
     display_init();
     watchdogWatchThisTask("display");
-    const TickType_t frameDelay = pdMS_TO_TICKS(33); // ~30fps
+    const uint32_t framePeriodMs = 33; // ~30fps
     for (;;)
     {
+        const uint32_t t0 = millis();
         display_tick();
         watchdogFeed();
-        vTaskDelay(frameDelay);
+        // Sleep only for what is left of the frame period. A fixed vTaskDelay(33) made every frame take
+        // (drawing time + 33 ms), i.e. ~22 fps when a frame needs ~11 ms. At least one tick is always
+        // slept, so a slow frame can never keep the idle task or the equal-priority tasks from running.
+        const uint32_t spentMs = millis() - t0;
+        TickType_t waitTicks = pdMS_TO_TICKS(spentMs >= framePeriodMs ? 1 : framePeriodMs - spentMs);
+        if (waitTicks == 0)
+            waitTicks = 1;
+        vTaskDelay(waitTicks);
     }
 }
 
