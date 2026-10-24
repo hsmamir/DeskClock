@@ -254,7 +254,7 @@ namespace disp
         const uint16_t glass = mixColor(rgb(8, 10, 22), C_EYE_BOT, 0.12f); // the tint of the lenses
         const uint16_t rim = mixColor(rgb(95, 100, 125), C_EYE_TOP, 0.25f);
         const uint16_t barCol = rgb(10, 11, 20);
-        const int16_t rt = imax(2, u(3));                           // top corners: nearly square
+        const int16_t rt = imax(2, u(3));                          // top corners: nearly square
         const int16_t rb = imin(u(10), (int16_t)(lensH - rt - 1)); // bottom corners: round
         const int16_t barH = imax(2, u(3));
         const int16_t xl = lcx - lensW / 2, xr = rcx - lensW / 2;
@@ -345,6 +345,8 @@ namespace disp
         }
     }
 
+    bool momentActive() { return cur != Moment::NONE; }
+
     void drawMomentFront(TFT_eSPI &g, uint32_t now)
     {
         if (cur == Moment::NONE)
@@ -369,6 +371,7 @@ namespace disp
 #else
 
     void momentUpdate(const struct tm *, bool, bool, bool, uint32_t) {}
+    bool momentActive() { return false; }
     void drawMomentFront(TFT_eSPI &, uint32_t) {}
 
 #endif

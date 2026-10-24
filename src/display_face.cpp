@@ -1,6 +1,7 @@
 // display_face.cpp - the face: pet reaction expressions and drawFace() (eyes, brows, sleepy Zs ...).
 #include "display_internal.h"
 #include "weather_mood.h"
+#include "display_wx.h"
 
 namespace disp
 {
@@ -283,9 +284,12 @@ namespace disp
                 drawEye(g, rcx, cy, eyeW, eyeH, open, 0, BROW_NONE, 1, C_EYE_TOP, C_EYE_BOT, true);
                 int16_t my = cy + R + u(10);
                 int16_t rx = u(2) + (int16_t)(u(7) * env), ry = u(2) + (int16_t)(u(6) * env);
-                g.fillEllipse(W / 2, my, rx, ry, dimColor(C_HEART, 200));
-                if (rx > 3 && ry > 3)
-                    g.fillEllipse(W / 2, my, rx - 2, ry - 2, rgb(40, 6, 22));
+                if (!faceMaskUp) // behind the mask there is no yawn to see
+                {
+                    g.fillEllipse(W / 2, my, rx, ry, dimColor(C_HEART, 200));
+                    if (rx > 3 && ry > 3)
+                        g.fillEllipse(W / 2, my, rx - 2, ry - 2, rgb(40, 6, 22));
+                }
             }
             else // ... then a happy good morning
             {
@@ -298,6 +302,7 @@ namespace disp
         case PetKind::RARE_WINK:
             drawEye(g, lcx, cy, eyeW, eyeH, 1.0f, 0, BROW_NONE, -1, C_EYE_TOP, C_EYE_BOT, true);
             drawHappyEye(g, rcx, cy, Re); // winking eye
+            if (!faceMaskUp)              // (no tongue out through a mask)
             {
                 // tongue hangs from the smile (drawn before the mouth arc, which then covers its top edge)
                 int16_t my = cy + eyeH / 2 + u(10);
@@ -497,6 +502,8 @@ namespace disp
         int16_t lcx = W / 2 - R * 2;
         int16_t rcx = W / 2 + R * 2;
 
+        const int16_t maskDy = cy - (int16_t)(faceH * 0.55f); // the occasion's hop of the eyes: the mask hops too
+        faceMaskUp = false;
         // Wake-up at boot: a black card, then a thin line grows from the middle; the lids open after that.
         if (persona.stage != PStage::RUN)
         {
@@ -591,6 +598,9 @@ namespace disp
         eyesSetTargets(mood, moodR, scale, lookX * u(5) + lookTremX, lookY * u(4) + lookTremY, lookX, R);
         eyesStep(now);
 
+        if (!alarm)
+            faceMaskUpdate(now); // the air alone decides; every path below that draws a face draws the mask
+
         if (alarm)
         {
             int16_t shake = alarmFlashOn ? u(2) : -u(2);
@@ -610,6 +620,8 @@ namespace disp
         if (persona.asleep && !happy)
         {
             drawSleepFace(g, now, cy, lcx, rcx, R);
+            if (faceMaskUp)
+                drawFaceMask(g, now, 0, maskDy, false); // he sleeps with it on
             return;
         }
 
@@ -618,7 +630,10 @@ namespace disp
             if (antic) // the squash before the hearts burst out
             {
                 drawRigEyes(g, lcx, rcx, cy, 0, 0);
-                drawMouth(g, W / 2, mouthY);
+                if (faceMaskUp)
+                    drawFaceMask(g, now, 0, maskDy, false);
+                else
+                    drawMouth(g, W / 2, mouthY);
                 return;
             }
             // Cross-fade: the (shrinking) eyes stay underneath until they are gone, the glyphs grow on top.
@@ -626,7 +641,10 @@ namespace disp
                 drawRigEyes(g, lcx, rcx, cy, 0, 0);
             petTempK = petEv.kind == PetKind::HOT ? wxHotIntensity(scn.tempC) : (petEv.kind == PetKind::COLD ? wxColdIntensity(scn.tempC) : 1.0f);
             drawPetFace(g, now, purr, sleepy, cy, lcx, rcx, R, eyeW, eyeH, decor ? eyesDecorPop() : 1.0f);
-            drawMouth(g, W / 2, mouthY);
+            if (faceMaskUp) // the smile and the tongue are behind the mask
+                drawFaceMask(g, now, 0, maskDy, false);
+            else
+                drawMouth(g, W / 2, mouthY);
             return;
         }
 
@@ -666,6 +684,11 @@ namespace disp
 
         drawRigEyes(g, lcx, rcx, cyE, squeeze, shiver);
 
+        // the mask goes with the head (peek-a-boo, sneeze kick, hiccup hop, shiver) and shakes in a sneeze; it is drawn
+        // before the extras (fly, spray, dots), which stay in front of it
+        if (faceMaskUp)
+            drawFaceMask(g, now, shiver, maskDy + (cyE - cy), persona.sneezeJerk > 0 || persona.sneezeMouth);
+
         // extras
         uint16_t dropCol = rgb(120, 200, 255);
         if (reaction == Reaction::WORRIED || (reaction == Reaction::HOT && tempK >= 0.5f)) // sweat only when really hot
@@ -693,7 +716,7 @@ namespace disp
         {
             drawBang(g, W / 2, cy - u(2), u(19), C_AMBER);
         }
-        if (ex == Expr::YAWN)
+        if (ex == Expr::YAWN && !faceMaskUp) // (behind the mask the eyes squeeze, that is all)
         {
             float s = sinf(exprP * (float)M_PI); // mouth opens, then closes
             int16_t my = cy + R + u(10);
@@ -703,7 +726,8 @@ namespace disp
                 g.fillEllipse(W / 2, my, rx - 2, ry - 2, rgb(40, 6, 22));
         }
 
-        drawMouth(g, W / 2, mouthY);
+        if (!faceMaskUp)
+            drawMouth(g, W / 2, mouthY);
 
         if (sleepy && !persona.snoozed && !persona.startled)
             drawSleepZ(g, now, cy, R);

@@ -2,8 +2,10 @@
 //
 //   drawWxDailySection  "Next days": one row per day - weekday, icon, chance of rain, high / low
 //   drawWxAirSection    "Air quality": big US AQI, a gauge, PM2.5, PM10, pollen
-//   drawWeatherAccessory  umbrella (rain within WX_RAIN_WARN_MIN minutes), face mask + cough (AQI at or above
-//                         WX_AIRQ_MASK_AQI), sunglasses (UV index at or above WX_UV_SHADES_MIN, bright sky only)
+//   drawWeatherAccessory  umbrella (rain within WX_RAIN_WARN_MIN minutes), sunglasses (UV index at or above
+//                         WX_UV_SHADES_MIN, bright sky only)
+//   faceMaskUpdate / drawFaceMask  face mask + cough (AQI at or above WX_AIRQ_MASK_AQI). Not part of the face: shown
+//                         whenever the air is bad, in every face state.
 //
 // The two page parts are laid out like one block that is a whole page tall (faceH + infoH), from its top edge, and drawn
 // into whichever canvas shows a piece of it: display_page_weather.cpp calls them once per canvas with oy = the canvas y of
@@ -398,30 +400,66 @@ namespace disp
         else
             snprintf(buf, sizeof(buf), "%s in %d min", what, (int)((msLeft + 59999) / 60000));
         g.setTextDatum(BC_DATUM);
-        g.setTextColor(dropCol);
+        // the face mask sits right where this text is: light blue on the pale cloth cannot be read, so it turns dark
+        g.setTextColor(faceMaskUp ? rgb(20, 70, 125) : dropCol);
         g.drawString(buf, W / 2, faceH - u(3), lblFont());
     }
 
     // ---- Face mask below the eyes; every WX_COUGH_PERIOD_MS a cough: the mask shakes and puffs fly out ----
-    static void drawMask(TFT_eSPI &g, uint32_t now, float bad) // bad = 0..1 (wxAirIntensity): the worse the air, the more he coughs
+    // Shown whenever the air is bad (AQI), nothing else: display.cpp draws it over the face in every face state.
+    bool faceMaskUp = false;
+    static int s_maskAqi = -1; // the AQI the mask was switched on / kept by (how hard he coughs)
+
+    bool faceMaskUpdate(uint32_t now)
+    {
+        faceMaskUp = false;
+#if WX_AIRQ_ENABLED
+        if (WX_AIRQ_MASK_AQI <= 0)
+            return false;
+        WeatherExtra x;
+        if (!weather_extra_get(x))
+            return false;
+        const bool aqFresh = x.aqValid && (uint32_t)(now - x.aqMs) <= 2UL * WX_AIRQ_REFRESH_MS;
+        faceMaskUp = aqFresh && wxIsBadAir(x.usAqi);
+        s_maskAqi = x.usAqi;
+#else
+        (void)now;
+#endif
+        return faceMaskUp;
+    }
+
+    // The mask sits below the eyes. It is not a face state: whether it is there depends on the air alone. But it is
+    // worn on the head, so it goes where the head goes: dx / dy = how far the eyes are from their resting place (peek-a-boo,
+    // the kick of a sneeze, a hiccup, a shiver), puff = it shakes with a sneeze like in a cough.
+    void faceMaskRect(int16_t &x0, int16_t &y0, int16_t &w, int16_t &h)
     {
         const FaceGeom f = faceGeom();
-        const int16_t cx = W / 2;
-        const int16_t mw = u(54), mh = u(15), rr = u(6);
-        int16_t my = f.cy + f.eyeH / 2 + u(4);
-        if (my + mh > faceH - u(1))
-            my = faceH - u(1) - mh; // stay inside the card
+        w = u(54);
+        h = u(15);
+        x0 = W / 2 - w / 2;
+        y0 = f.cy + f.eyeH / 2 + u(4);
+        if (y0 + h > faceH - u(1))
+            y0 = faceH - u(1) - h; // stay inside the card
+    }
 
+    void drawFaceMask(TFT_eSPI &g, uint32_t now, int16_t dx, int16_t dy, bool puff)
+    {
+        int16_t bx, by, mw, mh;
+        faceMaskRect(bx, by, mw, mh);
+        const int16_t rr = u(6);
+        const float bad = wxAirIntensity(s_maskAqi); // the worse the air, the more he coughs
         const uint32_t period = (uint32_t)((float)WX_COUGH_PERIOD_MS - bad * (float)(WX_COUGH_PERIOD_MS - WX_COUGH_PERIOD_MIN_MS));
         const uint32_t ph = now % period;
         const bool cough = ph < 900;
         int16_t jx = 0, jy = 0;
-        if (cough)
+        if (cough || puff)
         {
             jx = ((now / 55) & 1) ? u(1) : -u(1);
             jy = ((now / 110) & 1) ? u(1) : 0;
         }
-        const int16_t x0 = cx - mw / 2 + jx, y0 = my + jy;
+        const int16_t x0 = bx + dx + jx, y0 = by + dy + jy;
+        if (y0 >= faceH || y0 + mh <= 0)
+            return; // the head is out of the card (peek-a-boo)
         const uint16_t cloth = rgb(205, 228, 242), edge = rgb(70, 105, 130), pleat = rgb(150, 185, 205), strap = rgb(150, 170, 190);
 
         // ear straps (behind the mask)
@@ -557,14 +595,17 @@ namespace disp
     static bool s_shadesWas = false; // the UV condition held at the last call
     static uint32_t s_shadesT0 = 0;  // the first time the sunglasses fall in after the UV became high
 
-    void drawWeatherAccessory(TFT_eSPI &g, uint32_t now, const SceneInfo &scn)
+    // umbrellaOk: the umbrella may be up (it is above the eyes, so it goes with a sneeze, a surprise, a fly, a yawn ...).
+    // shadesOk:   the sunglasses may be on (they sit on the eyes, so only while the face is calm). If something starts while
+    //             they are on, they lift off like at the end of their time instead of vanishing from one frame to the next.
+    // Both come from display.cpp, which also draws the face mask (faceMaskUpdate / drawFaceMask) in every state.
+    void drawWeatherAccessory(TFT_eSPI &g, uint32_t now, const SceneInfo &scn, bool umbrellaOk, bool shadesOk)
     {
 #if WX_ACCESSORIES
         WeatherExtra x;
         if (!weather_extra_get(x))
             return;
         const bool fcFresh = x.forecastValid && (uint32_t)(now - x.forecastMs) <= (uint32_t)WEATHER_STALE_MS;
-        const bool aqFresh = x.aqValid && (uint32_t)(now - x.aqMs) <= 2UL * WX_AIRQ_REFRESH_MS;
 
         // UV: the first pair of sunglasses comes a few seconds after the UV became high, then once per period.
         // Only under a bright sky (not in rain, a thunderstorm or fog, whatever the model's UV index says), and the
@@ -575,9 +616,9 @@ namespace disp
             s_shadesT0 = now + 8000;
         s_shadesWas = shadesCond;
 
-        // 1. above the eyes: the umbrella (rain soon) or the sunglasses over them; never both
+        // above the eyes: the umbrella (rain soon) or the sunglasses over them; never both
         bool aboveEyes = false;
-        if (WX_RAIN_SOON_ENABLED && fcFresh && x.rainSoon)
+        if (umbrellaOk && WX_RAIN_SOON_ENABLED && fcFresh && x.rainSoon)
         {
             // the umbrella stays until the rain has started (the weather code takes over then) plus a short grace
             const int32_t ms = (int32_t)(x.rainSoonAtMs - now);
@@ -592,20 +633,28 @@ namespace disp
             int32_t t = (int32_t)(now - s_shadesT0);
             if (t >= 0)
             {
+                const uint32_t DROP_DONE = 450 + 150, LIFT = 500; // as in drawUvShades(): fall + bounce, lift
+                const uint32_t liftAt = WX_UV_SHADES_ON_MS - LIFT;
                 t %= (int32_t)WX_UV_SHADES_PERIOD_MS;
                 if ((uint32_t)t < WX_UV_SHADES_ON_MS)
-                    drawUvShades(g, (uint32_t)t);
+                {
+                    if (!shadesOk && (uint32_t)t >= DROP_DONE && (uint32_t)t < liftAt)
+                    {
+                        // the face is not calm any more: start the lift from where they are (they sit on the eyes now)
+                        s_shadesT0 = now - liftAt;
+                        t = (int32_t)liftAt;
+                    }
+                    if (shadesOk || (uint32_t)t >= liftAt)
+                        drawUvShades(g, (uint32_t)t);
+                }
             }
         }
-
-        // 2. bad air: the mask stays on while it lasts (it sits below the eyes, so it goes with either of the above;
-        //    the index has a hysteresis and the cough gets more frequent the worse it is, weather_mood.cpp)
-        if (WX_AIRQ_ENABLED && WX_AIRQ_MASK_AQI > 0 && aqFresh && wxIsBadAir(x.usAqi))
-            drawMask(g, now, wxAirIntensity(x.usAqi));
 #else
         (void)g;
         (void)now;
         (void)scn;
+        (void)umbrellaOk;
+        (void)shadesOk;
 #endif
     }
 

@@ -338,6 +338,16 @@ namespace disp
     void drawFace(TFT_eSPI &g, uint32_t now, bool alarm, bool happy, bool purr, bool sleepy,
                   const SceneInfo &scn, Reaction reaction, float exprP);
 
+    // ---- Face mask for bad air (display_wx.cpp) ----
+    // Whether it is worn depends on the air alone (faceMaskUpdate, once per frame in drawFace). It is not a face state:
+    // no act, expression or reaction switches it off. The character is aware of it, though: what would be drawn where the
+    // mouth is (smile, yawn, tongue, spray, puff) is left out or comes out at the mask's edges, and the mask goes with the head.
+    extern bool faceMaskUp;
+    bool faceMaskUpdate(uint32_t now);
+    void faceMaskRect(int16_t &x0, int16_t &y0, int16_t &w, int16_t &h);
+    void drawFaceMask(TFT_eSPI &g, uint32_t now, int16_t dx, int16_t dy, bool puff);
+    bool momentActive(); // an easter-egg minute (display_moments.cpp) is playing: no sunglasses on top of it
+
     // ---- Persona: behaviours that span many frames (display_persona.cpp) ----
     // personaUpdate() runs once per tick, after the reaction is known, and fills `persona`; drawFace(),
     // updateLook(), updateBlink(), the info panel and display_tick() read it.

@@ -412,13 +412,16 @@ void display_tick()
         {
             drawOccasionFront(g, now);
             drawMomentFront(g, now);
-            // umbrella (rain soon), face mask (bad air), sunglasses (high UV): only while the face is calm, so they
-            // never fight with a pet reaction, sleep, a one-off act or an occasion (weather_extras.h, display_wx.cpp)
-            if (!happy && !sleepy && occ.kind == Occasion::NONE && exprCur == Expr::NONE && !persona.asleep &&
-                !persona.snoozed && !persona.frown && !persona.thinking && !persona.sulking && !persona.flyOn &&
-                persona.peek <= 0.01f && persona.relief <= 0.15f && !persona.sneezeMouth && persona.hiccupHop <= 0.3f &&
-                persona.sneezeSpray <= 0.0f && persona.hiccupText <= 0.0f)
-                drawWeatherAccessory(g, now, scn);
+            // Accessories of the weather, drawn over the face. (The face mask is drawn inside drawFace(), at the layer
+            // between the eyes and the fly / spray; it depends on the air only.)
+            const bool eyesHere = !sleepy && !persona.asleep && !persona.snoozed && !persona.frown && persona.peek <= 0.01f;
+            const bool hatOcc = occ.kind == Occasion::EASTER || occ.kind == Occasion::CHRISTMAS || occ.kind == Occasion::NEW_YEAR_EVE;
+            const bool umbrellaOk = !happy && eyesHere && !hatOcc;
+            const bool shadesOk = !happy && eyesHere && occ.kind == Occasion::NONE && exprCur == Expr::NONE &&
+                                  !persona.thinking && !persona.sulking && !persona.flyOn && persona.relief <= 0.15f &&
+                                  !persona.sneezeMouth && persona.hiccupHop <= 0.3f && persona.sneezeSpray <= 0.0f &&
+                                  persona.hiccupText <= 0.0f && !momentActive();
+            drawWeatherAccessory(g, now, scn, umbrellaOk, shadesOk);
         }
         drawStatusIcons(g, now);
         drawHoldRing(g);
