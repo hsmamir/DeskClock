@@ -1,8 +1,8 @@
 // display_eyes.cpp - eye drawing primitives, idle blink / look-around / expression state machines
 // and the reaction picker (what the weather / WiFi make the eyes do).
 #include "display_internal.h"
+#include "display_character.h"
 #include "audio.h"
-#include "weather_mood.h"
 
 namespace disp
 {
@@ -40,6 +40,11 @@ namespace disp
 
     void drawHeart(TFT_eSPI &g, int16_t x, int16_t y, int16_t s, uint16_t c)
     {
+#if CHARACTER_STYLE
+        // the heart spans y - s/2 .. y + 3s/2 (width 2 s): its middle is y + s/2; the sprite is 4 px "s" wide
+        drawCharMono(g, CharMono::HEART, x, y + s / 2, s / 4.0f, c);
+        return;
+#endif
         int16_t r = imax(1, s / 2);
         g.fillCircle(x - r, y, r, c);
         g.fillCircle(x + r, y, r, c);
@@ -261,8 +266,6 @@ namespace disp
     // Cheek = three concentric ellipses (outer -> inner), tint 0.12 / 0.20 / 0.30, times strength 0..1.
     // On the face sprite they are translucent pink over the real background (the layers are chained so the
     // centre ends up at exactly 0.30); in the viewport fallback they are opaque tints of the background colour.
-    uint16_t cheekColor = C_CHEEK;
-
     void drawCheek(TFT_eSPI &g, int16_t cx, int16_t cy, int16_t rx, int16_t ry, float strength)
     {
         if (strength < 0.03f)
@@ -280,10 +283,10 @@ namespace disp
             {
                 float a = prev < 0.999f ? 1.0f - (1.0f - want) / (1.0f - prev) : 0.0f; // alpha of this layer
                 if (a > 0.005f)
-                    blendEllipse(g, rd, cx, cy, erx, ery, cheekColor, a);
+                    blendEllipse(g, rd, cx, cy, erx, ery, C_CHEEK, a);
             }
             else
-                g.fillEllipse(cx, cy, erx, ery, tint(cheekColor, want));
+                g.fillEllipse(cx, cy, erx, ery, tint(C_CHEEK, want));
             prev = want;
         }
     }
@@ -336,6 +339,13 @@ namespace disp
     void drawMouth(TFT_eSPI &g, int16_t cx, int16_t my)
     {
         float a = smooth01(mouthA);
+#if CHARACTER_STYLE
+        // The clock character always has a mouth: the small dash. It fades out while a smile / "o" / "w" fades in.
+        // Not while a yawn draws its own big mouth.
+        bool bigYawn = exprCur == Expr::YAWN || (petEv.kind == PetKind::MORNING && millis() - happyStartMs < 1500);
+        if (!bigYawn)
+            drawCharMouth(g, cx, my, mouthKind == MouthKind::NONE ? 1.0f : 1.0f - a);
+#endif
         if (mouthKind == MouthKind::NONE || a < 0.04f)
             return;
         TFT_eSprite *rd = readableSprite(g);
@@ -394,6 +404,10 @@ namespace disp
     void drawEyeShape(TFT_eSPI &g, int16_t cx, int16_t cy, const EyeShape &s, float openness, int8_t side,
                       uint16_t cTop, uint16_t cBot, bool shine)
     {
+#if CHARACTER_STYLE
+        drawCharacterEye(g, cx, cy, s, openness, side, cTop, cBot, shine);
+        return;
+#endif
         if (s.w < 3 || s.h < 3) // shrunk away (cross-fade to a decoration)
             return;
         float w = s.w;
@@ -498,14 +512,8 @@ namespace disp
         /* TIRED      32x34 */ SYM(2.0000f, 2.1250f, 0.72f, 0.50f, 0.0f, 0.0f),
         /* SURPRISED  37x42 */ SYM(2.3125f, 2.6250f, 0.90f, 0.00f, 0.0f, 0.0f),
         /* SUSPICIOUS       */ {{2.0f, 2.25f, 0.72f, 0.50f, 0.0f, 0.0f}, {2.0f, 2.25f, 0.72f, 0.00f, 0.0f, 0.0f}},
-        /* HOT              */ SYM(2.0000f, 2.2000f, 0.72f, 0.34f, -0.20f, 0.0f),  // lids droop, the outer corners a little more
-        /* COLD             */ SYM(2.0000f, 2.2500f, 0.72f, 0.15f, 0.0f, 0.0f),    // (the squash before a big pet reaction)
-        /* CALM       32x35 */ SYM(2.0000f, 2.2000f, 0.72f, 0.12f, -0.10f, 0.06f), // relaxed, no sad brows
-        /* ALARMED    36x41 */ SYM(2.2500f, 2.5500f, 0.84f, 0.08f, -0.35f, 0.0f),  // wide and worried
-        /* WONDER     34x39 */ SYM(2.1500f, 2.4500f, 0.80f, 0.00f, 0.0f, 0.12f),   // big, bright, a smile underneath
-        /* MISTY      32x33 */ SYM(2.0000f, 2.0800f, 0.72f, 0.32f, 0.0f, 0.10f),   // half-lidded
-        /* CHILLED    31x34 */ SYM(1.9000f, 2.1000f, 0.68f, 0.28f, 0.0f, 0.24f),   // squeezed shut a little from both sides
-        /* WINDY      30x32 */ SYM(1.9000f, 2.0000f, 0.66f, 0.36f, -0.12f, 0.20f), // narrowed into the gust, brows a touch lowered outside
+        /* HOT              */ SYM(2.0000f, 2.2500f, 0.72f, 0.28f, 0.0f, 0.0f),
+        /* COLD             */ SYM(2.0000f, 2.2500f, 0.72f, 0.15f, 0.0f, 0.0f),
     };
 
     enum EyeParam : uint8_t
@@ -535,26 +543,13 @@ namespace disp
     static float crossPxV = 0; // cross-eyed: the left eye moves this far right, the right eye the same far left
     void eyesSetCross(float px) { crossPxV = px; }
 
-    static float moodKV = 1.0f; // how far the mood presets are applied (hot / cold are graded)
-    void eyesSetMoodK(float k) { moodKV = clamp01(k); }
-
-    // The preset p, blended from the NEUTRAL eyes by moodKV.
-    static EyePreset gradedPreset(const EyePreset &p, const EyePreset &n)
-    {
-        const float k = moodKV;
-        if (k >= 0.999f)
-            return p;
-        return {n.w + (p.w - n.w) * k, n.h + (p.h - n.h) * k, n.radius + (p.radius - n.radius) * k,
-                n.lidTop + (p.lidTop - n.lidTop) * k, n.slant + (p.slant - n.slant) * k, n.lidBot + (p.lidBot - n.lidBot) * k};
-    }
-
     void eyesSetTargets(EyeMood left, EyeMood right, float scale, float lookPxX, float lookPxY, float gazeN, int16_t R)
     {
         const EyeMood mood[2] = {left, right};
         gazeNorm = gazeN < -1 ? -1 : (gazeN > 1 ? 1 : gazeN);
         for (uint8_t i = 0; i < 2; i++)
         {
-            const EyePreset p = gradedPreset(PRESETS[(uint8_t)mood[i]][i], PRESETS[(uint8_t)EyeMood::NEUTRAL][i]);
+            const EyePreset &p = PRESETS[(uint8_t)mood[i]][i];
             Spring *sp = eyeSp[i];
             sp[P_W].target = p.w * R * scale;
             sp[P_H].target = p.h * R * scale;
@@ -660,22 +655,13 @@ namespace disp
         switch (reaction)
         {
         case Reaction::WORRIED:
-        case Reaction::SAD: // heavy rain
-            return EyeMood::SAD;
         case Reaction::STORM:
-            return EyeMood::ALARMED;
-        case Reaction::RAIN:
-            return EyeMood::CALM;
-        case Reaction::SNOW:
-            return EyeMood::WONDER;
-        case Reaction::FOG:
-            return EyeMood::MISTY;
+        case Reaction::SAD:
+            return EyeMood::SAD;
         case Reaction::HOT:
             return EyeMood::HOT;
         case Reaction::COLD:
-            return EyeMood::CHILLED;
-        case Reaction::WIND:
-            return EyeMood::WINDY;
+            return EyeMood::COLD;
         default:
             break;
         }
@@ -685,6 +671,10 @@ namespace disp
     // Happy "^ ^" eye drawn as a thick arch, plus blush.
     void drawHappyEye(TFT_eSPI &g, int16_t cx, int16_t cy, int16_t R)
     {
+#if CHARACTER_STYLE
+        charHappyEye(g, cx, cy, R);
+        return;
+#endif
         float rx = R * 0.95f, ry = R * 0.9f;
         int16_t th = imax(2, (int16_t)(R * 0.28f));
         int16_t baseY = cy + R / 3;
@@ -702,84 +692,23 @@ namespace disp
     //  Face
     // =====================================================================
 
-    // What the weather makes the eyes do, as a steady situation (no timing).
-    static Reaction weatherSituation(const SceneInfo &scn)
-    {
-        switch (weatherMood(scn.weatherKnown, scn.code, scn.tempC, scn.windKmh)) // the one shared weather decision (weather_mood.h)
-        {
-        case WxMood::STORM:
-            return Reaction::STORM;
-        case WxMood::RAIN: // only heavy rain is sad; drizzle and ordinary rain are calm
-            return wxIsHeavyRain(scn.code) ? Reaction::SAD : Reaction::RAIN;
-        case WxMood::HOT:
-            return Reaction::HOT;
-        case WxMood::COLD:
-            return Reaction::COLD;
-        case WxMood::SNOW:
-            return Reaction::SNOW;
-        case WxMood::FOG:
-            return Reaction::FOG;
-        case WxMood::WIND:
-            return Reaction::WIND;
-        default:
-            return Reaction::NONE;
-        }
-    }
-
-    // Weather moments (WX_MOMENT_*): the situation only shows while a "moment" runs.
-    static Reaction momKind = Reaction::NONE; // the situation the schedule below was made for
-    static bool momOn = false;
-    static uint32_t momEndMs = 0, momNextMs = 0;
-
-    static uint32_t momDuration(Reaction r)
-    {
-        return r == Reaction::STORM ? random(WX_MOMENT_STORM_DUR_MIN_MS, WX_MOMENT_STORM_DUR_MAX_MS)
-                                    : random(WX_MOMENT_DUR_MIN_MS, WX_MOMENT_DUR_MAX_MS);
-    }
-    static uint32_t momGap(Reaction r)
-    {
-        return r == Reaction::STORM ? random(WX_MOMENT_STORM_GAP_MIN_MS, WX_MOMENT_STORM_GAP_MAX_MS)
-                                    : random(WX_MOMENT_GAP_MIN_MS, WX_MOMENT_GAP_MAX_MS);
-    }
-
-    Reaction pickReaction(const SceneInfo &scn, bool offline, bool sleepy, uint32_t now)
+    Reaction pickReaction(const SceneInfo &scn, bool offline, bool sleepy)
     {
         if (!EXPR_ENABLED || sleepy) // sleepy eyes at night stay sleepy
             return Reaction::NONE;
         if (offline)
-            return Reaction::WORRIED; // a warning, not a mood: always on
-        const Reaction sit = weatherSituation(scn);
-        if (!WX_MOMENT_ENABLED)
-            return sit;
-        if (sit == Reaction::NONE)
-        {
-            momKind = Reaction::NONE;
-            momOn = false;
+            return Reaction::WORRIED;
+        if (!scn.weatherKnown)
             return Reaction::NONE;
-        }
-        const bool flash = sit == Reaction::STORM && lightningActive(now);
-        if (sit != momKind) // new kind of weather = news: show it at once
-        {
-            momKind = sit;
-            momOn = true;
-            momEndMs = now + momDuration(sit);
-        }
-        else if (momOn)
-        {
-            if (flash && (int32_t)(momEndMs - now) < 1500)
-                momEndMs = now + 1500; // every flash while it runs keeps the flinch going
-            if ((int32_t)(now - momEndMs) >= 0)
-            {
-                momOn = false;
-                momNextMs = now + momGap(sit);
-            }
-        }
-        else if ((int32_t)(now - momNextMs) >= 0 && (sit != Reaction::STORM || flash))
-        {
-            momOn = true; // a storm waits for its next flash
-            momEndMs = now + momDuration(sit);
-        }
-        return momOn ? sit : Reaction::NONE;
+        if (scn.code >= 95)
+            return Reaction::STORM;
+        if ((scn.code >= 51 && scn.code <= 67) || (scn.code >= 80 && scn.code <= 82))
+            return Reaction::SAD;
+        if (scn.tempC >= REACT_HOT_C)
+            return Reaction::HOT;
+        if (scn.tempC <= REACT_COLD_C)
+            return Reaction::COLD;
+        return Reaction::NONE;
     }
 
     Expr exprCur = Expr::NONE;
@@ -999,9 +928,6 @@ namespace disp
         nextTremorAtMs = now + SACCADE_MS + random(300, 900);
     }
 
-    static float windLookX = 0; // where the wind blows to: +1 right .. -1 left, 0 = unknown
-    void eyesSetWindDir(float vx) { windLookX = vx; }
-
     void updateLook(uint32_t now, bool alarm, bool sleepy, Reaction reaction)
     {
         bool idlePick = false; // a random idle look was chosen this frame
@@ -1049,22 +975,10 @@ namespace disp
             lookTX = ((now / 800) & 1) ? 1.0f : -1.0f; // nervously looks left and right
             lookTY = 0;
         }
-        else if (reaction == Reaction::SAD)
+        else if (reaction == Reaction::SAD || reaction == Reaction::STORM)
         {
             lookTX = 0;
             lookTY = 0.8f;
-        }
-        else if (reaction == Reaction::STORM)
-        {
-            lookTX = 0; // tense, eyes on the sky (the flashes come from there)
-            lookTY = -0.6f;
-        }
-        else if (reaction == Reaction::WIND)
-        {
-            // squinting, looking away from the gust (the way it blows to); every few seconds a quick look back at it
-            float side = windLookX > 0.1f ? 1.0f : (windLookX < -0.1f ? -1.0f : (((now / 2600) & 1) ? 1.0f : -1.0f));
-            lookTX = ((now / 1900) % 4 == 3) ? -0.5f * side : side;
-            lookTY = 0.15f;
         }
         else if (now >= nextLookAtMs)
         {
@@ -1089,10 +1003,6 @@ namespace disp
             }
             else if (r == 8)
                 lookTY = -1;
-            if (reaction == Reaction::RAIN) // the usual wandering look, but now and then up at the sky / the drops
-                lookTY = fminf(lookTY, -0.4f);
-            else if (reaction == Reaction::SNOW) // ... and for the flakes
-                lookTY = fminf(lookTY, -0.3f);
             if (persona.celestOk && random(0, 100) < SKY_LOOK_PERCENT) // now and then: a look at the sun / moon
             {
                 lookTX = persona.celestX;
@@ -1141,6 +1051,10 @@ namespace disp
 
     void drawDrop(TFT_eSPI &g, int16_t x, int16_t y, int16_t r, uint16_t c)
     {
+#if CHARACTER_STYLE
+        drawCharMono(g, CharMono::DROP, x, y, r / 3.0f, c); // the sprite's round part has radius 3
+        return;
+#endif
         g.fillCircle(x, y, r, c);
         g.fillTriangle(x, y - 2 * r - r / 2, x - r, y - r / 2, x + r, y - r / 2, c);
     }

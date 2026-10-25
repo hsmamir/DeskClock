@@ -1,7 +1,6 @@
 // display_face.cpp - the face: pet reaction expressions and drawFace() (eyes, brows, sleepy Zs ...).
 #include "display_internal.h"
-#include "weather_mood.h"
-#include "display_wx.h"
+#include "display_character.h"
 
 namespace disp
 {
@@ -12,6 +11,18 @@ namespace disp
     PetEvent petEv = {PetKind::HAPPY, 0, 0, 0};
     uint32_t happyStartMs = 0;
 
+    // Distance from the eye line to the middle of the mouth. `oldHalf` is what the old LED eyes used:
+    // the old mouth sat at cy + oldHalf + u(10); the clock character has its own mouth line.
+    static int16_t mouthDyFor(int16_t oldHalf)
+    {
+#if CHARACTER_STYLE
+        (void)oldHalf;
+        return charMouthDy();
+#else
+        return oldHalf + u(10);
+#endif
+    }
+
     // =====================================================================
     //  Pet reactions (what pet.cpp picked; see PetKind)
     // =====================================================================
@@ -19,7 +30,7 @@ namespace disp
     // Small hearts rising from above the eyes. `age` = ms since they started; heart i starts
     // i*stepMs later and lives lifeMs.
     static void drawRisingHearts(TFT_eSPI &g, uint32_t age, int16_t cy, int16_t R, uint8_t n,
-                                 uint16_t stepMs, uint16_t lifeMs, int16_t size, uint16_t col = C_HEART)
+                                 uint16_t stepMs, uint16_t lifeMs, int16_t size)
     {
         for (uint8_t i = 0; i < n; i++)
         {
@@ -30,7 +41,7 @@ namespace disp
             float frac = fmodf(0.30f + i * 0.382f, 1.0f); // spread the hearts without a pattern
             int16_t hx = (int16_t)(W * (0.20f + 0.60f * frac)) + (int16_t)(sinf(p * 6.0f + i) * u(4));
             int16_t hy = (int16_t)(cy - R - u(2) - p * (cy - R - u(8)));
-            drawHeart(g, hx, hy, size, tint(col, (255 - p * 140) / 255.0f));
+            drawHeart(g, hx, hy, size, tint(C_HEART, (255 - p * 140) / 255.0f));
         }
     }
 
@@ -50,6 +61,10 @@ namespace disp
     // "!" of total height h centred on (cx, cyc): a rounded bar and a dot.
     static void drawBang(TFT_eSPI &g, int16_t cx, int16_t cyc, int16_t h, uint16_t c)
     {
+#if CHARACTER_STYLE
+        drawCharMono(g, CharMono::BANG, cx, cyc, h / 17.0f, c); // the sprite is 17 px tall
+        return;
+#endif
         int16_t bw = imax(3, (int16_t)(h * 0.26f + 0.5f)); // bar width
         int16_t dotR = imax(2, (int16_t)((bw + 1) / 2));   // dot radius
         int16_t barH = imax((int16_t)(bw + 1), (int16_t)(h * 0.55f + 0.5f));
@@ -63,6 +78,10 @@ namespace disp
     // bending away from the middle. drawSmoothArc angles: 0 = 6 o'clock, clockwise (90 = 9, 180 = 12, 270 = 3).
     static void drawAngerMark(TFT_eSPI &g, int16_t cx, int16_t cy, uint16_t c)
     {
+#if CHARACTER_STYLE
+        drawCharMono(g, CharMono::ANGER, cx, cy, sc, c);
+        return;
+#endif
         int16_t d = u(3);             // corner centres sit at (+-d, +-d) from the middle
         int16_t R = imax(3, u(4.5f)); // outer radius
         int16_t ir = imax(1, R - 2);  // inner radius (stroke = R - ir + 1 px)
@@ -84,6 +103,10 @@ namespace disp
     // Closed, contented eye "‿" (sleepy pet, purring): a thin arch curving downwards + blush.
     void drawContentEye(TFT_eSPI &g, int16_t cx, int16_t cy, int16_t R)
     {
+#if CHARACTER_STYLE
+        charContentEye(g, cx, cy, R);
+        return;
+#endif
         float rx = R * 0.9f, ry = R * 0.5f;
         int16_t th = imax(2, (int16_t)(R * 0.22f));
         int16_t baseY = cy - R / 6;
@@ -101,6 +124,10 @@ namespace disp
     static void drawHeartEye(TFT_eSPI &g, int16_t cx, int16_t cy, int16_t R, uint32_t age)
     {
         float pulse = 1.0f + 0.10f * sinf(age / 85.0f);
+#if CHARACTER_STYLE
+        charHeartEye(g, cx, cy, R, pulse);
+        return;
+#endif
         int16_t s = (int16_t)(R * 1.55f * pulse);
         drawHeartCentered(g, cx, cy, s + u(5), tint(C_HEART, 0.28f)); // glow
         drawHeartCentered(g, cx, cy, s, C_HEART);
@@ -111,6 +138,10 @@ namespace disp
     // Spiral for the dizzy eyes.
     static void drawSpiral(TFT_eSPI &g, int16_t cx, int16_t cy, int16_t R, float phase)
     {
+#if CHARACTER_STYLE
+        charSpiralEye(g, cx, cy, R, phase);
+        return;
+#endif
         const int steps = 36;
         int16_t dot = imax(1, (int16_t)(R * 0.16f));
         for (int i = 0; i <= steps; i++)
@@ -155,11 +186,6 @@ namespace disp
             return false;
         }
     }
-
-    // How strong the temperature is for the pet reaction that is showing (0..1, weather_mood.cpp); drawFace() sets it
-    // before drawPetFace(). The pet's hot / cold faces use the same grading and the same burst shiver as the idle ones.
-    static float petTempK = 1.0f;
-    static float coldShiverEnv(uint32_t now, bool active); // below, with the idle cold face
 
     // pop 0..1(+overshoot): how far the decorative glyphs (heart / spiral / arch eyes) have grown.
     static void drawPetFace(TFT_eSPI &g, uint32_t now, bool purr, bool sleepy, int16_t cy, int16_t lcx,
@@ -225,7 +251,11 @@ namespace disp
                 float a = age / 200.0f + k * 2.094f;
                 int16_t sx = W / 2 + (int16_t)(cosf(a) * R * 2.4f);
                 int16_t sy = cy - R - u(8) + (int16_t)(sinf(a) * u(4));
+#if CHARACTER_STYLE
+                drawCharMono(g, CharMono::SPARK, sx, sy, 0.7f * sc, C_AMBER);
+#else
                 g.fillCircle(sx, sy, imax(1, u(2)), C_AMBER);
+#endif
             }
             break;
         }
@@ -282,14 +312,11 @@ namespace disp
                 float open = 1.0f - 0.92f * env;
                 drawEye(g, lcx, cy, eyeW, eyeH, open, 0, BROW_NONE, -1, C_EYE_TOP, C_EYE_BOT, true);
                 drawEye(g, rcx, cy, eyeW, eyeH, open, 0, BROW_NONE, 1, C_EYE_TOP, C_EYE_BOT, true);
-                int16_t my = cy + R + u(10);
+                int16_t my = cy + mouthDyFor(R);
                 int16_t rx = u(2) + (int16_t)(u(7) * env), ry = u(2) + (int16_t)(u(6) * env);
-                if (!faceMaskUp) // behind the mask there is no yawn to see
-                {
-                    g.fillEllipse(W / 2, my, rx, ry, dimColor(C_HEART, 200));
-                    if (rx > 3 && ry > 3)
-                        g.fillEllipse(W / 2, my, rx - 2, ry - 2, rgb(40, 6, 22));
-                }
+                g.fillEllipse(W / 2, my, rx, ry, dimColor(C_HEART, 200));
+                if (rx > 3 && ry > 3)
+                    g.fillEllipse(W / 2, my, rx - 2, ry - 2, rgb(40, 6, 22));
             }
             else // ... then a happy good morning
             {
@@ -302,7 +329,6 @@ namespace disp
         case PetKind::RARE_WINK:
             drawEye(g, lcx, cy, eyeW, eyeH, 1.0f, 0, BROW_NONE, -1, C_EYE_TOP, C_EYE_BOT, true);
             drawHappyEye(g, rcx, cy, Re); // winking eye
-            if (!faceMaskUp)              // (no tongue out through a mask)
             {
                 // tongue hangs from the smile (drawn before the mouth arc, which then covers its top edge)
                 int16_t my = cy + eyeH / 2 + u(10);
@@ -345,43 +371,27 @@ namespace disp
 
         case PetKind::HOT:
         {
-            // The same character as the idle hot face, only happy: relaxed arches, a WARM blush instead of the pink
-            // one, the slow sweat drop at the right temple (when it is really hot), at most one small warm heart.
-            cheekColor = rgb(255, 150, 70);
             drawHappyEye(g, lcx, cy, Re);
             drawHappyEye(g, rcx, cy, Re);
-            cheekColor = C_CHEEK;
-            if (petTempK >= 0.5f)
-            {
-                float pd = fminf(1.0f, age / 3400.0f);
-                drawDrop(g, rcx + eyeW / 2 + u(9), (int16_t)(cy - R + pd * R * 2.2f), imax(2, u(3)),
-                         tint(dropCol, (255 - pd * 140) / 255.0f));
-            }
-            if (PET_HOT_HEARTS > 0)
-                drawRisingHearts(g, age, cy, R, PET_HOT_HEARTS, 0, 1100, u(3), rgb(255, 140, 60));
+            float pd = (age % 1400) / 1400.0f; // sweat drop, but still happy
+            drawDrop(g, lcx - eyeW / 2 - u(9), (int16_t)(cy - R + pd * R * 2.2f), imax(2, u(3)),
+                     tint(dropCol, (255 - pd * 140) / 255.0f));
+            drawRisingHearts(g, age, cy, R, 1, 0, 1100, u(4));
             break;
         }
 
         case PetKind::COLD:
         {
-            // The same shiver as the idle cold face (bursts, up to 1-2 px, only when it is really cold), a pale blue
-            // blush, snowflakes, one heart instead of two.
-            int16_t sh = 0;
-            const float env = coldShiverEnv(now, petTempK > 0.35f);
-            if (env > 0)
-                sh = (((now / 40) & 1) ? 1 : -1) * (int16_t)(u(1) * petTempK * 2.0f * env + 0.5f);
-            cheekColor = rgb(130, 185, 255);
+            int16_t sh = (((now / 40) & 1) ? 1 : -1) * u(1); // shiver
             drawHappyEye(g, lcx + sh, cy, Re);
             drawHappyEye(g, rcx + sh, cy, Re);
-            cheekColor = C_CHEEK;
             for (uint8_t k = 0; k < 4; k++) // snowflakes drifting down
             {
                 int16_t sx = (int16_t)(W * (0.15f + 0.2f * k)) + (int16_t)(sinf(age / 300.0f + k) * u(3));
                 int16_t sy = (int16_t)((age / 9 + k * 23) % faceH);
                 g.fillCircle(sx, sy, imax(1, u(1.5f)), C_ICE);
             }
-            if (PET_COLD_HEARTS > 0)
-                drawRisingHearts(g, age, cy, R, PET_COLD_HEARTS, 0, 1100, u(3), mixColor(C_HEART, C_ICE, 0.35f));
+            drawRisingHearts(g, age, cy, R, 2, 300, 1100, u(4));
             break;
         }
 
@@ -425,41 +435,6 @@ namespace disp
         }
     }
 
-    // The shiver of a cold day in bursts (SHIVER_*): 0 .. 1, how strong it is right now. `active` = the cold face is
-    // showing; when it is not, the schedule is forgotten, so every cold moment starts with a burst after a short delay.
-    static float coldShiverEnv(uint32_t now, bool active)
-    {
-        static bool on = false;
-        static uint32_t start = 0, len = 0, next = 0;
-        static float peak = 1.0f;
-        if (!active)
-        {
-            on = false;
-            next = 0;
-            return 0;
-        }
-        if (next == 0)
-            next = now + 250;
-        if (!on)
-        {
-            if ((int32_t)(now - next) < 0)
-                return 0;
-            on = true;
-            start = now;
-            len = random(SHIVER_BURST_MIN_MS, SHIVER_BURST_MAX_MS);
-            peak = 0.6f + 0.4f * (random(0, 101) / 100.0f); // every burst a little different
-        }
-        uint32_t el = now - start;
-        if (el >= len)
-        {
-            on = false;
-            next = now + random(SHIVER_GAP_MIN_MS, SHIVER_GAP_MAX_MS);
-            return 0;
-        }
-        float e = sinf((float)M_PI * (float)el / (float)len); // swells and fades
-        return sqrtf(e < 0 ? 0 : e) * peak;                   // sqrt: a longer strong middle
-    }
-
     // Both eyes from the spring rig. squeeze 0..1 = extra lid closing (yawn), dx = shiver offset.
     static void drawRigEyes(TFT_eSPI &g, int16_t lcx, int16_t rcx, int16_t cy, float squeeze, int16_t dx)
     {
@@ -473,25 +448,6 @@ namespace disp
         drawEyeShape(g, rcx + dx, cy, sr, 1.0f, 1, C_EYE_TOP, C_EYE_BOT, true);
     }
 
-    // Gust streaks flying across the card in the direction the wind blows (the WIND reaction); k = 0..1 strength.
-    static void drawWindStreaks(TFT_eSPI &g, uint32_t now, const SceneInfo &scn, float k)
-    {
-        const float vx = windBlowX(scn);
-        const int16_t dir = vx < 0 ? -1 : 1; // unknown direction: to the right
-        const uint16_t col = tint(C_ICE, 0.30f + 0.25f * k);
-        for (uint8_t i = 0; i < 3; i++)
-        {
-            const uint32_t period = (uint32_t)((1100 + i * 280) / (0.6f + 0.8f * k));
-            const float p = (float)((now + i * 410UL) % period) / (float)period;
-            const int16_t len = u(12 + 5 * i);
-            const int16_t y = (int16_t)(faceH * (0.20f + 0.27f * i)) + (int16_t)(sinf(now / 260.0f + i * 2.0f) * u(1));
-            const int16_t x0 = dir > 0 ? (int16_t)(-len + p * (W + len)) : (int16_t)(W - p * (W + len));
-            const int16_t xa = dir > 0 ? x0 : x0 - len;
-            g.drawFastHLine(xa, y, len, col);
-            g.drawFastHLine(xa + dir * u(3), y + 2, len / 2, dimColor(col, 150));
-        }
-    }
-
     void drawFace(TFT_eSPI &g, uint32_t now, bool alarm, bool happy, bool purr, bool sleepy,
                   const SceneInfo &scn, Reaction reaction, float exprP)
     {
@@ -502,8 +458,6 @@ namespace disp
         int16_t lcx = W / 2 - R * 2;
         int16_t rcx = W / 2 + R * 2;
 
-        const int16_t maskDy = cy - (int16_t)(faceH * 0.55f); // the occasion's hop of the eyes: the mask hops too
-        faceMaskUp = false;
         // Wake-up at boot: a black card, then a thin line grows from the middle; the lids open after that.
         if (persona.stage != PStage::RUN)
         {
@@ -523,8 +477,6 @@ namespace disp
             drawStars(g, now);
         if (!alarm)
             drawOccasionBack(g, now); // bats, snow, fireworks ... behind the eyes
-        if (!alarm && reaction == Reaction::WIND && !happy)
-            drawWindStreaks(g, now, scn, wxWindIntensity(scn.windKmh));
 
         // ---- Eye pose: situation -> presets -> spring targets. The springs run every frame, also
         // while the alarm / a pet reaction is drawn, so the eyes never jump when they come back. ----
@@ -541,8 +493,6 @@ namespace disp
         EyeMood moodR = (ex == Expr::WINK) ? EyeMood::HAPPY : mood; // a wink is just one eye's preset
         if (persona.frown)                                          // woken by a touch: a small frown before the smile
             mood = moodR = EyeMood::ANGRY;
-        if (persona.startled) // woken by thunder: wide eyes, worried brows
-            mood = moodR = EyeMood::ALARMED;
         float scale = 1.0f;
         if (reaction == Reaction::STORM && lightningActive(now))
             scale = 1.25f;           // flinch at every flash
@@ -575,19 +525,10 @@ namespace disp
                 wantMouth = MouthKind::OPEN_O; // the "hic"
         }
         eyesSetMouth(wantMouth);
-        int16_t mouthY = cy + eyeH / 2 + u(10); // ~y 76 on the 128x88 face
+        int16_t mouthY = cy + mouthDyFor(eyeH / 2); // ~y 76 on the 128x88 face (the clock character has its own mouth line)
         eyesSetFast(antic);
         eyesSetDecor(decor);
         eyesSetLidBias(persona.lidBias);
-        // warm / hot, cool / cold: the face is graded by the temperature (weather_mood.cpp); everything else is full strength
-        float tempK = 1.0f;
-        if (reaction == Reaction::HOT)
-            tempK = wxHotIntensity(scn.tempC);
-        else if (reaction == Reaction::COLD)
-            tempK = wxColdIntensity(scn.tempC);
-        else if (reaction == Reaction::WIND)
-            tempK = wxWindIntensity(scn.windKmh);
-        eyesSetMoodK(tempK);
         eyesSetCross(persona.cross * R * IDLE_FLYLAND_CROSS);
         if (ex == Expr::WINK && exprWinkLeft) // the wink is the right eye's preset; this time it is the left one
         {
@@ -597,9 +538,6 @@ namespace disp
         }
         eyesSetTargets(mood, moodR, scale, lookX * u(5) + lookTremX, lookY * u(4) + lookTremY, lookX, R);
         eyesStep(now);
-
-        if (!alarm)
-            faceMaskUpdate(now); // the air alone decides; every path below that draws a face draws the mask
 
         if (alarm)
         {
@@ -620,8 +558,6 @@ namespace disp
         if (persona.asleep && !happy)
         {
             drawSleepFace(g, now, cy, lcx, rcx, R);
-            if (faceMaskUp)
-                drawFaceMask(g, now, 0, maskDy, false); // he sleeps with it on
             return;
         }
 
@@ -630,35 +566,21 @@ namespace disp
             if (antic) // the squash before the hearts burst out
             {
                 drawRigEyes(g, lcx, rcx, cy, 0, 0);
-                if (faceMaskUp)
-                    drawFaceMask(g, now, 0, maskDy, false);
-                else
-                    drawMouth(g, W / 2, mouthY);
+                drawMouth(g, W / 2, mouthY);
                 return;
             }
             // Cross-fade: the (shrinking) eyes stay underneath until they are gone, the glyphs grow on top.
             if (decor)
                 drawRigEyes(g, lcx, rcx, cy, 0, 0);
-            petTempK = petEv.kind == PetKind::HOT ? wxHotIntensity(scn.tempC) : (petEv.kind == PetKind::COLD ? wxColdIntensity(scn.tempC) : 1.0f);
             drawPetFace(g, now, purr, sleepy, cy, lcx, rcx, R, eyeW, eyeH, decor ? eyesDecorPop() : 1.0f);
-            if (faceMaskUp) // the smile and the tongue are behind the mask
-                drawFaceMask(g, now, 0, maskDy, false);
-            else
-                drawMouth(g, W / 2, mouthY);
+            drawMouth(g, W / 2, mouthY);
             return;
         }
 
         // normal / sleepy eyes (the blink is the lid spring inside the rig)
         int16_t shiver = 0;
-        // a cool day squints, only a cold one shivers, and in bursts (the pre-alarm quiver of the persona stays steady)
-        const float shvEnv = coldShiverEnv(now, reaction == Reaction::COLD && tempK > 0.35f && !persona.shiver);
-        if (persona.shiver)
+        if (reaction == Reaction::COLD || persona.shiver)
             shiver = (((now / 40) & 1) ? 1 : -1) * u(1);
-        else if (shvEnv > 0)
-        {
-            float amp = tempK * 2.0f * shvEnv; // up to 1 px when mildly cold, up to 2 px at full strength; the edges of a burst round to 0
-            shiver = (((now / 40) & 1) ? 1 : -1) * (int16_t)(u(1) * amp + 0.5f);
-        }
         // peek-a-boo: the eyes rise from below the card's bottom edge (the sprite clips them)
         int16_t cyE = cy + (int16_t)(persona.peek * ((faceH - cy) + eyeH / 2));
         if (persona.sneezeJerk > 0)
@@ -679,24 +601,15 @@ namespace disp
             squeeze = (0.62f + 0.30f * exprYawnSize) * edge; // eyes squeeze shut mid-yawn (less in a small yawn)
         }
 
-        if (shvEnv > 0) // the eyes scrunch up a little during a burst
-            squeeze = fmaxf(squeeze, 0.18f * shvEnv);
-
         drawRigEyes(g, lcx, rcx, cyE, squeeze, shiver);
-
-        // the mask goes with the head (peek-a-boo, sneeze kick, hiccup hop, shiver) and shakes in a sneeze; it is drawn
-        // before the extras (fly, spray, dots), which stay in front of it
-        if (faceMaskUp)
-            drawFaceMask(g, now, shiver, maskDy + (cyE - cy), persona.sneezeJerk > 0 || persona.sneezeMouth);
 
         // extras
         uint16_t dropCol = rgb(120, 200, 255);
-        if (reaction == Reaction::WORRIED || (reaction == Reaction::HOT && tempK >= 0.5f)) // sweat only when really hot
+        if (reaction == Reaction::WORRIED || reaction == Reaction::HOT)
         {
-            // sweat drop sliding down the face: worried = left side, hot = right temple and slower, so the two differ
-            const bool hot = reaction == Reaction::HOT;
-            float pd = (now % (hot ? 3400 : 2600)) / (hot ? 3400.0f : 2600.0f);
-            int16_t sx = hot ? rcx + eyeW / 2 + u(9) : lcx - eyeW / 2 - u(9);
+            // sweat drop sliding down the left side of the face
+            float pd = (now % 2600) / 2600.0f;
+            int16_t sx = lcx - eyeW / 2 - u(9);
             int16_t sy = (int16_t)(cy - R + pd * R * 2.2f);
             drawDrop(g, sx, sy, imax(2, u(3)), tint(dropCol, (255 - pd * 140) / 255.0f));
         }
@@ -716,20 +629,19 @@ namespace disp
         {
             drawBang(g, W / 2, cy - u(2), u(19), C_AMBER);
         }
-        if (ex == Expr::YAWN && !faceMaskUp) // (behind the mask the eyes squeeze, that is all)
+        if (ex == Expr::YAWN)
         {
             float s = sinf(exprP * (float)M_PI); // mouth opens, then closes
-            int16_t my = cy + R + u(10);
+            int16_t my = cy + mouthDyFor(R);
             int16_t rx = u(2) + (int16_t)(u(7) * s * exprYawnSize), ry = u(2) + (int16_t)(u(6) * s * exprYawnSize);
             g.fillEllipse(W / 2, my, rx, ry, dimColor(C_HEART, 200));
             if (rx > 3 && ry > 3)
                 g.fillEllipse(W / 2, my, rx - 2, ry - 2, rgb(40, 6, 22));
         }
 
-        if (!faceMaskUp)
-            drawMouth(g, W / 2, mouthY);
+        drawMouth(g, W / 2, mouthY);
 
-        if (sleepy && !persona.snoozed && !persona.startled)
+        if (sleepy && !persona.snoozed)
             drawSleepZ(g, now, cy, R);
         drawPersonaExtras(g, now, cy, R, eyeH);
     }
