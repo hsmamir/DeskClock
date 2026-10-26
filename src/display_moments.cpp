@@ -47,7 +47,7 @@ namespace disp
     static void eyeGeom(uint32_t now, int16_t &R, int16_t &cy, int16_t &lcx, int16_t &rcx)
     {
         R = W / 8;
-        cy = (int16_t)(faceH * 0.55f) + occasionEyeDy(now, false);
+        cy = (int16_t)(faceH * FACE_CY_FRAC) + occasionEyeDy(now, false);
         lcx = W / 2 - R * 2;
         rcx = W / 2 + R * 2;
     }

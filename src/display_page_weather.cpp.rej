@@ -1,0 +1,10 @@
+--- src/display_page_weather.cpp	2026-10-25 07:11:29.222583125 +0000
++++ src/display_page_weather.cpp	2026-10-25 07:11:29.223851784 +0000
+@@ -16,6 +16,7 @@
+ // in its own canvas coordinates, shifted by `oy` = the canvas y of the block's top edge; the sprite clips whatever
+ // sticks out. Fixed parts (the coloured line at the top, the footer with the page dots, the scroll bar) are drawn last.
+ #include "display_internal.h"
++#include "display_style.h"
+ 
+ namespace disp
+ {

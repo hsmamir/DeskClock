@@ -318,7 +318,7 @@ namespace disp
         f.R = W / 8;
         f.eyeW = f.R * 2;
         f.eyeH = (int16_t)(f.R * 2.25f);
-        f.cy = (int16_t)(faceH * 0.55f);
+        f.cy = (int16_t)(faceH * FACE_CY_FRAC);
         f.lcx = W / 2 - f.R * 2;
         f.rcx = W / 2 + f.R * 2;
         return f;

@@ -14,6 +14,7 @@
 #include "alarm_ctrl.h"
 #include "boot_log.h"
 #include "settings.h"
+#include "ui_state.h"
 #include "pet.h"
 #include "web_ui.h"
 #include "reminders.h"
@@ -243,6 +244,7 @@ void setup()
 
     g_stateMutex = xSemaphoreCreateMutex();
     settings_init();           // load NVS settings + apply timezone before any task reads them
+    ui_state_init();           // clock style of the landscape UI (saved in NVS)
     pet_init();                // pet button statistics (needs the mutexes above)
     reminders_init();          // user reminders from flash (needs g_stateMutex)
     time_restore_from_flash(); // approximate clock from flash so the alarm works before/without WiFi

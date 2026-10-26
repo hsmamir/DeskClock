@@ -18,8 +18,29 @@
 #include "reminders.h"
 #include "display_fonts.h" // smooth (VLW) fonts, see tools/make_vlw.py
 
+// ---- The landscape UI (160 x 128): one full-screen page at a time (face / clock / menu ...) instead of the two stacked
+// cards. LANDSCAPE_UI 0 gives the old portrait layout back (-D LANDSCAPE_UI=0). ----
+#ifndef LANDSCAPE_UI
+#define LANDSCAPE_UI 1
+#endif
+#ifndef DISPLAY_ROTATION
+#define DISPLAY_ROTATION (LANDSCAPE_UI ? 1 : 0) // use 3 if the panel is mounted upside down
+#endif
+#ifndef LANDSCAPE_SCENE
+#define LANDSCAPE_SCENE 0 // 1 = the weather / time-of-day scene behind the eyes (the new design: plain navy)
+#endif
+
+
 namespace disp
 {
+    // Where the eye line sits on the face (share of the face height). On the full 160 x 128 landscape page the
+    // artwork has it at 66 / 128; the portrait face card used 0.55.
+#if LANDSCAPE_UI
+    static const float FACE_CY_FRAC = 0.515f;
+#else
+    static const float FACE_CY_FRAC = 0.55f;
+#endif
+
 
     // ---- Palette (RGB565) ----
     constexpr uint16_t rgb(uint8_t r, uint8_t g, uint8_t b)
@@ -189,6 +210,7 @@ namespace disp
         float slant;  // -1..+1  positive = inner corner low (angry), negative = outer corner low (sad)
         float lidBot; // 0..1  how far the lower lid has come up (happy "^ ^")
         float x, y;   // gaze offset in px
+        float brow;   // -1..+1  0 = none (the sad / worried brows come from `slant`), + = raised brow, - = lowered flat brow
     };
 
     struct Spring

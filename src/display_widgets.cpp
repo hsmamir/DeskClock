@@ -1,6 +1,7 @@
 // display_widgets.cpp - widgets shared by the pages: alarm badge + next-ring text, the big temperature, wind arrow,
 // hourly-bars timing.
 #include "display_internal.h"
+#include "display_style.h"
 
 namespace disp
 {
@@ -82,7 +83,7 @@ namespace disp
     {
         int16_t r = imax(3, u(3.2f));
         int16_t cx = u(9);
-        uint16_t bellC = C_AMBER, textC = C_SOFT;
+        uint16_t bellC = UI_STYLE ? C_BLUSH : C_AMBER, textC = C_SOFT;
         int16_t swing = 0;
         if (ringing)
         {

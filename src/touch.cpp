@@ -11,6 +11,7 @@
 #include "settings.h"
 #include "reminders.h"
 #include "quick_menu.h"
+#include "ui_state.h"
 
 // ---------------------------------------------------------------------------------------
 // Debounced digital input (touch pad + rotary push button)
@@ -311,6 +312,20 @@ static void turnPages(int steps, uint32_t now)
     static const DisplayMode kOrder[3] = {DisplayMode::CLOCK, DisplayMode::DATE, DisplayMode::WEATHER};
     const int dir = steps > 0 ? 1 : -1;
     xSemaphoreTake(g_stateMutex, portMAX_DELAY);
+#if LANDSCAPE_UI
+    {
+        // Landscape UI: the home page is the face (eyes) or the clock; any turn switches between them. Leaving the
+        // diagnostics page / the menu with a turn goes home without switching.
+        const bool leaving = g_state.displayMode == DisplayMode::DIAG || g_state.displayMode == DisplayMode::MENU;
+        if (!leaving)
+            ui_toggle_home();
+        g_state.displayMode = DisplayMode::CLOCK;
+        xSemaphoreGive(g_stateMutex);
+        (void)dir;
+        (void)now;
+        return;
+    }
+#endif
 
     // ---- scrolling the Weather page ----
     if (WEATHER_DETAILS_ENABLED && g_state.displayMode == DisplayMode::WEATHER && g_state.weatherValid && g_state.detailValid)

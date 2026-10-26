@@ -11,6 +11,7 @@
 // Text lines are placed in "slots" that lie completely inside one card, so nothing is ever cut by the strip between them.
 // Persian shaping, right-to-left order and word wrap are in persian_text.cpp.
 #include "display_internal.h"
+#include "display_style.h"
 #include "display_vazir.h"
 #include "persian_text.h"
 #include "reminders.h"
@@ -231,7 +232,7 @@ namespace disp
             g.setTextDatum(TL_DATUM);
             g.drawString("Reminder", tx, u(4), 1); // built-in 6x8 font: stays clear of the "+N" counter (top right)
             smoothText(g, ClockSm18, CLOCKSM18_CAPH, tm, tx, u(22), L_BASELINE, C_AMBER, C_BG);
-            g.drawFastHLine(u(6), compactHeaderH(), W - 2 * u(6), tint(C_SOFT, 0.31f));
+            drawDivider(g, u(6), W - u(6), compactHeaderH());
             for (int i = 0; i < L.topLines; i++)
                 drawText(g, FONTS[L.font], L.vis[i], W / 2, L.baseline[i], C_BASELINE, C_WHITE);
         }
@@ -263,10 +264,17 @@ namespace disp
             uint32_t el = now - rv.shownMs;
             float left = el >= rv.timeoutMs ? 0.0f : 1.0f - (float)el / rv.timeoutMs;
             int16_t bx = u(10), bw = W - 2 * u(10), by = infoH - u(6), bh = imax(2, u(2));
+#if UI_STYLE
+            g.fillRoundRect(bx, by, bw, bh + 1, (bh + 1) / 2, C_GHOST);
+            int16_t fw = (int16_t)(bw * left);
+            if (fw > 0) // shrinks toward the middle
+                g.fillRoundRect(bx + (bw - fw) / 2, by, fw, bh + 1, (bh + 1) / 2, tint(C_AMBER, 0.8f));
+#else
             g.fillRect(bx, by, bw, bh, C_GHOST);
             int16_t fw = (int16_t)(bw * left);
             if (fw > 0)
                 g.fillRect(bx + (bw - fw) / 2, by, fw, bh, tint(C_AMBER, 0.8f));
+#endif
         }
     }
 
@@ -308,3 +316,127 @@ namespace disp
     }
 
 } // namespace disp
+// =====================================================================
+//  Landscape UI: the reminder as one full-screen page (160 x 128): header (bell, label, time), the text, the countdown
+// =====================================================================
+#if LANDSCAPE_UI
+#include "display_landscape.h"
+
+namespace disp
+{
+    static RLayout LL; // layout of the landscape page (baselines are canvas y)
+
+    static int16_t headerBottom() { return u(30); }
+    static int16_t textBottom() { return H - u(10); } // the countdown bar sits below
+
+    static void layoutForL(const ReminderView &rv)
+    {
+        const char *text = rv.text;
+        const size_t len = strlen(text);
+        const int16_t areaH = textBottom() - headerBottom() - u(3);
+        int slots[NFONTS];
+        for (int f = 0; f < NFONTS; f++)
+            slots[f] = areaH / FONT_PITCH[f];
+
+        fa::Span spans[MAX_LINES];
+        fa::FitResult fr = fa::fit(text, len, W - 2 * u(8), NFONTS, slots, measureCb, nullptr, spans, MAX_LINES);
+        if (s_loaded >= 0)
+        {
+            tft.unloadFont();
+            s_loaded = -1;
+        }
+        LL.valid = true;
+        LL.seq = rv.seq;
+        LL.faceH = H;
+        LL.font = fr.font;
+        LL.lines = fr.lines;
+        LL.compact = false;
+        LL.topLines = 0;
+        const int16_t pitch = FONT_PITCH[fr.font];
+        const int dir = fa::hasRtl(text) ? fa::DIR_RTL : fa::DIR_LTR;
+        for (int i = 0; i < fr.lines; i++)
+        {
+            char buf[LINE_BYTES];
+            size_t n = spans[i].len;
+            if (n > sizeof(buf) - 8)
+                n = sizeof(buf) - 8;
+            memcpy(buf, text + spans[i].start, n);
+            if (i == fr.lines - 1 && fr.truncated)
+            {
+                memcpy(buf + n, fa::kEllipsis, 4);
+                n += 3;
+            }
+            else
+                buf[n] = '\0';
+            fa::visual(buf, n, LL.vis[i], LINE_BYTES, dir);
+        }
+        const int16_t ascent = (int16_t)(pitch * 0.74f);
+        const int16_t y0 = headerBottom() + u(3) + (areaH - fr.lines * pitch) / 2;
+        for (int i = 0; i < fr.lines; i++)
+            LL.baseline[i] = y0 + i * pitch + ascent;
+    }
+
+    void drawReminderScreenL(const ReminderView &rv, uint32_t now)
+    {
+        static uint32_t lastDrawMs = 0;
+        if (!LL.valid || LL.seq != rv.seq || LL.faceH != H)
+        {
+            layoutForL(rv);
+            lastDrawMs = 0;
+        }
+        if (lastDrawMs != 0 && now - lastDrawMs < 80) // the bell swings: ~12 fps is plenty
+            return;
+        lastDrawMs = now ? now : 1;
+
+        TFT_eSPI &g = faceCv.begin();
+        g.fillRect(0, 0, W, H, C_BG);
+        drawTopBar(g, 0, C_AMBER);
+
+        // header: bell, label, time
+        const uint32_t t = now - rv.shownMs;
+        int16_t swing = 0, dx = 0;
+        if ((t % 2500) < 1300) // rings for 1.3 s, rests for 1.2 s
+        {
+            float ph = t / 75.0f;
+            swing = (int16_t)(sinf(ph) * imax(2, u(3.0f)));
+            dx = (int16_t)(sinf(ph * 0.5f) * 1.0f);
+        }
+        drawBigBell(g, u(16), u(16), u(5), dx, swing / 2, C_BLUSH);
+        g.setTextColor(mixColor(C_SOFT, C_WHITE, 0.5f), C_BG);
+        g.setTextDatum(TL_DATUM);
+        g.drawString("Reminder", u(30), u(6), 1);
+        char tm[8];
+        snprintf(tm, sizeof(tm), "%02u:%02u", (unsigned)rv.hour, (unsigned)rv.minute);
+        smoothText(g, ClockSm18, CLOCKSM18_CAPH, tm, u(30), u(22), L_BASELINE, C_AMBER, C_BG);
+        if (rv.waiting > 0) // more reminders are queued behind this one
+        {
+            char more[8];
+            snprintf(more, sizeof(more), "+%u", (unsigned)rv.waiting);
+            g.setTextDatum(TR_DATUM);
+            g.setTextColor(C_AMBER, C_BG);
+            g.drawString(more, W - u(8), u(8), 2);
+        }
+        drawDivider(g, u(6), W - u(6), headerBottom());
+
+        // the text
+        g.loadFont(FONTS[LL.font]);
+        g.setTextColor(C_WHITE, C_BG);
+        g.setTextDatum(C_BASELINE);
+        for (int i = 0; i < LL.lines; i++)
+            g.drawString(LL.vis[i], W / 2, LL.baseline[i]);
+        g.unloadFont();
+
+        // time left before it closes by itself
+        if (rv.timeoutMs)
+        {
+            const float left = t >= rv.timeoutMs ? 0.0f : 1.0f - (float)t / rv.timeoutMs;
+            const int16_t bx = u(10), bw = W - 2 * u(10), bh = imax(3, u(3)), by = H - u(7);
+            g.fillRoundRect(bx, by, bw, bh, bh / 2, C_GHOST);
+            const int16_t fw = (int16_t)(bw * left);
+            if (fw > 0) // shrinks toward the middle
+                g.fillRoundRect(bx + (bw - fw) / 2, by, fw, bh, bh / 2, tint(C_AMBER, 0.8f));
+        }
+        faceCv.endAt(0);
+    }
+} // namespace disp
+#endif

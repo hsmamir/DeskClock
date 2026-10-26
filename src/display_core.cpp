@@ -66,6 +66,29 @@ namespace disp
     {
         SW = tft.width();
         H = tft.height();
+#if LANDSCAPE_UI
+        // One full-screen page: no frame, no rounded cards. The artwork is drawn at 1:1 on 160 x 128; bigger displays
+        // (the 320 x 240 of the simulator) scale it by whole-screen height.
+        sc = imin(SW, H) / 128.0f;
+        cardX = 0;
+        cardGapBase = cardGap = 0;
+        cardR = 0;
+        W = SW;
+        faceH = H;
+        infoH = 0;
+        faceY = 0;
+        infoY = H;
+        clockFaceH = dateFaceH = H;
+        clockInfoH = dateInfoH = 0;
+        faceHMax = H;
+        infoHMax = 0;
+        for (int i = 0; i < MAX_R; i++)
+            cornerOut[i] = 0;
+        C_FRAME = C_BG;
+        tft.fillScreen(C_BG);
+        frameDirty = false;
+        return;
+#endif
         sc = SW / 128.0f;
         cardX = imax(1, u(CARD_MARGIN));
         cardGapBase = cardGap = imax(1, u(CARD_GAP));

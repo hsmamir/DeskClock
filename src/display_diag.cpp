@@ -1,5 +1,6 @@
 // display_diag.cpp - the diagnostics page (IP, signal, free heap, last sync, firmware version + update).
 #include "display_internal.h"
+#include "display_style.h"
 #include <WiFi.h>
 #include "boot_log.h"
 #include "version.h"
@@ -187,14 +188,13 @@ namespace disp
         { return (int16_t)(faceH + u(v) - yOff); };
 
         uint16_t accent = d.wifi ? C_ICE : C_RED;
-        g.fillRect(0, -yOff, W, imax(2, u(2)), accent);
-        g.fillRect(0, imax(2, u(2)) - yOff, W, imax(1, u(1)), tint(accent, 0.235f));
+        drawTopBar(g, yOff, accent);
 
         // IP, centred on its own line (a full 192.168.xxx.xxx would not fit next to a label)
         g.setTextDatum(MC_DATUM);
         g.setTextColor(d.wifi ? C_ACCENT : C_RED);
         g.drawString(d.wifi ? d.ip : "Offline", W / 2, Yt(13), 2);
-        g.drawFastHLine(u(6), Yt(22), W - 2 * u(6), tint(C_SOFT, 0.31f));
+        drawDivider(g, u(6), W - u(6), Yt(22));
 
         char buf[24];
         uint16_t c;
@@ -260,3 +260,69 @@ namespace disp
     }
 
 } // namespace disp
+// =====================================================================
+//  Landscape UI: the diagnostics page as one full-screen page (160 x 128)
+// =====================================================================
+#if LANDSCAPE_UI
+#include "display_landscape.h"
+
+namespace disp
+{
+    // label small on top, value under it; (x, y) = top left of the cell
+    static void diagCell(TFT_eSPI &g, int16_t x, int16_t y, const char *label, const char *value, uint16_t c)
+    {
+        g.setTextDatum(TL_DATUM);
+        g.setTextColor(C_SOFT);
+        g.drawString(label, x, y, 1);
+        g.setTextColor(c);
+        // the big font when it fits the half-width column, else the small one
+        const int16_t colW = W / 2 - u(10);
+        if (g.textWidth(value, 2) <= colW)
+            g.drawString(value, x, y + 9, 2);
+        else
+            g.drawString(value, x, y + 11, 1);
+    }
+
+    void drawDiagScreenL(uint32_t now)
+    {
+        DiagData d;
+        collectDiag(d, now);
+        TFT_eSPI &g = faceCv.begin();
+        g.fillRect(0, 0, W, H, C_BG);
+        drawTopBar(g, 0, d.wifi ? C_ICE : C_RED);
+
+        g.setTextDatum(MC_DATUM);
+        g.setTextColor(d.wifi ? C_ACCENT : C_RED);
+        g.drawString(d.wifi ? d.ip : "Offline", W / 2, u(12), 2);
+        drawDivider(g, u(6), W - u(6), u(22));
+
+        char buf[24];
+        uint16_t c;
+        if (d.wifi)
+        {
+            snprintf(buf, sizeof(buf), "%d dBm", d.rssi);
+            c = d.rssi >= -60 ? rgb(90, 230, 130) : (d.rssi >= -75 ? C_AMBER : C_RED);
+        }
+        else
+        {
+            strcpy(buf, "--");
+            c = C_RED;
+        }
+        const int16_t x0 = u(8), x1 = W / 2 + u(4), y0 = u(27), pitch = u(23);
+        diagCell(g, x0, y0, "Signal", buf, c);
+        snprintf(buf, sizeof(buf), "%u KB", (unsigned)d.heapKb);
+        diagCell(g, x1, y0, "Heap", buf, d.heapKb < 30 ? C_RED : (d.heapKb < 60 ? C_AMBER : C_WHITE));
+        diagCell(g, x0, y0 + pitch, "Sync", d.sync, d.syncOk ? C_WHITE : C_AMBER);
+        diagCell(g, x1, y0 + pitch, "Weather", d.weather, d.weatherOk ? (d.weatherStale ? C_AMBER : C_WHITE) : C_AMBER);
+        diagCell(g, x0, y0 + 2 * pitch, "Uptime", d.uptime, C_WHITE);
+        diagCell(g, x1, y0 + 2 * pitch, "Reset", d.reset, d.resetBad ? C_RED : C_WHITE);
+        diagCell(g, x0, y0 + 3 * pitch, "Boots", d.boots, d.bootsWarn ? C_AMBER : C_WHITE);
+        uint16_t uc = d.updLevel == 1 ? C_AMBER : (d.updLevel == 2 ? C_RED : (d.updLevel == 3 ? C_SOFT : rgb(90, 230, 130)));
+        diagCell(g, x1, y0 + 3 * pitch, "Update", d.upd, uc);
+        g.setTextDatum(BR_DATUM);
+        g.setTextColor(C_SOFT);
+        g.drawString(d.fw, W - u(4), H - u(1), 1); // firmware version, bottom right
+        faceCv.endAt(0);
+    }
+} // namespace disp
+#endif

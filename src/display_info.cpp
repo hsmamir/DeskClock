@@ -1,6 +1,7 @@
 // display_info.cpp - the info panel under the face: the clock page (drawInfoPanel). Date and Weather are full-screen
 // pages, see display_pages.cpp.
 #include "display_internal.h"
+#include "display_style.h"
 
 namespace disp
 {
@@ -15,10 +16,7 @@ namespace disp
         for (int i = 0; i < MODE_COUNT; i++)
         {
             int16_t x = W / 2 + (int16_t)((i - (MODE_COUNT - 1) / 2.0f) * u(10));
-            if (i == idx)
-                g.fillCircle(x, y, imax(2, u(2.5f)), accent);
-            else
-                g.fillCircle(x, y, imax(1, u(1.5f)), tint(accent, 0.27f));
+            drawRingDot(g, x, y, i == idx, accent);
         }
     }
 
@@ -35,7 +33,7 @@ namespace disp
         for (uint8_t i = 0; i < 4; i++)
             drawSegDigit(g, xs[i], dy, dw, dh, -1, accent, C_GHOST);
         uint8_t level = (uint8_t)(7.5f + 7.0f * sinf(now / 450.0f));
-        drawColonGlow(g, x0 + 2 * dw + gap + gap + cw / 2, dy, dh, imax(2, dw / 4), tint(accent, 0.5f), level);
+        drawColonGlow(g, x0 + 2 * dw + gap + gap + cw / 2, dy, dh, imax(2, dw / 4), tint(UI_STYLE ? C_BLUSH : accent, 0.5f), level);
     }
 
     // The clock page: big digits, date line, seconds bar, alarm badge. Only drawn when the face card is above
@@ -105,9 +103,8 @@ namespace disp
         TFT_eSPI &g = infoCv.begin();
         g.fillRect(0, 0, W, infoH, C_BG);
 
-        // accent line with a soft glow underneath
-        g.fillRect(0, 0, W, imax(2, u(2)), accent);
-        g.fillRect(0, imax(2, u(2)), W, imax(1, u(1)), tint(accent, 0.235f));
+        // neon line along the top edge (with the little "bell" notch)
+        drawTopBar(g, 0, accent);
 
         int16_t dh = (int16_t)(infoH * 0.42f);
         int16_t dw = (int16_t)(dh * 0.56f);
@@ -136,17 +133,15 @@ namespace disp
                 else
                     drawSegDigit(g, xs[i], dy, dw, dh, digCur[i], on, C_GHOST);
             }
-            drawColonGlow(g, x0 + 2 * dw + gap + gap + cw / 2, dy, dh, imax(2, dw / 4), on, colonLevel);
+            // the colon is the character's blush: two pink dots (red with the digits while the alarm rings)
+            drawColonGlow(g, x0 + 2 * dw + gap + gap + cw / 2, dy, dh, imax(2, dw / 4), (UI_STYLE && !alarm) ? C_BLUSH : on, colonLevel);
             strftime(cap, sizeof(cap), "%a %d %b", &ti);
             capSmooth = true;
 
             // seconds progress bar
-            int16_t bx = u(12), bw = W - 2 * u(12), bh = imax(2, u(2.5f));
+            int16_t bx = u(12), bw = W - 2 * u(12), bh = imax(UI_STYLE ? 3 : 2, u(2.5f));
             int16_t by = infoH - u(15);
-            g.fillRoundRect(bx, by, bw, bh, bh / 2, C_GHOST);
-            int16_t fw = (int16_t)((int32_t)bw * (ti.tm_sec + 1) / 60);
-            if (fw > 0)
-                g.fillRoundRect(bx, by, fw, bh, bh / 2, accent);
+            drawNeonBar(g, bx, by, bw, bh, (ti.tm_sec + 1) / 60.0f, accent, !alarm);
 
 #if ALARM_ICON_ENABLED
             if (alarmCfgOn || alarm)
@@ -164,8 +159,14 @@ namespace disp
             if (capSmooth)
             {
                 bool big = sc >= 1.5f; // 12 px font on the 128 px display, 18 px on bigger ones
-                smoothText(g, big ? ClockSm18 : ClockSm12, big ? CLOCKSM18_CAPH : CLOCKSM12_CAPH, cap, W / 2, capY,
-                           C_BASELINE, C_SOFT, C_BG);
+                const uint8_t *cf = big ? ClockSm18 : ClockSm12;
+                smoothText(g, cf, big ? CLOCKSM18_CAPH : CLOCKSM12_CAPH, cap, W / 2, capY, C_BASELINE, C_SOFT, C_BG);
+#if UI_STYLE
+                // a small sparkle on each side of the date, like the shine in the eyes
+                int16_t half = smoothWidth(g, cf, cap) / 2 + u(7);
+                drawSparkle(g, W / 2 - half, capY - u(3), 0.8f, tint(accent, 0.8f));
+                drawSparkle(g, W / 2 + half, capY - u(3), 0.8f, tint(accent, 0.8f));
+#endif
             }
             else
             {

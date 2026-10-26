@@ -918,7 +918,7 @@ namespace disp
             return;
         int16_t R = W / 8;
         int16_t eyeW = R * 2, eyeH = (int16_t)(R * 2.25f);
-        int16_t cy = (int16_t)(faceH * 0.55f);
+        int16_t cy = (int16_t)(faceH * FACE_CY_FRAC);
         int16_t lcx = W / 2 - R * 2, rcx = W / 2 + R * 2;
         switch (occ.kind)
         {

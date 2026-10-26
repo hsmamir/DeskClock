@@ -5,6 +5,7 @@
 // On the last line the eyes turn into happy "^ ^" eyes. A tap on the pad skips the credits (touch.cpp clears
 // g_state.creditsActive), and so does leaving the page. Drawn like the diagnostics page: two cards, one seamless page.
 #include "display_internal.h"
+#include "display_style.h"
 #include "version.h"
 #include <string.h>
 
@@ -131,8 +132,7 @@ namespace disp
     static void drawCreditsContent(TFT_eSPI &g, int16_t yOff, int16_t ch, float scroll, bool finale, uint32_t now)
     {
         uint16_t accent = C_ACCENT;
-        g.fillRect(0, -yOff, W, imax(2, u(2)), accent);
-        g.fillRect(0, imax(2, u(2)) - yOff, W, imax(1, u(1)), tint(accent, 0.235f));
+        drawTopBar(g, yOff, accent);
 
         // ---- the eyes (upper canvas) ----
         if (yOff == 0)

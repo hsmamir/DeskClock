@@ -776,3 +776,17 @@ static inline bool isNightHour(int hour)
 #define UPDATE_AUTO_FIRST_DELAY_MS (5UL * 60 * 1000)
 #define UPDATE_AUTO_CHECK_INTERVAL_MS (12UL * 60 * 60 * 1000)
 #define UPDATE_AUTO_RETRY_MS (30UL * 60 * 1000)
+
+// ---- Landscape UI (160 x 128, one full-screen page at a time) ----
+//   LANDSCAPE_UI 1 = the new landscape design, 0 = the old portrait layout (two stacked cards)
+//   DISPLAY_ROTATION  TFT rotation used by the landscape UI (1; use 3 when the panel is mounted upside down)
+//   LANDSCAPE_SCENE   1 = the weather / time-of-day scene behind the eyes (the new design is plain navy)
+#ifndef LANDSCAPE_UI
+#define LANDSCAPE_UI 1
+#endif
+#ifndef DISPLAY_ROTATION
+#define DISPLAY_ROTATION (LANDSCAPE_UI ? 1 : 0)
+#endif
+#ifndef LANDSCAPE_SCENE
+#define LANDSCAPE_SCENE 0
+#endif

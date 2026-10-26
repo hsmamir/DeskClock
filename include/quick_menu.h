@@ -36,6 +36,7 @@ enum class MenuItem : uint8_t
     VOLUME,
     ALARM_VOLUME,
     PET_REACTIONS,
+    CLOCK_STYLE, // landscape UI: push = next clock style (Simple, Analog, Minimal, Retro, LED)
     CLOSE,
     COUNT
 };
@@ -52,6 +53,7 @@ struct MenuView
     uint8_t volume;      // 0-30
     uint8_t alarmVolume; // 1-30
     bool petReactions;
+    uint8_t clockStyle; // ClockStyle (ui_state.h)
     uint32_t seq; // changes with every change: the display redraws when it changes
 };
 

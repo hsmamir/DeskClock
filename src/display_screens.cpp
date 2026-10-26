@@ -1,5 +1,7 @@
 // display_screens.cpp - full-screen setup (WiFi portal) and OTA screens, the WiFi-lost icon and the hold ring.
 #include "display_internal.h"
+#include "display_style.h"
+#include "display_character.h"
 #include <WiFi.h>
 
 namespace disp
@@ -27,8 +29,32 @@ namespace disp
     void drawPortalScreen()
     {
         tft.fillScreen(C_BG);
+#if UI_STYLE && CHARACTER_STYLE
+        {
+            // the character waits for you to join the network: eyes open, looking up a little
+            const int16_t cy = (int16_t)(H * (LANDSCAPE_UI ? 0.27f : 0.26f)), R = W / 8;
+            EyeShape e = {};
+            e.w = R * 2.0f;
+            e.h = R * 2.25f;
+            e.y = -u(1.5f);
+            drawCharacterEye(tft, SW / 2 - W / 4, cy, e, 1.0f, -1, C_EYE_TOP, C_EYE_BOT, true);
+            drawCharacterEye(tft, SW / 2 + W / 4, cy, e, 1.0f, 1, C_EYE_TOP, C_EYE_BOT, true);
+            drawCharMouth(tft, SW / 2, cy + charMouthDy(), 1.0f);
+            drawWifiIcon(tft, SW - u(13), u(14), u(7), C_ACCENT);
+        }
+#else
         drawWifiIcon(tft, SW / 2, (int16_t)(H * 0.34f), u(26), C_ACCENT);
+#endif
         tft.setTextDatum(MC_DATUM);
+#if LANDSCAPE_UI
+        // 128 px tall: three lines under the eyes
+        tft.setTextColor(C_SOFT);
+        tft.drawString("Join WiFi network:", SW / 2, (int16_t)(H * 0.56f), 2);
+        tft.setTextColor(C_AMBER);
+        tft.drawString(WIFI_PORTAL_AP_NAME, SW / 2, (int16_t)(H * 0.73f), 4);
+        tft.setTextColor(C_SOFT);
+        tft.drawString("192.168.4.1", SW / 2, (int16_t)(H * 0.90f), 2);
+#else
         tft.setTextColor(C_WHITE);
         tft.drawString("WiFi setup", SW / 2, (int16_t)(H * 0.50f), 2);
         tft.setTextColor(C_SOFT);
@@ -37,6 +63,7 @@ namespace disp
         tft.drawString(WIFI_PORTAL_AP_NAME, SW / 2, (int16_t)(H * 0.72f), 4);
         tft.setTextColor(C_SOFT);
         tft.drawString("192.168.4.1", SW / 2, (int16_t)(H * 0.86f), 2);
+#endif
     }
 
     // OTA progress screen: static part once per update, then only the bar and the
@@ -46,26 +73,38 @@ namespace disp
         if (otaDrawnPct < 0)
         {
             tft.fillScreen(C_BG);
+#if UI_STYLE && CHARACTER_STYLE
+            {
+                // busy and content: closed eyes while the update is written
+                const int16_t cy = (int16_t)(H * (LANDSCAPE_UI ? 0.20f : 0.15f)), R = W / 8;
+                charContentEye(tft, SW / 2 - W / 4, cy, R);
+                charContentEye(tft, SW / 2 + W / 4, cy, R);
+                drawCharMouth(tft, SW / 2, cy + charMouthDy(), 1.0f);
+            }
+#endif
             tft.setTextDatum(MC_DATUM);
             tft.setTextColor(C_WHITE);
-            tft.drawString("Updating", SW / 2, (int16_t)(H * 0.30f), 4);
+#if LANDSCAPE_UI
+            tft.drawString("Updating", SW / 2, (int16_t)(H * 0.50f), 4);
+            tft.setTextColor(C_SOFT);
+            tft.drawString("Do not unplug", SW / 2, (int16_t)(H * 0.96f), 1);
+#else
+            tft.drawString("Updating", SW / 2, (int16_t)(H * (UI_STYLE && CHARACTER_STYLE ? 0.37f : 0.30f)), 4);
             tft.setTextColor(C_SOFT);
             tft.drawString("Do not unplug", SW / 2, (int16_t)(H * 0.82f), 2);
+#endif
         }
         if (pct == otaDrawnPct)
             return;
         otaDrawnPct = pct;
 
         int16_t bx = u(14), bw = SW - 2 * bx, bh = imax(6, u(8));
-        int16_t by = (int16_t)(H * 0.46f);
-        tft.fillRoundRect(bx, by, bw, bh, bh / 2, C_GHOST);
-        int16_t fw = (int16_t)((int32_t)bw * pct / 100);
-        if (fw > 0)
-            tft.fillRoundRect(bx, by, fw, bh, imin(bh / 2, fw / 2), C_ACCENT);
+        int16_t by = (int16_t)(H * (LANDSCAPE_UI ? 0.64f : 0.46f));
+        drawNeonBar(tft, bx, by, bw, bh, pct / 100.0f, C_ACCENT, true);
 
         char txt[8];
         snprintf(txt, sizeof(txt), "%d%%", pct);
-        int16_t py = (int16_t)(H * 0.62f);
+        int16_t py = (int16_t)(H * (LANDSCAPE_UI ? 0.83f : 0.62f));
         tft.fillRect(0, py - u(10), SW, u(20), C_BG);
         smoothText(tft, ClockSm18, CLOCKSM18_CAPH, txt, SW / 2, py, C_BASELINE, C_ACCENT, C_BG);
     }

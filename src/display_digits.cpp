@@ -1,5 +1,6 @@
 // display_digits.cpp - seven-segment digits, the blinking colon and the clock-digit slide animation.
 #include "display_internal.h"
+#include "display_style.h"
 
 namespace disp
 {
@@ -10,6 +11,10 @@ namespace disp
     {
         int16_t x, y, w, h;
     };
+
+    // How strongly the bright "neon core" of the lit segments shows: 1 = full, less while a digit fades in / out
+    // (the slide animation), so the core fades with the glow.
+    static float s_neonFade = 1.0f;
 
     // Which parts of a digit to draw.
     enum : uint8_t
@@ -54,9 +59,27 @@ namespace disp
                 if (!((m >> i) & 1))
                     g.fillRoundRect(s[i].x, s[i].y, s[i].w, s[i].h, t / 2, off);
         if (parts & SEG_LIT)
+        {
+#if UI_STYLE
+            // neon: the colour is the edge and the glow, the inside is nearly white (like the ring of the eyes)
+            const uint16_t core = neonCore(on, 0.80f * s_neonFade);
+            for (uint8_t i = 0; i < 7; i++)
+                if ((m >> i) & 1)
+                {
+                    if (t >= 3)
+                    {
+                        g.fillRoundRect(s[i].x, s[i].y, s[i].w, s[i].h, t / 2, on);
+                        g.fillRoundRect(s[i].x + 1, s[i].y + 1, s[i].w - 2, s[i].h - 2, imax(0, t / 2 - 1), core);
+                    }
+                    else
+                        g.fillRoundRect(s[i].x, s[i].y, s[i].w, s[i].h, t / 2, mixColor(on, core, 0.6f));
+                }
+#else
             for (uint8_t i = 0; i < 7; i++)
                 if ((m >> i) & 1)
                     g.fillRoundRect(s[i].x, s[i].y, s[i].w, s[i].h, t / 2, on);
+#endif
+        }
     }
 
     void drawSegDigit(TFT_eSPI &g, int16_t x, int16_t y, int16_t w, int16_t h, int8_t d,
@@ -80,6 +103,10 @@ namespace disp
                                     mixColor(C_BG, tint(on, layer == 2 ? 0.08f : 0.18f), k)); // fades into the background, never darker than it
             }
             g.fillRoundRect(cx - t / 2, py - t / 2, t, t, t / 2, c);
+#if UI_STYLE
+            if (t >= 4) // a bright core: a little blush dot
+                g.fillRoundRect(cx - t / 2 + 1, py - t / 2 + 1, t - 2, t - 2, imax(1, t / 2 - 1), neonCore(c, 0.55f * k));
+#endif
         }
     }
 
@@ -119,8 +146,11 @@ namespace disp
 
         digSpr.fillSprite(C_BG);
         drawSegDigitEx(digSpr, DIG_PAD, DIG_PAD, dw, dh, -1, on, C_GHOST, SEG_GHOST); // unlit backdrop stays
+        s_neonFade = 1.0f - e;
         drawSegDigitEx(digSpr, DIG_PAD, DIG_PAD - off, dw, dh, oldD, mixColor(on, C_BG, e), C_GHOST, SEG_LIT);
+        s_neonFade = e;
         drawSegDigitEx(digSpr, DIG_PAD, DIG_PAD + travel - off, dw, dh, newD, mixColor(C_BG, on, e), C_GHOST, SEG_LIT);
+        s_neonFade = 1.0f;
         digSpr.pushToSprite(&infoCv.spr, x - DIG_PAD, y - DIG_PAD);
     }
 
@@ -141,8 +171,11 @@ namespace disp
         g.fillRect(x - DIG_PAD, y - DIG_PAD, dw + 2 * DIG_PAD, dh + 2 * DIG_PAD, C_BG);
         if (newD >= 0) // a digit that is going away leaves no unlit segments behind
             drawSegDigitEx(g, x, y, dw, dh, -1, on, C_GHOST, SEG_GHOST);
+        s_neonFade = 1.0f - e;
         drawSegDigitEx(g, x, (int16_t)(y + s * off), dw, dh, oldD, mixColor(on, C_BG, e), C_GHOST, SEG_LIT);
+        s_neonFade = e;
         drawSegDigitEx(g, x, (int16_t)(y - s * (travel - off)), dw, dh, newD, mixColor(C_BG, on, e), C_GHOST, SEG_LIT);
+        s_neonFade = 1.0f;
         g.resetViewport();
     }
 

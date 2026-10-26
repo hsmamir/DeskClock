@@ -1,6 +1,7 @@
 // quick_menu.cpp - the rotary knob's quick menu (logic only; the drawing is in display_menu.cpp).
 #include <Arduino.h>
 #include "quick_menu.h"
+#include "ui_state.h"
 #include "state.h"
 #include "settings.h"
 #include "audio.h"
@@ -282,6 +283,10 @@ void quickmenu_press()
                 m.editing = true;
                 m.field = 0;
                 break;
+            case MenuItem::CLOCK_STYLE:
+                ui_next_clock_style(); // saved right away
+                ui_set_home_clock(true); // and the clock (not the eyes) is what you see when the menu closes
+                break;
             case MenuItem::VOLUME:
             case MenuItem::ALARM_VOLUME:
                 m.editing = true;
@@ -379,6 +384,7 @@ bool quickmenu_get(MenuView &v)
     v.volume = (uint8_t)m.volume;
     v.alarmVolume = (uint8_t)m.alarmVolume;
     v.petReactions = m.petReactions;
+    v.clockStyle = (uint8_t)ui_clock_style();
     v.seq = m.seq;
     return m.open;
 }

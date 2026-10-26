@@ -4,6 +4,7 @@
 // Both halves use canvas coordinates (see display_pages.cpp): the upper half is laid out from its top edge, the
 // calendar from the bottom edge of the lower half, so nothing ever crosses the strip between the cards.
 #include "display_internal.h"
+#include "display_style.h"
 
 namespace disp
 {
@@ -96,7 +97,7 @@ namespace disp
         {
             int wd = (CALENDAR_WEEK_START + c) % 7;
             char t[2] = {WD_INITIAL[wd], 0};
-            g.setTextColor(wd == ti.tm_wday ? C_AMBER : tint(C_SOFT, 0.7f));
+            g.setTextColor(wd == ti.tm_wday ? (UI_STYLE ? C_BLUSH : C_AMBER) : tint(C_SOFT, 0.7f));
             g.drawString(t, calColX(c), hy, cf);
         }
     }
@@ -139,8 +140,13 @@ namespace disp
             {
                 int16_t w = imin((int16_t)(cellW - 1), (int16_t)u(14));
                 int16_t h = imax(5, imin((int16_t)(pitch - 2), (int16_t)u(10)));
+#if UI_STYLE
+                g.fillRoundRect(cx - w / 2, cy - h / 2, w, h, imax(2, h / 2), C_BLUSH); // today: a blush-pink pill
+                g.setTextColor(C_WHITE);
+#else
                 g.fillRoundRect(cx - w / 2, cy - h / 2, w, h, imax(1, u(2)), C_AMBER);
                 g.setTextColor(C_BG);
+#endif
             }
             else
                 g.setTextColor(day < ti.tm_mday ? pastCol : futureCol);

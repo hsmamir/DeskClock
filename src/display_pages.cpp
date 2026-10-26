@@ -7,6 +7,7 @@
 // screen (2 .. 4, see weather_extras.h) and scrolls with the rotary knob: this file owns the scroll position (it eases
 // toward the step touch.cpp has set).
 #include "display_internal.h"
+#include "display_style.h"
 #include "weather_extras.h"
 
 namespace disp
@@ -132,8 +133,7 @@ namespace disp
     // Coloured line + soft glow along the top edge of a page (the same look as the clock page).
     void drawPageAccent(TFT_eSPI &g, uint16_t accent)
     {
-        g.fillRect(0, 0, W, imax(2, u(2)), accent);
-        g.fillRect(0, imax(2, u(2)), W, imax(1, u(1)), tint(accent, 0.235f));
+        drawTopBar(g, 0, accent);
     }
 
     // ---- Weather page scroll ----

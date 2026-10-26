@@ -6,6 +6,8 @@
 #include "display_menu.h"
 #include "display_wx.h"
 #include "weather_mood.h"
+#include "display_landscape.h"
+#include "ui_state.h"
 
 using namespace disp;
 
@@ -33,7 +35,8 @@ static void releaseSprites()
 {
     faceCv.spr.deleteSprite();
     faceCv.ok = false;
-    infoCv.spr.deleteSprite();
+    if (infoCv.w > 0)
+        infoCv.spr.deleteSprite();
     infoCv.ok = false;
     digSpr.deleteSprite();
     digSprOk = false;
@@ -46,8 +49,12 @@ static void restoreSprites()
 {
     faceCv.spr.setColorDepth(16);
     faceCv.ok = (faceCv.spr.createSprite(faceCv.w, faceCv.sh) != nullptr);
-    infoCv.spr.setColorDepth(16);
-    infoCv.ok = (infoCv.spr.createSprite(infoCv.w, infoCv.sh) != nullptr);
+    infoCv.ok = false;
+    if (infoCv.w > 0) // (the landscape UI has no second card)
+    {
+        infoCv.spr.setColorDepth(16);
+        infoCv.ok = (infoCv.spr.createSprite(infoCv.w, infoCv.sh) != nullptr);
+    }
     if (CLOCK_DIGIT_ANIM && infoCv.ok && digSprW > 0)
     {
         digSpr.setColorDepth(16);
@@ -104,13 +111,19 @@ void display_init()
     backlightInit();
 
     tft.init();
-    tft.setRotation(0);
+    tft.setRotation(DISPLAY_ROTATION);
 
     // two rounded cards (face on top, info panel below) on a darker frame: sizes, corner table, frame fill
+    // (landscape UI: ONE full-screen page, see cardsInit)
     cardsInit();
 
     bool f = faceCv.init(cardX, faceY, W, faceH, faceHMax);
+#if LANDSCAPE_UI
+    bool i = false; // no second card; the clock styles draw into the one big canvas
+    infoCv.ok = false;
+#else
     bool i = infoCv.init(cardX, infoY, W, infoH, infoHMax);
+#endif
 
     // small sprite for the clock-digit slide animation (needs the info panel to be a sprite too)
     if (CLOCK_DIGIT_ANIM && i)
@@ -196,7 +209,7 @@ void display_tick()
     bool alarm = (mood == Mood::ALARM_ALERT);
     // Only the clock page shows the face (the eyes). Date and Weather are full-screen pages; an alarm always
     // brings the face and the clock back, whatever page was open. (The diagnostics page draws its own two cards.)
-    fullLayout = !alarm && isFullPage(mode);
+    fullLayout = !LANDSCAPE_UI && !alarm && isFullPage(mode);
     // The Date / Weather / diagnostics / reminder pages are ONE page: no strip between the two cards (seamless).
     ReminderView rvNow;
     const bool reminderOn = !alarm && reminder_get_active(rvNow);
@@ -206,7 +219,9 @@ void display_tick()
     struct tm ti;
     bool haveTime = timeSynced && getLocalTime(&ti, 0);
     themeUpdate(haveTime, ti, now); // background / accent follow the time of day
-    frameUpdate();                  // the frame around the cards follows the card background
+#if !LANDSCAPE_UI
+    frameUpdate(); // the frame around the cards follows the card background
+#endif
 
     bool night = haveTime && sun_is_night(ti); // backlight dimming, muted sound: still follows the sun
     // The eyes follow their own fixed schedule: normal until 21:00, drowsy 21-23, asleep 23 -> morning.
@@ -331,6 +346,58 @@ void display_tick()
     updateBlink(now, sleepy);
     float exprP = updateExpression(now, !alarm && !happy && reaction != Reaction::WORRIED && persona.exprOk, sleepy);
 
+#if LANDSCAPE_UI
+    // ---- Landscape pages: reminder / diagnostics / quick menu, each one full screen. An alarm always wins. ----
+    {
+        ReminderView rv;
+        if (!alarm && reminder_get_active(rv))
+        {
+            if (REMINDER_FULL_BRIGHT)
+                backlightUpdate(false, true);
+            diagShown = false;
+            menuScreenLeft();
+            drawReminderScreenL(rv, now);
+            return;
+        }
+        if (mode == DisplayMode::DIAG && !alarm)
+        {
+            menuScreenLeft();
+            if (!diagShown || now - lastDiagDrawMs >= 500)
+            {
+                lastDiagDrawMs = now;
+                diagShown = true;
+                drawDiagScreenL(now);
+            }
+            return;
+        }
+        diagShown = false;
+        if (mode == DisplayMode::MENU && !alarm)
+        {
+            drawMenuScreenL(now);
+            return;
+        }
+        menuScreenLeft();
+
+        // Home: the face (eyes) or the clock, as the knob left it. The boot wake-up and the alarm always show the face.
+        static uint32_t lastClockSig = 0;
+        static bool clockWasShown = false;
+        if (ui_home_is_clock() && !alarm && persona.stage == PStage::RUN)
+        {
+            const uint32_t sig = clockScreenSig(haveTime, ti, now);
+            if (!clockWasShown || sig != lastClockSig)
+            {
+                lastClockSig = sig;
+                clockWasShown = true;
+                TFT_eSPI &g = faceCv.begin();
+                drawClockScreen(g, haveTime, ti, now);
+                faceCv.endAt(0);
+            }
+            return;
+        }
+        clockWasShown = false;
+    }
+#endif
+
     // A reminder that is due: full screen, replaces whatever page is open (also the diagnostics page).
     // An alarm always wins (the reminder comes back after it). Drawn like the diagnostics page, in the two
     // cards, so leaving it simply falls back to the normal drawing below.
@@ -386,7 +453,9 @@ void display_tick()
 
     // Page flow: the slide between pages, and which layout is up
     DisplayMode shown = alarm ? DisplayMode::CLOCK : mode;
+#if !LANDSCAPE_UI
     pageFlowUpdate(shown, alarm, now);
+#endif
 
     // Date / Weather: one full-screen page, no eyes (the face is only drawn on the clock page, below)
     if (fullLayout)
@@ -396,8 +465,10 @@ void display_tick()
     }
 
     // Clock page: face card above the info card
+#if !LANDSCAPE_UI
     if (pageSliding() || gapIsFull)
         gapPaint(pageSlideX); // coming back from a full-screen page: the strip between the cards turns into frame again
+#endif
 
     TFT_eSPI &g = faceCv.begin();
     uint16_t eyeTopSaved = C_EYE_TOP, eyeBotSaved = C_EYE_BOT; // emoUpdate() recomputes them every tick
@@ -425,8 +496,16 @@ void display_tick()
         }
         drawStatusIcons(g, now);
         drawHoldRing(g);
+#if LANDSCAPE_UI
+        if (alarm)
+            drawAlarmOverlay(g, haveTime, ti, alarmFlashOn); // the time under the angry eyes
+#endif
     }
+#if LANDSCAPE_UI
+    faceCv.endAt(0);
+#else
     faceCv.endAt(pageSlideX); // slides in together with the info card when the clock page comes back
 
     drawInfoPanel(alarm, haveTime, ti, now);
+#endif
 }

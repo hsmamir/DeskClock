@@ -5,6 +5,7 @@
 // personaUpdate() decides, once per tick, what each of them wants and fills `persona` (display_internal.h);
 // the drawing and the gaze / lid machines elsewhere only read it.
 #include "display_internal.h"
+#include "display_character.h"
 #include "audio.h"
 #include "weather_mood.h"
 #include "servo_ctrl.h"
@@ -1182,6 +1183,12 @@ namespace disp
     {
         if (persona.thinking)
         {
+#if CHARACTER_STYLE
+            // the "?" of the design sheet, up and to the right where the eyes are looking, bobbing a little
+            const int16_t qy = cy - R - u(3) - (int16_t)(sinf(now / 330.0f) * u(1.6f));
+            const uint16_t qc = faceMaskUp ? rgb(40, 80, 150) : mixColor(rgb(120, 155, 255), C_EYE_BOT, 0.25f);
+            drawCharMono(g, CharMono::QUESTION, W / 2 + 2 * R + u(14), qy, 1.15f * sc, qc);
+#else
             int16_t y = cy + eyeH / 2 + u(9), gap = u(8), r = imax(1, u(2));
             for (int i = 0; i < 3; i++)
             {
@@ -1195,6 +1202,7 @@ namespace disp
                                                : tint(C_EYE_TOP, 0.35f + 0.6f * b);
                 g.fillCircle(W / 2 + (i - 1) * gap, y - (int16_t)(b * u(3)), r, dc);
             }
+#endif
         }
         if (persona.snoozed)
         {
@@ -1244,7 +1252,7 @@ namespace disp
                 // nothing sprays out through a mask: the drops escape at both of its sides
                 int16_t bx, by, bw, bh;
                 faceMaskRect(bx, by, bw, bh);
-                const int16_t sy = by + bh / 2 + (int16_t)(cy - (int16_t)(faceH * 0.55f));
+                const int16_t sy = by + bh / 2 + (int16_t)(cy - (int16_t)(faceH * FACE_CY_FRAC));
                 for (int i = 0; i < 6; i++)
                 {
                     const int side = (i & 1) ? 1 : -1;

@@ -1,0 +1,10 @@
+--- src/display_pages.cpp	2026-10-25 07:11:29.206070605 +0000
++++ src/display_pages.cpp	2026-10-25 07:11:29.207341772 +0000
+@@ -6,6 +6,7 @@
+ // pages are in display_page_date.cpp and display_page_weather.cpp. The Weather page is twice as tall as the screen and
+ // scrolls with the rotary knob: this file owns the scroll position (it eases toward the step touch.cpp has set).
+ #include "display_internal.h"
++#include "display_style.h"
+ 
+ namespace disp
+ {

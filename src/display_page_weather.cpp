@@ -20,6 +20,7 @@
 // in its own canvas coordinates, shifted by `oy` = the canvas y of the block's top edge; the sprite clips whatever
 // sticks out. Fixed parts (the coloured line at the top, the footer with the page dots, the scroll bar) are drawn last.
 #include "display_internal.h"
+#include "display_style.h"
 #include "display_wx.h"
 
 namespace disp
@@ -263,7 +264,24 @@ namespace disp
 #endif
             int16_t hv = (int16_t)(h * ge + 0.5f);
             if (hv > 0)
-                g.fillRect(bx, base - hv, barW, hv, i == 0 ? col : tint(col, 0.75f));
+            {
+                uint16_t bc = i == 0 ? col : tint(col, 0.75f);
+#if UI_STYLE
+                // rounded tops; the first (now) bar gets a bright core line like the neon digits
+                int16_t r = imin((int16_t)(barW / 2), (int16_t)imax(1, u(2)));
+                if (hv > 2 * r)
+                {
+                    g.fillRect(bx, base - hv + r, barW, hv - r, bc);
+                    g.fillRoundRect(bx, base - hv, barW, 2 * r, r, bc);
+                }
+                else
+                    g.fillRect(bx, base - hv, barW, hv, bc);
+                if (i == 0 && barW > 2)
+                    g.drawFastVLine(bx + barW / 2, base - hv + r, imax(0, hv - r - 1), neonCore(bc, 0.6f));
+#else
+                g.fillRect(bx, base - hv, barW, hv, bc);
+#endif
+            }
             if (rain)
                 g.fillRect(bx, base + 1, barW, imax(1, u(1.5f)), RAIN_COL);
 
@@ -412,8 +430,8 @@ namespace disp
         if (th < u(10))
             th = u(10);
         const int16_t ty = (int16_t)(top + (long)(len - th) * p.scrollPx / p.maxScrollPx);
-        g.fillRect(x, top - base, bw, len, tint(C_SOFT, 0.22f));
-        g.fillRect(x, ty - base, bw, th, tint(p.accent, 0.85f));
+        g.fillRoundRect(x, top - base, bw, len, bw / 2, tint(C_SOFT, 0.22f));
+        g.fillRoundRect(x, ty - base, bw, th, bw / 2, tint(p.accent, 0.85f));
 #else
         (void)g;
         (void)p;
