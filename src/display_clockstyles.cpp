@@ -191,52 +191,56 @@ namespace disp
         }
 
         // ------------------------------------------------------------------ Analog
+        // The Analog face as designed: a thin violet ring, twelve short white ticks (longer at 12 / 3 / 6 / 9), a white
+        // minute hand, an hour hand that fades from white to pink at its tip and a peach cap in the middle.
+        // No glow, no date, no second hand. All sizes are in px of the 160 x 128 screen and scale with sc.
+
+        // A line that fades from colour c0 at (x0, y0) to c1 at (x1, y1).
+        void gradLine(TFT_eSPI &g, float x0, float y0, float x1, float y1, float w, uint16_t c0, uint16_t c1)
+        {
+            const int n = 8;
+            for (int i = 0; i < n; i++)
+            {
+                const float a = (float)i / n, b = (float)(i + 1) / n;
+                thickLine(g, x0 + (x1 - x0) * a, y0 + (y1 - y0) * a, x0 + (x1 - x0) * b, y0 + (y1 - y0) * b, w,
+                          mixColor(c0, c1, (a + b) * 0.5f));
+            }
+        }
+
         void styleAnalog(TFT_eSPI &g, bool have, const struct tm &ti, uint32_t now, uint16_t accent)
         {
             (void)now;
-            const int16_t cx = W / 2, cy = H / 2;
-            const int16_t r = (int16_t)(H / 2 - u(5));
-            // the dial: a ring like the eyes' (white core, blue glow)
-            g.fillCircle(cx, cy, r + 3 * sc, tint(accent, 0.12f));
-            g.fillCircle(cx, cy, r + 2 * sc, tint(accent, 0.35f));
-            g.fillCircle(cx, cy, r + 1, accent);
-            g.fillCircle(cx, cy, r, neonCore(accent, 0.88f));
-            g.fillCircle(cx, cy, r - imax(2, u(2.2f)), C_BG);
-            // hour marks
+            const uint16_t C_CAP = rgb(247, 186, 112);                  // the peach cap in the middle
+            const uint16_t whiteHand = neonCore(accent, 0.90f);         // ticks and minute hand
+            const uint16_t pinkTip = mixColor(C_BLUSH, C_WHITE, 0.35f); // the tip of the hour hand
+            const float cx = W * 0.5f, cy = H * 0.512f;                 // the dial sits a touch below the middle
+            const float R = 45.0f * sc, ringW = 2.4f * sc;
+
+            // the ring
+            g.fillCircle(R16(cx), R16(cy), R16(R + ringW * 0.5f), accent);
+            g.fillCircle(R16(cx), R16(cy), R16(R - ringW * 0.5f), C_BG);
+
+            // twelve ticks: long and thick at 12 / 3 / 6 / 9, short and thin between
             for (int i = 0; i < 12; i++)
             {
-                float a = i * 0.5235988f;
-                float ca = sinf(a), sa = -cosf(a);
-                int16_t rr = r - u(8);
-                int16_t x = cx + R16(ca * rr), y = cy + R16(sa * rr);
-                if (i % 3 == 0)
-                {
-                    g.fillCircle(x, y, imax(2, u(2.2f)), accent);
-                    g.fillCircle(x, y, imax(1, u(1.2f)), neonCore(accent, 0.9f));
-                }
-                else
-                    g.fillCircle(x, y, imax(1, u(1.2f)), tint(accent, 0.55f));
+                const float a = i * 0.5235988f, sx = sinf(a), sy = -cosf(a);
+                const bool q = (i % 3 == 0);
+                const float r0 = (q ? 33.3f : 34.0f) * sc, r1 = (q ? 40.5f : 39.0f) * sc;
+                thickLine(g, cx + sx * r0, cy + sy * r0, cx + sx * r1, cy + sy * r1, (q ? 1.9f : 1.5f) * sc, whiteHand);
             }
+
             if (!have)
             {
-                caption(g, cx, cy + r / 2, "Syncing...", C_SOFT, C_SOFT, false);
+                caption(g, R16(cx), R16(cy + R * 0.5f), "Syncing...", C_SOFT, C_SOFT, false);
                 return;
             }
-            // date window under the middle
-            char dt[16];
-            strftime(dt, sizeof(dt), "%a %d", &ti);
-            caption(g, cx, cy + (int16_t)(r * 0.45f), dt, C_SOFT, C_SOFT, false);
-            // hands
-            const float h = (ti.tm_hour % 12) + ti.tm_min / 60.0f + ti.tm_sec / 3600.0f;
-            const float m = ti.tm_min + ti.tm_sec / 60.0f;
-            const float ah = h / 12.0f * 6.2831853f, am = m / 60.0f * 6.2831853f, as = ti.tm_sec / 60.0f * 6.2831853f;
-            neonLine(g, cx, cy, cx + sinf(ah) * r * 0.50f, cy - cosf(ah) * r * 0.50f, 3.0f * sc, accent);
-            neonLine(g, cx, cy, cx + sinf(am) * r * 0.76f, cy - cosf(am) * r * 0.76f, 2.0f * sc, accent);
-            // the second hand is the blush pink one, with a short tail
-            thickLine(g, cx - sinf(as) * r * 0.18f, cy + cosf(as) * r * 0.18f, cx + sinf(as) * r * 0.84f,
-                      cy - cosf(as) * r * 0.84f, 1.0f, C_BLUSH);
-            g.fillCircle(cx, cy, imax(3, u(3.5f)), C_BLUSH);
-            g.fillCircle(cx, cy, imax(1, u(1.5f)), C_WHITE);
+
+            const float hr = (ti.tm_hour % 12) + ti.tm_min / 60.0f; // seconds are not shown: the hands move once a minute
+            const float ah = hr / 12.0f * 6.2831853f, am = ti.tm_min / 60.0f * 6.2831853f;
+            const float hl = 24.0f * sc, ml = 27.0f * sc; // hour hand / minute hand length
+            gradLine(g, cx, cy, cx + sinf(ah) * hl, cy - cosf(ah) * hl, 2.2f * sc, whiteHand, pinkTip);
+            thickLine(g, cx, cy, cx + sinf(am) * ml, cy - cosf(am) * ml, 2.3f * sc, whiteHand);
+            g.fillCircle(R16(cx), R16(cy), imax(3, R16(4.4f * sc)), C_CAP);
         }
 
         // ------------------------------------------------------------------ Minimal
@@ -361,7 +365,9 @@ namespace disp
     {
         uint32_t sig = (uint32_t)ui_clock_style() << 28;
         if (!haveTime)
-            return sig | 0x08000000u | (now / 90); // the syncing animation
+            return sig | 0x08000000u | (now / 90);        // the syncing animation
+        if (ui_clock_style() == ClockStyle::ANALOG_CLOCK) // no seconds, no colon: the dial changes once a minute
+            return sig | ((uint32_t)(ti.tm_hour * 3600 + ti.tm_min * 60) & 0x1FFFF);
         sig |= (uint32_t)(ti.tm_hour * 3600 + ti.tm_min * 60 + ti.tm_sec) & 0x1FFFF;
         sig |= (uint32_t)colonLevelNow(now) << 17;
         if (ui_clock_style() == ClockStyle::RETRO)
