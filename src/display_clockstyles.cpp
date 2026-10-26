@@ -5,6 +5,8 @@
 #include "display_style.h"
 #include "display_landscape.h"
 #include "ui_state.h"
+#include "display_wxicon.h"
+#include "sun.h"
 
 namespace disp
 {
@@ -145,7 +147,11 @@ namespace disp
                 float glow;
             };
             // far halo (square ring), near halo (plus shape), then the core on top
-            const Pass passes[] = {{(int16_t)-r2, 0, 0.16f}, {r2, 0, 0.16f}, {0, (int16_t)-r2, 0.16f}, {0, r2, 0.16f}, {(int16_t)-r1, (int16_t)-r1, 0.16f}, {r1, (int16_t)-r1, 0.16f}, {(int16_t)-r1, r1, 0.16f}, {r1, r1, 0.16f}, {(int16_t)-r1, 0, 0.38f}, {r1, 0, 0.38f}, {0, (int16_t)-r1, 0.38f}, {0, r1, 0.38f}, {0, 0, -1.0f}};
+            const Pass passes[] = {{(int16_t)-r2, 0, 0.16f}, {r2, 0, 0.16f},  {0, (int16_t)-r2, 0.16f}, {0, r2, 0.16f},
+                                   {(int16_t)-r1, (int16_t)-r1, 0.16f}, {r1, (int16_t)-r1, 0.16f},
+                                   {(int16_t)-r1, r1, 0.16f}, {r1, r1, 0.16f},
+                                   {(int16_t)-r1, 0, 0.38f}, {r1, 0, 0.38f}, {0, (int16_t)-r1, 0.38f}, {0, r1, 0.38f},
+                                   {0, 0, -1.0f}};
             for (const Pass &p : passes)
             {
                 const bool isCore = p.glow < 0;
@@ -246,78 +252,8 @@ namespace disp
         // ------------------------------------------------------------------ Minimal
         // The Minimal face as designed: hour over minute in big ExtraBold white digits with a blue glow (ClockBold45 /
         // ClockBold90) on the left; on the right, top to bottom: the weather (icon + temperature), the weekday and
-        // "21 Oct". The weather row is left out until a reading exists.
-
-        enum WxKind : uint8_t
-        {
-            WX_SUN,
-            WX_CLOUD,
-            WX_RAIN,
-            WX_SNOW
-        };
-
-        // Open-Meteo WMO code -> one of the four icons of the design.
-        WxKind wxKind(int code)
-        {
-            if (code <= 1)
-                return WX_SUN;
-            if ((code >= 71 && code <= 77) || code == 85 || code == 86)
-                return WX_SNOW;
-            if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82) || code >= 95)
-                return WX_RAIN;
-            return WX_CLOUD; // partly cloudy, overcast, fog
-        }
-
-        void wxCloud(TFT_eSPI &g, float cx, float cy, float s, uint16_t c)
-        {
-            g.fillRoundRect(R16(cx - 0.85f * s), R16(cy - 0.05f * s), R16(1.7f * s), R16(0.7f * s), R16(0.35f * s), c);
-            g.fillCircle(R16(cx - 0.40f * s), R16(cy - 0.05f * s), imax(1, R16(0.38f * s)), c);
-            g.fillCircle(R16(cx + 0.12f * s), R16(cy - 0.25f * s), imax(1, R16(0.52f * s)), c);
-        }
-
-        // s = half the width of the icon in px.
-        void wxIcon(TFT_eSPI &g, WxKind k, float cx, float cy, float s)
-        {
-            const uint16_t SUN = rgb(250, 200, 105), CLOUD = rgb(178, 168, 245), DROP = rgb(110, 175, 255),
-                           SNOW = rgb(130, 205, 255);
-            const float w = imax(1, R16(0.2f * s));
-            switch (k)
-            {
-            case WX_SUN:
-                g.fillCircle(R16(cx), R16(cy), imax(2, R16(0.45f * s)), SUN);
-                for (int i = 0; i < 8; i++)
-                {
-                    const float a = i * 0.7853982f, sx = sinf(a), sy = -cosf(a);
-                    thickLine(g, cx + sx * 0.72f * s, cy + sy * 0.72f * s, cx + sx * 0.98f * s, cy + sy * 0.98f * s, w, SUN);
-                }
-                break;
-            case WX_CLOUD:
-                wxCloud(g, cx, cy + 0.1f * s, s, CLOUD);
-                break;
-            case WX_RAIN:
-                wxCloud(g, cx, cy - 0.28f * s, s, CLOUD);
-                for (int i = -1; i <= 1; i++)
-                    thickLine(g, cx + i * 0.5f * s + 0.12f * s, cy + 0.62f * s, cx + i * 0.5f * s - 0.06f * s, cy + 0.95f * s, w, DROP);
-                break;
-            case WX_SNOW:
-                for (int i = 0; i < 3; i++)
-                {
-                    const float a = i * 1.0471976f, sx = sinf(a), sy = -cosf(a);
-                    thickLine(g, cx - sx * 0.95f * s, cy - sy * 0.95f * s, cx + sx * 0.95f * s, cy + sy * 0.95f * s, w, SNOW);
-                    if (s >= 6.0f) // little branches at the tips
-                        for (int e = -1; e <= 1; e += 2)
-                        {
-                            const float tx = cx + e * sx * 0.95f * s, ty = cy + e * sy * 0.95f * s;
-                            for (int d = -1; d <= 1; d += 2)
-                            {
-                                const float b = a + (e > 0 ? 0.0f : 3.1415927f) + d * 0.7f;
-                                thickLine(g, tx, ty, tx - sinf(b) * 0.35f * s, ty + cosf(b) * 0.35f * s, w, SNOW);
-                            }
-                        }
-                }
-                break;
-            }
-        }
+        // "21 Oct". The weather row is left out until a reading exists. Its icon (display_wxicon.cpp) is animated, so this
+        // face redraws about 10 times a second while the weather is shown (see clockScreenSig).
 
         // One string centred on cx, its digits centred on cy: wide halo, near halo, then the white core.
         void glowString(TFT_eSPI &g, const uint8_t *font, int16_t caph, const char *str, int16_t cx, int16_t cy, uint16_t on)
@@ -329,7 +265,11 @@ namespace disp
                 int16_t dx, dy;
                 float glow;
             };
-            const Pass passes[] = {{(int16_t)-r2, 0, 0.22f}, {r2, 0, 0.22f}, {0, (int16_t)-r2, 0.22f}, {0, r2, 0.22f}, {(int16_t)-r1, (int16_t)-r1, 0.22f}, {r1, (int16_t)-r1, 0.22f}, {(int16_t)-r1, r1, 0.22f}, {r1, r1, 0.22f}, {(int16_t)-r1, 0, 0.48f}, {r1, 0, 0.48f}, {0, (int16_t)-r1, 0.48f}, {0, r1, 0.48f}, {0, 0, -1.0f}};
+            const Pass passes[] = {{(int16_t)-r2, 0, 0.22f}, {r2, 0, 0.22f}, {0, (int16_t)-r2, 0.22f}, {0, r2, 0.22f},
+                                   {(int16_t)-r1, (int16_t)-r1, 0.22f}, {r1, (int16_t)-r1, 0.22f},
+                                   {(int16_t)-r1, r1, 0.22f}, {r1, r1, 0.22f},
+                                   {(int16_t)-r1, 0, 0.48f}, {r1, 0, 0.48f}, {0, (int16_t)-r1, 0.48f}, {0, r1, 0.48f},
+                                   {0, 0, -1.0f}};
             g.loadFont(font);
             g.setTextDatum(C_BASELINE);
             for (const Pass &p : passes)
@@ -345,7 +285,6 @@ namespace disp
 
         void styleMinimal(TFT_eSPI &g, bool have, const struct tm &ti, uint32_t now, uint16_t accent, uint16_t on)
         {
-            (void)now;
             const bool big = sc >= 1.5f;
             const uint8_t *bold = big ? ClockBold90 : ClockBold45;
             const int16_t boldCap = big ? CLOCKBOLD90_CAPH : CLOCKBOLD45_CAPH;
@@ -371,7 +310,7 @@ namespace disp
             {
                 const float s = 6.5f * sc;
                 const int16_t cy = (int16_t)(H * 0.34f);
-                wxIcon(g, wxKind(code), xr + s, cy, s);
+                drawWxIcon(g, code, !have || sun_is_day(ti), xr + s, cy, s, now); // animated, day or night sky
                 char t[10];
                 snprintf(t, sizeof(t), "%d\xC2\xB0", (int)lroundf(tC));
                 smoothText(g, ClockSm18, CLOCKSM18_CAPH, t, (int16_t)(xr + 2 * s + u(4)), cy, L_BASELINE, neonCore(accent, 0.9f), C_BG);
@@ -419,7 +358,11 @@ namespace disp
 
         // ------------------------------------------------------------------ LED (dot matrix)
         const uint8_t FONT5X7[10][7] = {
-            {0x0E, 0x11, 0x13, 0x15, 0x19, 0x11, 0x0E}, {0x04, 0x0C, 0x04, 0x04, 0x04, 0x04, 0x0E}, {0x0E, 0x11, 0x01, 0x02, 0x04, 0x08, 0x1F}, {0x1F, 0x02, 0x04, 0x02, 0x01, 0x11, 0x0E}, {0x02, 0x06, 0x0A, 0x12, 0x1F, 0x02, 0x02}, {0x1F, 0x10, 0x1E, 0x01, 0x01, 0x11, 0x0E}, {0x06, 0x08, 0x10, 0x1E, 0x11, 0x11, 0x0E}, {0x1F, 0x01, 0x02, 0x04, 0x08, 0x08, 0x08}, {0x0E, 0x11, 0x11, 0x0E, 0x11, 0x11, 0x0E}, {0x0E, 0x11, 0x11, 0x0F, 0x01, 0x02, 0x0C}};
+            {0x0E, 0x11, 0x13, 0x15, 0x19, 0x11, 0x0E}, {0x04, 0x0C, 0x04, 0x04, 0x04, 0x04, 0x0E},
+            {0x0E, 0x11, 0x01, 0x02, 0x04, 0x08, 0x1F}, {0x1F, 0x02, 0x04, 0x02, 0x01, 0x11, 0x0E},
+            {0x02, 0x06, 0x0A, 0x12, 0x1F, 0x02, 0x02}, {0x1F, 0x10, 0x1E, 0x01, 0x01, 0x11, 0x0E},
+            {0x06, 0x08, 0x10, 0x1E, 0x11, 0x11, 0x0E}, {0x1F, 0x01, 0x02, 0x04, 0x08, 0x08, 0x08},
+            {0x0E, 0x11, 0x11, 0x0E, 0x11, 0x11, 0x0E}, {0x0E, 0x11, 0x11, 0x0F, 0x01, 0x02, 0x0C}};
 
         void ledDot(TFT_eSPI &g, int16_t x, int16_t y, int16_t p, bool lit, uint16_t accent)
         {
@@ -476,21 +419,24 @@ namespace disp
     {
         uint32_t sig = (uint32_t)ui_clock_style() << 28;
         if (!haveTime)
-            return sig | 0x08000000u | (now / 90);        // the syncing animation
+            return sig | 0x08000000u | (now / 90); // the syncing animation
         if (ui_clock_style() == ClockStyle::ANALOG_CLOCK) // no seconds, no colon: the dial changes once a minute
             return sig | ((uint32_t)(ti.tm_hour * 3600 + ti.tm_min * 60) & 0x1FFFF);
-        if (ui_clock_style() == ClockStyle::MINIMAL) // once a minute, or when the weather row changes
+        if (ui_clock_style() == ClockStyle::MINIMAL) // once a minute, when the temperature changes, and per frame of the icon
         {
             bool ok;
             float tC;
             int code;
             uint32_t upd;
             readWeather(ok, tC, code, upd);
-            uint32_t w = ok ? (1u | ((uint32_t)((int)lroundf(tC) + 64) & 0x7Fu) << 1 | (uint32_t)wxKind(code) << 8) : 0u;
-            sig |= (uint32_t)(ti.tm_hour * 3600 + ti.tm_min * 60) & 0x1FFFF;
+            int tq = (int)lroundf(tC) + 100; // 0 = no reading
+            tq = tq < 1 ? 1 : (tq > 255 ? 255 : tq);
+            sig |= (uint32_t)(ti.tm_hour * 60 + ti.tm_min) & 0x7FFu;               // bits 0..10
+            sig |= (uint32_t)(ok ? tq : 0) << 11;                                   // bits 11..18
+            sig |= (uint32_t)(ok ? (now / 100) & 0x1Fu : 0u) << 19;                 // bits 19..23: animation frame
             if (persona.digitPulse > 0)
                 sig |= 1u << 27;
-            return sig | (w << 17); // 10 bits: bits 17..26
+            return sig;
         }
         sig |= (uint32_t)(ti.tm_hour * 3600 + ti.tm_min * 60 + ti.tm_sec) & 0x1FFFF;
         sig |= (uint32_t)colonLevelNow(now) << 17;
