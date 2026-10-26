@@ -2,14 +2,19 @@
 // Smooth (VLW) fonts for TFT_eSPI: load with g.loadFont(ClockSmNN), draw, then g.unloadFont().
 // *_CAPH = height of the digits / capital letters in px (to centre text on the baseline).
 // Needs -D SMOOTH_FONT=1. Glyphs per font:
-//   ClockSm12, ClockSm18: 0-9 : ° %  and every letter of Sunday..Saturday, Sun..Sat, Jan..Dec, Tmrw, h, m
+//   ClockSm12, ClockSm18: 0-9 : ° % ,  and every letter of Sunday..Saturday, Sun..Sat, Jan..Dec, Tmrw, h, m
 //   ClockSm26:            the capitals of JAN..DEC and C (month name on the date page, the C of the temperature)
+//   ClockBig48, ClockBig92: only 0-9, colon and minus - the big time of the Simple clock face (160 x 128 / 320 x 240 screens)
 #pragma once
 #include <Arduino.h>
 
-extern const uint8_t ClockSm12[]; // 43 glyphs, 3308 bytes
+extern const uint8_t ClockSm12[]; // 44 glyphs, 3348 bytes
 constexpr int16_t CLOCKSM12_CAPH = 8;
-extern const uint8_t ClockSm18[]; // 43 glyphs, 5572 bytes
+extern const uint8_t ClockSm18[]; // 44 glyphs, 5618 bytes
 constexpr int16_t CLOCKSM18_CAPH = 12;
 extern const uint8_t ClockSm26[]; // 19 glyphs, 5073 bytes
 constexpr int16_t CLOCKSM26_CAPH = 17;
+extern const uint8_t ClockBig48[]; // 12 glyphs, 8973 bytes
+constexpr int16_t CLOCKBIG48_CAPH = 36;
+extern const uint8_t ClockBig92[]; // 12 glyphs, 34517 bytes
+constexpr int16_t CLOCKBIG92_CAPH = 70;

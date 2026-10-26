@@ -109,16 +109,85 @@ namespace disp
         }
 
         // ------------------------------------------------------------------ Simple
+        // The Simple face as designed: the time in big, round, medium-bold digits (white-lavender core with a soft
+        // blue-violet glow around them, ClockBig48 / ClockBig92) and "Tue, Oct 21" in the same lavender under it.
+        // Nothing else: no seconds bar, no sparkles. The colon keeps its slow "breath".
+
+        // "HH:MM" (or "--:--" while the time is unknown) centred on cx, digits centred on cy, drawn in three passes:
+        // the wide glow, the near glow, the bright core. Every glyph is placed one by one so the colon can breathe.
+        void bigTime(TFT_eSPI &g, int16_t cx, int16_t cy, bool have, const struct tm &ti, uint16_t on, uint8_t colonLevel)
+        {
+            const bool big = sc >= 1.5f;
+            const uint8_t *font = big ? ClockBig92 : ClockBig48;
+            const int16_t caph = big ? CLOCKBIG92_CAPH : CLOCKBIG48_CAPH;
+            char s[6];
+            if (have)
+                snprintf(s, sizeof(s), "%02d:%02d", ti.tm_hour, ti.tm_min);
+            else
+                strcpy(s, "--:--");
+            const uint16_t core = neonCore(on, 0.82f);
+            const float ck = 0.35f + 0.65f * (colonLevel / 15.0f); // the colon never goes out completely
+
+            g.loadFont(font);
+            g.setTextDatum(L_BASELINE);
+            int16_t cw[5], total = 0;
+            for (int i = 0; i < 5; i++)
+            {
+                const char one[2] = {s[i], 0};
+                cw[i] = g.textWidth(one, 1);
+                total += cw[i];
+            }
+            const int16_t x0 = cx - total / 2, by = cy + caph / 2;
+            const int16_t r2 = imax(2, u(2.2f)), r1 = imax(1, u(0.9f));
+            struct Pass
+            {
+                int16_t dx, dy;
+                float glow;
+            };
+            // far halo (square ring), near halo (plus shape), then the core on top
+            const Pass passes[] = {{(int16_t)-r2, 0, 0.16f}, {r2, 0, 0.16f}, {0, (int16_t)-r2, 0.16f}, {0, r2, 0.16f}, {(int16_t)-r1, (int16_t)-r1, 0.16f}, {r1, (int16_t)-r1, 0.16f}, {(int16_t)-r1, r1, 0.16f}, {r1, r1, 0.16f}, {(int16_t)-r1, 0, 0.38f}, {r1, 0, 0.38f}, {0, (int16_t)-r1, 0.38f}, {0, r1, 0.38f}, {0, 0, -1.0f}};
+            for (const Pass &p : passes)
+            {
+                const bool isCore = p.glow < 0;
+                int16_t x = x0;
+                for (int i = 0; i < 5; i++)
+                {
+                    const char one[2] = {s[i], 0};
+                    const float k = (i == 2) ? ck : 1.0f; // index 2 is the colon
+                    uint16_t fg, bg;
+                    if (isCore)
+                    {
+                        fg = mixColor(tint(on, 0.38f * k), core, k);
+                        bg = tint(on, 0.38f * k);
+                    }
+                    else
+                    {
+                        fg = tint(on, p.glow * k);
+                        bg = C_BG;
+                    }
+                    g.setTextColor(fg, bg);
+                    g.drawString(one, x + p.dx, by + p.dy);
+                    x += cw[i];
+                }
+            }
+            g.unloadFont();
+        }
+
         void styleSimple(TFT_eSPI &g, bool have, const struct tm &ti, uint32_t now, uint16_t accent, uint16_t on)
         {
-            const int16_t dh = (int16_t)(H * 0.40f), dy = (int16_t)(H * 0.19f);
-            timeDigits(g, W / 2, dy, dh, have, ti, on, tint(C_BLUSH, 0.5f + 0.5f * (have ? 1.0f : 0.0f)), have ? colonLevelNow(now) : (uint8_t)(7.5f + 7.0f * sinf(now / 450.0f)), C_GHOST);
+            const uint8_t level = have ? colonLevelNow(now) : (uint8_t)(7.5f + 7.0f * sinf(now / 450.0f));
+            const uint16_t timeCol = have ? on : tint(accent, 0.55f); // dim while the time is unknown
+            bigTime(g, W / 2, (int16_t)(H * 0.42f), have, ti, timeCol, level);
+            // the date: "Tue, Oct 21" (no leading zero on the day), lavender like the digits
             char cap[24] = "Syncing...";
             if (have)
-                strftime(cap, sizeof(cap), "%a, %b %d", &ti);
-            caption(g, W / 2, (int16_t)(H * 0.73f), cap, C_SOFT, tint(accent, 0.8f), have);
-            if (have)
-                drawNeonBar(g, u(16), H - u(15), W - 2 * u(16), imax(3, u(3)), (ti.tm_sec + 1) / 60.0f, accent, true);
+            {
+                char wd[8], mo[8];
+                strftime(wd, sizeof(wd), "%a", &ti);
+                strftime(mo, sizeof(mo), "%b", &ti);
+                snprintf(cap, sizeof(cap), "%s, %s %d", wd, mo, ti.tm_mday);
+            }
+            smoothText(g, ClockSm18, CLOCKSM18_CAPH, cap, W / 2, (int16_t)(H * 0.75f), C_BASELINE, neonCore(accent, 0.72f), C_BG);
         }
 
         // ------------------------------------------------------------------ Analog
@@ -235,11 +304,7 @@ namespace disp
 
         // ------------------------------------------------------------------ LED (dot matrix)
         const uint8_t FONT5X7[10][7] = {
-            {0x0E, 0x11, 0x13, 0x15, 0x19, 0x11, 0x0E}, {0x04, 0x0C, 0x04, 0x04, 0x04, 0x04, 0x0E},
-            {0x0E, 0x11, 0x01, 0x02, 0x04, 0x08, 0x1F}, {0x1F, 0x02, 0x04, 0x02, 0x01, 0x11, 0x0E},
-            {0x02, 0x06, 0x0A, 0x12, 0x1F, 0x02, 0x02}, {0x1F, 0x10, 0x1E, 0x01, 0x01, 0x11, 0x0E},
-            {0x06, 0x08, 0x10, 0x1E, 0x11, 0x11, 0x0E}, {0x1F, 0x01, 0x02, 0x04, 0x08, 0x08, 0x08},
-            {0x0E, 0x11, 0x11, 0x0E, 0x11, 0x11, 0x0E}, {0x0E, 0x11, 0x11, 0x0F, 0x01, 0x02, 0x0C}};
+            {0x0E, 0x11, 0x13, 0x15, 0x19, 0x11, 0x0E}, {0x04, 0x0C, 0x04, 0x04, 0x04, 0x04, 0x0E}, {0x0E, 0x11, 0x01, 0x02, 0x04, 0x08, 0x1F}, {0x1F, 0x02, 0x04, 0x02, 0x01, 0x11, 0x0E}, {0x02, 0x06, 0x0A, 0x12, 0x1F, 0x02, 0x02}, {0x1F, 0x10, 0x1E, 0x01, 0x01, 0x11, 0x0E}, {0x06, 0x08, 0x10, 0x1E, 0x11, 0x11, 0x0E}, {0x1F, 0x01, 0x02, 0x04, 0x08, 0x08, 0x08}, {0x0E, 0x11, 0x11, 0x0E, 0x11, 0x11, 0x0E}, {0x0E, 0x11, 0x11, 0x0F, 0x01, 0x02, 0x0C}};
 
         void ledDot(TFT_eSPI &g, int16_t x, int16_t y, int16_t p, bool lit, uint16_t accent)
         {
