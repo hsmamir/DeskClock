@@ -14,7 +14,7 @@ extern const uint8_t ClockSm18[]; // 44 glyphs, 5618 bytes
 constexpr int16_t CLOCKSM18_CAPH = 12;
 extern const uint8_t ClockSm26[]; // 19 glyphs, 5073 bytes
 constexpr int16_t CLOCKSM26_CAPH = 17;
-extern const uint8_t ClockBig48[]; // 12 glyphs, 8973 bytes
+extern const uint8_t ClockBig48[]; // 12 glyphs, 8777 bytes
 constexpr int16_t CLOCKBIG48_CAPH = 36;
-extern const uint8_t ClockBig92[]; // 12 glyphs, 34517 bytes
-constexpr int16_t CLOCKBIG92_CAPH = 70;
+extern const uint8_t ClockBig92[]; // 12 glyphs, 30204 bytes
+constexpr int16_t CLOCKBIG92_CAPH = 68;
