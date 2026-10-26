@@ -244,38 +244,149 @@ namespace disp
         }
 
         // ------------------------------------------------------------------ Minimal
+        // The Minimal face as designed: hour over minute in big ExtraBold white digits with a blue glow (ClockBold45 /
+        // ClockBold90) on the left; on the right, top to bottom: the weather (icon + temperature), the weekday and
+        // "21 Oct". The weather row is left out until a reading exists.
+
+        enum WxKind : uint8_t
+        {
+            WX_SUN,
+            WX_CLOUD,
+            WX_RAIN,
+            WX_SNOW
+        };
+
+        // Open-Meteo WMO code -> one of the four icons of the design.
+        WxKind wxKind(int code)
+        {
+            if (code <= 1)
+                return WX_SUN;
+            if ((code >= 71 && code <= 77) || code == 85 || code == 86)
+                return WX_SNOW;
+            if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82) || code >= 95)
+                return WX_RAIN;
+            return WX_CLOUD; // partly cloudy, overcast, fog
+        }
+
+        void wxCloud(TFT_eSPI &g, float cx, float cy, float s, uint16_t c)
+        {
+            g.fillRoundRect(R16(cx - 0.85f * s), R16(cy - 0.05f * s), R16(1.7f * s), R16(0.7f * s), R16(0.35f * s), c);
+            g.fillCircle(R16(cx - 0.40f * s), R16(cy - 0.05f * s), imax(1, R16(0.38f * s)), c);
+            g.fillCircle(R16(cx + 0.12f * s), R16(cy - 0.25f * s), imax(1, R16(0.52f * s)), c);
+        }
+
+        // s = half the width of the icon in px.
+        void wxIcon(TFT_eSPI &g, WxKind k, float cx, float cy, float s)
+        {
+            const uint16_t SUN = rgb(250, 200, 105), CLOUD = rgb(178, 168, 245), DROP = rgb(110, 175, 255),
+                           SNOW = rgb(130, 205, 255);
+            const float w = imax(1, R16(0.2f * s));
+            switch (k)
+            {
+            case WX_SUN:
+                g.fillCircle(R16(cx), R16(cy), imax(2, R16(0.45f * s)), SUN);
+                for (int i = 0; i < 8; i++)
+                {
+                    const float a = i * 0.7853982f, sx = sinf(a), sy = -cosf(a);
+                    thickLine(g, cx + sx * 0.72f * s, cy + sy * 0.72f * s, cx + sx * 0.98f * s, cy + sy * 0.98f * s, w, SUN);
+                }
+                break;
+            case WX_CLOUD:
+                wxCloud(g, cx, cy + 0.1f * s, s, CLOUD);
+                break;
+            case WX_RAIN:
+                wxCloud(g, cx, cy - 0.28f * s, s, CLOUD);
+                for (int i = -1; i <= 1; i++)
+                    thickLine(g, cx + i * 0.5f * s + 0.12f * s, cy + 0.62f * s, cx + i * 0.5f * s - 0.06f * s, cy + 0.95f * s, w, DROP);
+                break;
+            case WX_SNOW:
+                for (int i = 0; i < 3; i++)
+                {
+                    const float a = i * 1.0471976f, sx = sinf(a), sy = -cosf(a);
+                    thickLine(g, cx - sx * 0.95f * s, cy - sy * 0.95f * s, cx + sx * 0.95f * s, cy + sy * 0.95f * s, w, SNOW);
+                    if (s >= 6.0f) // little branches at the tips
+                        for (int e = -1; e <= 1; e += 2)
+                        {
+                            const float tx = cx + e * sx * 0.95f * s, ty = cy + e * sy * 0.95f * s;
+                            for (int d = -1; d <= 1; d += 2)
+                            {
+                                const float b = a + (e > 0 ? 0.0f : 3.1415927f) + d * 0.7f;
+                                thickLine(g, tx, ty, tx - sinf(b) * 0.35f * s, ty + cosf(b) * 0.35f * s, w, SNOW);
+                            }
+                        }
+                }
+                break;
+            }
+        }
+
+        // One string centred on cx, its digits centred on cy: wide halo, near halo, then the white core.
+        void glowString(TFT_eSPI &g, const uint8_t *font, int16_t caph, const char *str, int16_t cx, int16_t cy, uint16_t on)
+        {
+            const uint16_t core = neonCore(on, 0.92f);
+            const int16_t r2 = imax(2, u(2.2f)), r1 = imax(1, u(1.0f));
+            struct Pass
+            {
+                int16_t dx, dy;
+                float glow;
+            };
+            const Pass passes[] = {{(int16_t)-r2, 0, 0.22f}, {r2, 0, 0.22f}, {0, (int16_t)-r2, 0.22f}, {0, r2, 0.22f}, {(int16_t)-r1, (int16_t)-r1, 0.22f}, {r1, (int16_t)-r1, 0.22f}, {(int16_t)-r1, r1, 0.22f}, {r1, r1, 0.22f}, {(int16_t)-r1, 0, 0.48f}, {r1, 0, 0.48f}, {0, (int16_t)-r1, 0.48f}, {0, r1, 0.48f}, {0, 0, -1.0f}};
+            g.loadFont(font);
+            g.setTextDatum(C_BASELINE);
+            for (const Pass &p : passes)
+            {
+                if (p.glow < 0)
+                    g.setTextColor(core, tint(on, 0.48f));
+                else
+                    g.setTextColor(tint(on, p.glow), C_BG);
+                g.drawString(str, cx + p.dx, cy + caph / 2 + p.dy);
+            }
+            g.unloadFont();
+        }
+
         void styleMinimal(TFT_eSPI &g, bool have, const struct tm &ti, uint32_t now, uint16_t accent, uint16_t on)
         {
             (void)now;
-            const int16_t dh = (int16_t)((H - 3 * u(9)) / 2), dw = (int16_t)(dh * 0.56f), gap = imax(2, u(3));
-            const int16_t x0 = u(12), y1 = u(9), y2 = y1 + dh + u(9);
-            const int8_t d[4] = {(int8_t)(have ? ti.tm_hour / 10 : -1), (int8_t)(have ? ti.tm_hour % 10 : -1),
-                                 (int8_t)(have ? ti.tm_min / 10 : -1), (int8_t)(have ? ti.tm_min % 10 : -1)};
-            drawSegDigit(g, x0, y1, dw, dh, d[0], on, C_GHOST);
-            drawSegDigit(g, x0 + dw + gap, y1, dw, dh, d[1], on, C_GHOST);
-            drawSegDigit(g, x0, y2, dw, dh, d[2], on, C_GHOST);
-            drawSegDigit(g, x0 + dw + gap, y2, dw, dh, d[3], on, C_GHOST);
-            // divider and the date block on the right
-            const int16_t xd = x0 + 2 * dw + gap + u(12);
-            g.drawFastVLine(xd, u(14), H - 2 * u(14), tint(C_SOFT, 0.31f));
-            const int16_t xc = (xd + W) / 2;
-            if (!have)
+            const bool big = sc >= 1.5f;
+            const uint8_t *bold = big ? ClockBold90 : ClockBold45;
+            const int16_t boldCap = big ? CLOCKBOLD90_CAPH : CLOCKBOLD45_CAPH;
+            char hh[4] = "--", mm[4] = "--";
+            if (have)
             {
-                caption(g, xc, H / 2, "--", C_SOFT, C_SOFT, false);
-                return;
+                snprintf(hh, sizeof(hh), "%02d", ti.tm_hour);
+                snprintf(mm, sizeof(mm), "%02d", ti.tm_min);
             }
-            char wd[8], mo[8];
-            strftime(wd, sizeof(wd), "%a", &ti);
-            strftime(mo, sizeof(mo), "%b", &ti);
-            caption(g, xc, (int16_t)(H * 0.26f), wd, accent, accent, false);
-            const int16_t ddh = (int16_t)(H * 0.24f), ddw = (int16_t)(ddh * 0.56f), dgap = imax(2, u(3));
-            const int16_t dx = xc - (2 * ddw + dgap) / 2, dyy = (int16_t)(H * 0.40f);
-            drawSegDigit(g, dx, dyy, ddw, ddh, (int8_t)(ti.tm_mday / 10), C_WHITE, C_GHOST);
-            drawSegDigit(g, dx + ddw + dgap, dyy, ddw, ddh, (int8_t)(ti.tm_mday % 10), C_WHITE, C_GHOST);
-            caption(g, xc, (int16_t)(H * 0.80f), mo, C_SOFT, C_SOFT, false);
-            // a tiny blush dot that blinks with the seconds
-            if (ti.tm_sec & 1)
-                g.fillCircle(xc, H - u(10), imax(2, u(2)), C_BLUSH);
+            const int16_t xc = (int16_t)(W * 0.368f);
+            glowString(g, bold, boldCap, hh, xc, (int16_t)(H * 0.33f), on);
+            glowString(g, bold, boldCap, mm, xc, (int16_t)(H * 0.677f), on);
+
+            // the right column
+            const int16_t xr = (int16_t)(W * 0.633f);
+            const uint16_t lav = neonCore(accent, 0.58f);
+            bool wxOk;
+            float tC;
+            int code;
+            uint32_t upd;
+            readWeather(wxOk, tC, code, upd);
+            if (wxOk)
+            {
+                const float s = 6.5f * sc;
+                const int16_t cy = (int16_t)(H * 0.34f);
+                wxIcon(g, wxKind(code), xr + s, cy, s);
+                char t[10];
+                snprintf(t, sizeof(t), "%d\xC2\xB0", (int)lroundf(tC));
+                smoothText(g, ClockSm18, CLOCKSM18_CAPH, t, (int16_t)(xr + 2 * s + u(4)), cy, L_BASELINE, neonCore(accent, 0.9f), C_BG);
+            }
+            char wd[8] = "--", dm[16] = "";
+            if (have)
+            {
+                char mo[8];
+                strftime(wd, sizeof(wd), "%a", &ti);
+                strftime(mo, sizeof(mo), "%b", &ti);
+                snprintf(dm, sizeof(dm), "%d %s", ti.tm_mday, mo);
+            }
+            smoothText(g, ClockSm18, CLOCKSM18_CAPH, wd, xr, (int16_t)(H * 0.608f), L_BASELINE, lav, C_BG);
+            if (have)
+                smoothText(g, ClockSm18, CLOCKSM18_CAPH, dm, xr, (int16_t)(H * 0.748f), L_BASELINE, lav, C_BG);
         }
 
         // ------------------------------------------------------------------ Retro
@@ -368,6 +479,19 @@ namespace disp
             return sig | 0x08000000u | (now / 90);        // the syncing animation
         if (ui_clock_style() == ClockStyle::ANALOG_CLOCK) // no seconds, no colon: the dial changes once a minute
             return sig | ((uint32_t)(ti.tm_hour * 3600 + ti.tm_min * 60) & 0x1FFFF);
+        if (ui_clock_style() == ClockStyle::MINIMAL) // once a minute, or when the weather row changes
+        {
+            bool ok;
+            float tC;
+            int code;
+            uint32_t upd;
+            readWeather(ok, tC, code, upd);
+            uint32_t w = ok ? (1u | ((uint32_t)((int)lroundf(tC) + 64) & 0x7Fu) << 1 | (uint32_t)wxKind(code) << 8) : 0u;
+            sig |= (uint32_t)(ti.tm_hour * 3600 + ti.tm_min * 60) & 0x1FFFF;
+            if (persona.digitPulse > 0)
+                sig |= 1u << 27;
+            return sig | (w << 17); // 10 bits: bits 17..26
+        }
         sig |= (uint32_t)(ti.tm_hour * 3600 + ti.tm_min * 60 + ti.tm_sec) & 0x1FFFF;
         sig |= (uint32_t)colonLevelNow(now) << 17;
         if (ui_clock_style() == ClockStyle::RETRO)

@@ -4,13 +4,14 @@
 // Needs -D SMOOTH_FONT=1. Glyphs per font:
 //   ClockSm12, ClockSm18: 0-9 : ° % ,  and every letter of Sunday..Saturday, Sun..Sat, Jan..Dec, Tmrw, h, m
 //   ClockSm26:            the capitals of JAN..DEC and C (month name on the date page, the C of the temperature)
+//   ClockBold45, ClockBold90: only 0-9 and minus, ExtraBold - the stacked hour / minute of the Minimal face
 //   ClockBig48, ClockBig92: only 0-9, colon and minus - the big time of the Simple clock face (160 x 128 / 320 x 240 screens)
 #pragma once
 #include <Arduino.h>
 
-extern const uint8_t ClockSm12[]; // 44 glyphs, 3348 bytes
+extern const uint8_t ClockSm12[]; // 45 glyphs, 3384 bytes
 constexpr int16_t CLOCKSM12_CAPH = 8;
-extern const uint8_t ClockSm18[]; // 44 glyphs, 5618 bytes
+extern const uint8_t ClockSm18[]; // 45 glyphs, 5656 bytes
 constexpr int16_t CLOCKSM18_CAPH = 12;
 extern const uint8_t ClockSm26[]; // 19 glyphs, 5073 bytes
 constexpr int16_t CLOCKSM26_CAPH = 17;
@@ -18,3 +19,7 @@ extern const uint8_t ClockBig48[]; // 12 glyphs, 8777 bytes
 constexpr int16_t CLOCKBIG48_CAPH = 36;
 extern const uint8_t ClockBig92[]; // 12 glyphs, 30204 bytes
 constexpr int16_t CLOCKBIG92_CAPH = 68;
+extern const uint8_t ClockBold45[]; // 11 glyphs, 7670 bytes
+constexpr int16_t CLOCKBOLD45_CAPH = 33;
+extern const uint8_t ClockBold90[]; // 11 glyphs, 29287 bytes
+constexpr int16_t CLOCKBOLD90_CAPH = 67;
