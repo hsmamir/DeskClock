@@ -314,14 +314,37 @@ static void turnPages(int steps, uint32_t now)
     xSemaphoreTake(g_stateMutex, portMAX_DELAY);
 #if LANDSCAPE_UI
     {
-        // Landscape UI: the home page is the face (eyes) or the clock; any turn switches between them. Leaving the
-        // diagnostics page / the menu with a turn goes home without switching.
+        // Landscape UI: the knob walks through the pages  Face -> Clock -> Date -> Weather -> Face  (clockwise) and the
+        // same way back (counter-clockwise). Face and Clock are the two "home" views (ui_home_is_clock), Date and
+        // Weather are the DisplayModes of the same name (display.cpp draws them, display_page_side.cpp). Leaving the
+        // diagnostics page / the menu with a turn goes home without moving on. Weather has no scrolling any more: it is
+        // one screen. After DISPLAY_RETURN_MS without input autoReturnToClock() brings Date / Weather back home.
         const bool leaving = g_state.displayMode == DisplayMode::DIAG || g_state.displayMode == DisplayMode::MENU;
-        if (!leaving)
-            ui_toggle_home();
-        g_state.displayMode = DisplayMode::CLOCK;
+        if (leaving)
+        {
+            g_state.displayMode = DisplayMode::CLOCK;
+        }
+        else
+        {
+            int cur; // 0 = face, 1 = clock, 2 = date, 3 = weather
+            if (g_state.displayMode == DisplayMode::DATE)
+                cur = 2;
+            else if (g_state.displayMode == DisplayMode::WEATHER)
+                cur = 3;
+            else
+                cur = ui_home_is_clock() ? 1 : 0;
+            const int next = (cur + (dir > 0 ? 1 : 3)) % 4; // +1 or -1 (mod 4)
+            if (next == 2)
+                g_state.displayMode = DisplayMode::DATE;
+            else if (next == 3)
+                g_state.displayMode = DisplayMode::WEATHER;
+            else
+            {
+                ui_set_home_clock(next == 1);
+                g_state.displayMode = DisplayMode::CLOCK;
+            }
+        }
         xSemaphoreGive(g_stateMutex);
-        (void)dir;
         (void)now;
         return;
     }

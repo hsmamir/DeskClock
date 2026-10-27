@@ -14,6 +14,13 @@ namespace disp
     // While the alarm rings: the time in big red digits under the angry eyes (over the face).
     void drawAlarmOverlay(TFT_eSPI &g, bool haveTime, const struct tm &ti, bool flashOn);
 
+    // The Date and Weather pages (display_page_side.cpp): the two side pages of the knob cycle
+    // Face -> Clock -> Date -> Weather -> Face. mode is DisplayMode::DATE or DisplayMode::WEATHER; day = the sun is up
+    // (the weather icon shows the sun or the moon). Draws into g; the caller pushes it.
+    void drawSidePage(TFT_eSPI &g, DisplayMode mode, bool haveTime, const struct tm &ti, bool day, uint32_t now);
+    // Like clockScreenSig(): changes whenever the page would look different (the Weather page: ten times a second, for the icon).
+    uint32_t sidePageSig(DisplayMode mode, bool haveTime, const struct tm &ti, uint32_t now);
+
     // Quick menu, diagnostics and reminder pages (full screen).
     void drawMenuScreenL(uint32_t now);
     void drawDiagScreenL(uint32_t now);

@@ -31,6 +31,16 @@ static bool otaScreenShown = false;
 static bool spritesReleased = false;
 static int16_t digSprW = 0, digSprH = 0;
 
+// If a sprite could not be created (the heap was too fragmented right after a TLS connection), try again every
+// SPRITE_RETRY_MS instead of giving up for good: without the sprite every frame is drawn straight on the panel
+// and the screen flickers.
+#ifndef SPRITE_RETRY_MS
+#define SPRITE_RETRY_MS 1000
+#endif
+static uint32_t lastSpriteRetryMs = 0;
+static bool clockWasShown = false; // landscape clock page: drawn at least once since the sprite / page changed
+static uint32_t lastClockSig = 0;
+
 static void releaseSprites()
 {
     faceCv.spr.deleteSprite();
@@ -45,24 +55,48 @@ static void releaseSprites()
                   (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMaxAllocHeap());
 }
 
-static void restoreSprites()
+// true when a sprite that should exist is missing (a failed createSprite: the display then draws straight on the
+// panel, which is what makes the screen flicker)
+static bool spritesMissing()
 {
-    faceCv.spr.setColorDepth(16);
-    faceCv.ok = (faceCv.spr.createSprite(faceCv.w, faceCv.sh) != nullptr);
-    infoCv.ok = false;
-    if (infoCv.w > 0) // (the landscape UI has no second card)
+    if (!faceCv.ok)
+        return true;
+    if (infoCv.w > 0 && !infoCv.ok)
+        return true;
+    return false;
+}
+
+// Creates the sprites that are missing (existing ones are left alone), so it is safe to call it repeatedly.
+// Returns true when everything is there.
+static bool ensureSprites(const char *why, bool logFail = true)
+{
+    if (!faceCv.ok)
+    {
+        faceCv.spr.setColorDepth(16);
+        faceCv.ok = (faceCv.spr.createSprite(faceCv.w, faceCv.sh) != nullptr);
+    }
+    if (infoCv.w > 0 && !infoCv.ok) // (the landscape UI has no second card)
     {
         infoCv.spr.setColorDepth(16);
         infoCv.ok = (infoCv.spr.createSprite(infoCv.w, infoCv.sh) != nullptr);
     }
-    if (CLOCK_DIGIT_ANIM && infoCv.ok && digSprW > 0)
+    if (CLOCK_DIGIT_ANIM && infoCv.ok && digSprW > 0 && !digSprOk)
     {
         digSpr.setColorDepth(16);
         digSprOk = (digSpr.createSprite(digSprW, digSprH) != nullptr);
     }
     spritesReleased = false;
-    Serial.printf("display: sprites restored: face=%s info=%s digit=%s (free heap %u)\n", faceCv.ok ? "ok" : "fallback",
-                  infoCv.ok ? "ok" : "fallback", digSprOk ? "ok" : "off", (unsigned)ESP.getFreeHeap());
+    if (!logFail && spritesMissing())
+        return false; // a failed retry stays quiet (it runs once a second)
+    Serial.printf("display: sprites %s: face=%s info=%s digit=%s (free heap %u, largest block %u)\n", why,
+                  faceCv.ok ? "ok" : "fallback", infoCv.ok ? "ok" : "fallback", digSprOk ? "ok" : "off",
+                  (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMaxAllocHeap());
+    return !spritesMissing();
+}
+
+static void restoreSprites()
+{
+    ensureSprites("restored");
 }
 
 // How far the sun (by day, 0 = sunrise .. 1 = sunset) or the moon (by night, 0 = sunset ..
@@ -179,6 +213,23 @@ void display_tick()
     {
         restoreSprites();
         lastInfoSig = 0xFFFFFFFFu; // the new sprites are empty: the info panel has to be drawn again
+        clockWasShown = false;
+        lastSpriteRetryMs = now;
+    }
+    else if (!spritesReleased && !tlsActive && spritesMissing() && (uint32_t)(now - lastSpriteRetryMs) >= SPRITE_RETRY_MS)
+    {
+        // an earlier createSprite failed: the heap is usually in one piece again a moment later
+        lastSpriteRetryMs = now;
+        if (ensureSprites("retry", false))
+        {
+            lastInfoSig = 0xFFFFFFFFu;
+            clockWasShown = false;
+        }
+        else if (faceCv.ok)
+        {
+            lastInfoSig = 0xFFFFFFFFu; // at least the big one is back
+            clockWasShown = false;
+        }
     }
 
     // No sprites while a TLS connection is open: drawing the face straight on the panel is what made the screen
@@ -378,9 +429,23 @@ void display_tick()
         }
         menuScreenLeft();
 
+        // Date / Weather: the side pages of the knob cycle Face -> Clock -> Date -> Weather -> Face (touch.cpp).
+        // An alarm always brings the face back; the boot wake-up is not interrupted.
+        if (!alarm && (mode == DisplayMode::DATE || mode == DisplayMode::WEATHER) && persona.stage == PStage::RUN)
+        {
+            const uint32_t sig = sidePageSig(mode, haveTime, ti, now);
+            if (!clockWasShown || sig != lastClockSig) // (clockWasShown / lastClockSig are shared with the clock page)
+            {
+                lastClockSig = sig;
+                clockWasShown = true;
+                TFT_eSPI &g = faceCv.begin();
+                drawSidePage(g, mode, haveTime, ti, scn.day, now);
+                faceCv.endAt(0);
+            }
+            return;
+        }
+
         // Home: the face (eyes) or the clock, as the knob left it. The boot wake-up and the alarm always show the face.
-        static uint32_t lastClockSig = 0;
-        static bool clockWasShown = false;
         if (ui_home_is_clock() && !alarm && persona.stage == PStage::RUN)
         {
             const uint32_t sig = clockScreenSig(haveTime, ti, now);

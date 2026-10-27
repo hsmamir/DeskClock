@@ -5,8 +5,10 @@ navy background, white "neon" strokes with a blue glow, pink blush accents.
 
 | Page | How you get there |
 |------|-------------------|
-| Face (the eyes, home) | default; turn the knob to switch between face and clock |
+| Face (the eyes, home) | default; turn the knob: Face -> Clock -> Date -> Weather -> Face (counter-clockwise goes back) |
 | Clock | turn the knob; style = quick menu -> **Clock** (push to cycle) |
+| Date | turn the knob; weekday, big day number, month, year and a month calendar (week start = `CALENDAR_WEEK_START`) |
+| Weather | turn the knob; icon, temperature, condition, feels like / humidity / wind, the next hours with rain chance |
 | Quick menu | push the knob |
 | Diagnostics | hold the knob |
 | Reminder | appears when one is due |
@@ -24,4 +26,8 @@ Build flags (platformio.ini `build_flags`):
 * `-D LANDSCAPE_SCENE=1`  weather / time-of-day scene behind the eyes
 * `-D UI_STYLE=0`, `-D CHARACTER_STYLE=0` the old flat widgets / the old LED eyes
 
-Not in the landscape UI yet: the Date and Weather pages (not reachable until they are redesigned), the credits easter egg.
+Date and Weather are drawn in `src/display_page_side.cpp` with the fonts of `include/display_fonts_pages.h` (regenerate them with
+`python3 tools/make_vlw_pages.py`). They return to the home view after `DISPLAY_RETURN_MS` without input, a tap on the knob goes home at once.
+The old scrolling Weather page (7-day forecast, air quality) is only in the portrait layout (`-D LANDSCAPE_UI=0`).
+
+Not in the landscape UI yet: the credits easter egg.
