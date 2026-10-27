@@ -110,147 +110,6 @@ namespace disp
             drawColonGlow(g, x0 + 2 * dw + 2 * gap + cw / 2, y, dh, imax(2, dw / 4), colonCol, level);
         }
 
-        // ------------------------------------------------------------------ Simple
-        // The Simple face as designed: the time in big, round, medium-bold digits (white-lavender core with a soft
-        // blue-violet glow around them, ClockBig48 / ClockBig92) and "Tue, Oct 21" in the same lavender under it.
-        // Nothing else: no seconds bar, no sparkles. The colon keeps its slow "breath".
-
-        // "HH:MM" (or "--:--" while the time is unknown) centred on cx, digits centred on cy, drawn in three passes:
-        // the wide glow, the near glow, the bright core. Every glyph is placed one by one so the colon can breathe.
-        void bigTime(TFT_eSPI &g, int16_t cx, int16_t cy, bool have, const struct tm &ti, uint16_t on, uint8_t colonLevel)
-        {
-            const bool big = sc >= 1.5f;
-            const uint8_t *font = big ? ClockBig92 : ClockBig48;
-            const int16_t caph = big ? CLOCKBIG92_CAPH : CLOCKBIG48_CAPH;
-            char s[6];
-            if (have)
-                snprintf(s, sizeof(s), "%02d:%02d", ti.tm_hour, ti.tm_min);
-            else
-                strcpy(s, "--:--");
-            const uint16_t core = neonCore(on, 0.82f);
-            const float ck = 0.35f + 0.65f * (colonLevel / 15.0f); // the colon never goes out completely
-
-            g.loadFont(font);
-            g.setTextDatum(L_BASELINE);
-            int16_t cw[5], total = 0;
-            for (int i = 0; i < 5; i++)
-            {
-                const char one[2] = {s[i], 0};
-                cw[i] = g.textWidth(one, 1);
-                total += cw[i];
-            }
-            const int16_t x0 = cx - total / 2, by = cy + caph / 2;
-            const int16_t r2 = imax(2, u(2.2f)), r1 = imax(1, u(0.9f));
-            struct Pass
-            {
-                int16_t dx, dy;
-                float glow;
-            };
-            // far halo (square ring), near halo (plus shape), then the core on top
-            const Pass passes[] = {{(int16_t)-r2, 0, 0.16f}, {r2, 0, 0.16f}, {0, (int16_t)-r2, 0.16f}, {0, r2, 0.16f}, {(int16_t)-r1, (int16_t)-r1, 0.16f}, {r1, (int16_t)-r1, 0.16f}, {(int16_t)-r1, r1, 0.16f}, {r1, r1, 0.16f}, {(int16_t)-r1, 0, 0.38f}, {r1, 0, 0.38f}, {0, (int16_t)-r1, 0.38f}, {0, r1, 0.38f}, {0, 0, -1.0f}};
-            for (const Pass &p : passes)
-            {
-                const bool isCore = p.glow < 0;
-                int16_t x = x0;
-                for (int i = 0; i < 5; i++)
-                {
-                    const char one[2] = {s[i], 0};
-                    const float k = (i == 2) ? ck : 1.0f; // index 2 is the colon
-                    uint16_t fg, bg;
-                    if (isCore)
-                    {
-                        fg = mixColor(tint(on, 0.38f * k), core, k);
-                        bg = tint(on, 0.38f * k);
-                    }
-                    else
-                    {
-                        fg = tint(on, p.glow * k);
-                        bg = C_BG;
-                    }
-                    g.setTextColor(fg, bg);
-                    g.drawString(one, x + p.dx, by + p.dy);
-                    x += cw[i];
-                }
-            }
-            g.unloadFont();
-        }
-
-        void styleSimple(TFT_eSPI &g, bool have, const struct tm &ti, uint32_t now, uint16_t accent, uint16_t on)
-        {
-            const uint8_t level = have ? colonLevelNow(now) : (uint8_t)(7.5f + 7.0f * sinf(now / 450.0f));
-            const uint16_t timeCol = have ? on : tint(accent, 0.55f); // dim while the time is unknown
-            bigTime(g, W / 2, (int16_t)(H * 0.42f), have, ti, timeCol, level);
-            // the date: "Tue, Oct 21" (no leading zero on the day), lavender like the digits
-            char cap[24] = "Syncing...";
-            if (have)
-            {
-                char wd[8], mo[8];
-                strftime(wd, sizeof(wd), "%a", &ti);
-                strftime(mo, sizeof(mo), "%b", &ti);
-                snprintf(cap, sizeof(cap), "%s, %s %d", wd, mo, ti.tm_mday);
-            }
-            smoothText(g, ClockSm18, CLOCKSM18_CAPH, cap, W / 2, (int16_t)(H * 0.75f), C_BASELINE, neonCore(accent, 0.72f), C_BG);
-        }
-
-        // ------------------------------------------------------------------ Analog
-        // The Analog face as designed: a thin violet ring, twelve short white ticks (longer at 12 / 3 / 6 / 9), a white
-        // minute hand, an hour hand that fades from white to pink at its tip and a peach cap in the middle.
-        // No glow, no date, no second hand. All sizes are in px of the 160 x 128 screen and scale with sc.
-
-        // A line that fades from colour c0 at (x0, y0) to c1 at (x1, y1).
-        void gradLine(TFT_eSPI &g, float x0, float y0, float x1, float y1, float w, uint16_t c0, uint16_t c1)
-        {
-            const int n = 8;
-            for (int i = 0; i < n; i++)
-            {
-                const float a = (float)i / n, b = (float)(i + 1) / n;
-                thickLine(g, x0 + (x1 - x0) * a, y0 + (y1 - y0) * a, x0 + (x1 - x0) * b, y0 + (y1 - y0) * b, w,
-                          mixColor(c0, c1, (a + b) * 0.5f));
-            }
-        }
-
-        void styleAnalog(TFT_eSPI &g, bool have, const struct tm &ti, uint32_t now, uint16_t accent)
-        {
-            (void)now;
-            const uint16_t C_CAP = rgb(247, 186, 112);                  // the peach cap in the middle
-            const uint16_t whiteHand = neonCore(accent, 0.90f);         // ticks and minute hand
-            const uint16_t pinkTip = mixColor(C_BLUSH, C_WHITE, 0.35f); // the tip of the hour hand
-            const float cx = W * 0.5f, cy = H * 0.512f;                 // the dial sits a touch below the middle
-            const float R = 45.0f * sc, ringW = 2.4f * sc;
-
-            // the ring
-            g.fillCircle(R16(cx), R16(cy), R16(R + ringW * 0.5f), accent);
-            g.fillCircle(R16(cx), R16(cy), R16(R - ringW * 0.5f), C_BG);
-
-            // twelve ticks: long and thick at 12 / 3 / 6 / 9, short and thin between
-            for (int i = 0; i < 12; i++)
-            {
-                const float a = i * 0.5235988f, sx = sinf(a), sy = -cosf(a);
-                const bool q = (i % 3 == 0);
-                const float r0 = (q ? 33.3f : 34.0f) * sc, r1 = (q ? 40.5f : 39.0f) * sc;
-                thickLine(g, cx + sx * r0, cy + sy * r0, cx + sx * r1, cy + sy * r1, (q ? 1.9f : 1.5f) * sc, whiteHand);
-            }
-
-            if (!have)
-            {
-                caption(g, R16(cx), R16(cy + R * 0.5f), "Syncing...", C_SOFT, C_SOFT, false);
-                return;
-            }
-
-            const float hr = (ti.tm_hour % 12) + ti.tm_min / 60.0f; // seconds are not shown: the hands move once a minute
-            const float ah = hr / 12.0f * 6.2831853f, am = ti.tm_min / 60.0f * 6.2831853f;
-            const float hl = 24.0f * sc, ml = 27.0f * sc; // hour hand / minute hand length
-            gradLine(g, cx, cy, cx + sinf(ah) * hl, cy - cosf(ah) * hl, 2.2f * sc, whiteHand, pinkTip);
-            thickLine(g, cx, cy, cx + sinf(am) * ml, cy - cosf(am) * ml, 2.3f * sc, whiteHand);
-            g.fillCircle(R16(cx), R16(cy), imax(3, R16(4.4f * sc)), C_CAP);
-        }
-
-        // ------------------------------------------------------------------ Minimal
-        // The Minimal face as designed: hour over minute in big ExtraBold white digits with a blue glow (ClockBold45 /
-        // ClockBold90) on the left; on the right, top to bottom: the weather (icon + temperature), the weekday and
-        // "21 Oct". The weather row is left out until a reading exists. Its icon (display_wxicon.cpp) is animated, so this
-        // face redraws about 10 times a second while the weather is shown (see clockScreenSig).
-
         // Where the ink of a string lies in a VLW font, measured from the text cursor: l = left edge of the first glyph,
         // r = right edge of the last one. (textWidth() counts the empty side bearings too, so the layout would be a few px
         // off; this reads the glyph table of the font itself, see make_vlw.py for the format.)
@@ -295,6 +154,156 @@ namespace disp
             }
             return {(int16_t)l, (int16_t)r};
         }
+
+        // The advance (the step of the text cursor) of one character in a VLW font.
+        int16_t vlwAdv(const uint8_t *font, char ch)
+        {
+            const int32_t n = vlwI32(font);
+            const uint8_t *gp = font + 24;
+            for (int32_t i = 0; i < n; i++, gp += 28)
+                if ((uint32_t)vlwI32(gp) == (uint8_t)ch)
+                    return (int16_t)vlwI32(gp + 12);
+            return 0;
+        }
+
+        // ------------------------------------------------------------------ Simple
+        // The Simple face as designed: the time in big, round, medium-bold digits (white-lavender core with a soft
+        // blue-violet glow around them, ClockBig48 / ClockBig92) and "Tue, Oct 21" in the same lavender under it.
+        // Nothing else: no seconds bar, no sparkles. The colon keeps its slow "breath".
+
+        // "HH:MM" (or "--:--" while the time is unknown) centred on cx, digits centred on cy, drawn in three passes:
+        // the wide glow, the near glow, the bright core. Every glyph is placed one by one so the colon can breathe.
+        void bigTime(TFT_eSPI &g, int16_t cx, int16_t cy, bool have, const struct tm &ti, uint16_t on, uint8_t colonLevel)
+        {
+            const bool big = sc >= 1.5f;
+            const uint8_t *font = big ? ClockBig92 : ClockBig48;
+            const int16_t caph = big ? CLOCKBIG92_CAPH : CLOCKBIG48_CAPH;
+            char s[6];
+            if (have)
+                snprintf(s, sizeof(s), "%02d:%02d", ti.tm_hour, ti.tm_min);
+            else
+                strcpy(s, "--:--");
+            const uint16_t core = neonCore(on, 0.82f);
+            const float ck = 0.35f + 0.65f * (colonLevel / 15.0f); // the colon never goes out completely
+
+            const Ink ink = vlwInk(font, s);
+            const int16_t x0 = cx - (ink.l + ink.r) / 2, by = cy + caph / 2; // the ink, not the advances, is centred on cx
+            g.loadFont(font);
+            g.setTextDatum(L_BASELINE);
+            const int16_t r2 = imax(2, u(2.2f)), r1 = imax(1, u(0.9f));
+            struct Pass
+            {
+                int16_t dx, dy;
+                float glow;
+            };
+            // far halo (square ring), near halo (plus shape), then the core on top
+            const Pass passes[] = {{(int16_t)-r2, 0, 0.16f}, {r2, 0, 0.16f}, {0, (int16_t)-r2, 0.16f}, {0, r2, 0.16f}, {(int16_t)-r1, (int16_t)-r1, 0.16f}, {r1, (int16_t)-r1, 0.16f}, {(int16_t)-r1, r1, 0.16f}, {r1, r1, 0.16f}, {(int16_t)-r1, 0, 0.38f}, {r1, 0, 0.38f}, {0, (int16_t)-r1, 0.38f}, {0, r1, 0.38f}, {0, 0, -1.0f}};
+            for (const Pass &p : passes)
+            {
+                const bool isCore = p.glow < 0;
+                int16_t x = x0;
+                for (int i = 0; i < 5; i++)
+                {
+                    const char one[2] = {s[i], 0};
+                    const float k = (i == 2) ? ck : 1.0f; // index 2 is the colon
+                    uint16_t fg, bg;
+                    if (isCore)
+                    {
+                        fg = mixColor(tint(on, 0.38f * k), core, k);
+                        bg = tint(on, 0.38f * k);
+                    }
+                    else
+                    {
+                        fg = tint(on, p.glow * k);
+                        bg = C_BG;
+                    }
+                    g.setTextColor(fg, bg);
+                    g.drawString(one, x + p.dx, by + p.dy);
+                    x += vlwAdv(font, s[i]);
+                }
+            }
+            g.unloadFont();
+        }
+
+        void styleSimple(TFT_eSPI &g, bool have, const struct tm &ti, uint32_t now, uint16_t accent, uint16_t on)
+        {
+            const uint8_t level = have ? colonLevelNow(now) : (uint8_t)(7.5f + 7.0f * sinf(now / 450.0f));
+            const uint16_t timeCol = have ? on : tint(accent, 0.55f); // dim while the time is unknown
+            // time + date are one block, centred on the screen (the same distance to the top and the bottom edge)
+            const int16_t digCap = sc >= 1.5f ? CLOCKBIG92_CAPH : CLOCKBIG48_CAPH, dateCap = CLOCKSM18_CAPH;
+            const int16_t gap = (int16_t)(H * 0.13f), top = (H - (digCap + gap + dateCap)) / 2 - u(1); // -1: the comma hangs below the baseline
+            bigTime(g, W / 2, top + digCap / 2, have, ti, timeCol, level);
+            // the date: "Tue, Oct 21" (no leading zero on the day), lavender like the digits
+            char cap[24] = "Syncing...";
+            if (have)
+            {
+                char wd[8], mo[8];
+                strftime(wd, sizeof(wd), "%a", &ti);
+                strftime(mo, sizeof(mo), "%b", &ti);
+                snprintf(cap, sizeof(cap), "%s, %s %d", wd, mo, ti.tm_mday);
+            }
+            const Ink ic = vlwInk(ClockSm18, cap);
+            smoothText(g, ClockSm18, CLOCKSM18_CAPH, cap, (int16_t)(W / 2 - (ic.l + ic.r) / 2), (int16_t)(top + digCap + gap + dateCap / 2), L_BASELINE, neonCore(accent, 0.72f), C_BG);
+        }
+
+        // ------------------------------------------------------------------ Analog
+        // The Analog face as designed: a thin violet ring, twelve short white ticks (longer at 12 / 3 / 6 / 9), a white
+        // minute hand, an hour hand that fades from white to pink at its tip and a peach cap in the middle.
+        // No glow, no date, no second hand. All sizes are in px of the 160 x 128 screen and scale with sc.
+
+        // A line that fades from colour c0 at (x0, y0) to c1 at (x1, y1).
+        void gradLine(TFT_eSPI &g, float x0, float y0, float x1, float y1, float w, uint16_t c0, uint16_t c1)
+        {
+            const int n = 8;
+            for (int i = 0; i < n; i++)
+            {
+                const float a = (float)i / n, b = (float)(i + 1) / n;
+                thickLine(g, x0 + (x1 - x0) * a, y0 + (y1 - y0) * a, x0 + (x1 - x0) * b, y0 + (y1 - y0) * b, w,
+                          mixColor(c0, c1, (a + b) * 0.5f));
+            }
+        }
+
+        void styleAnalog(TFT_eSPI &g, bool have, const struct tm &ti, uint32_t now, uint16_t accent)
+        {
+            (void)now;
+            const uint16_t C_CAP = rgb(247, 186, 112);                  // the peach cap in the middle
+            const uint16_t whiteHand = neonCore(accent, 0.90f);         // ticks and minute hand
+            const uint16_t pinkTip = mixColor(C_BLUSH, C_WHITE, 0.35f); // the tip of the hour hand
+            const float cx = W * 0.5f, cy = H * 0.5f;                   // the dial is exactly in the middle of the screen
+            const float R = 45.0f * sc, ringW = 2.4f * sc;
+
+            // the ring
+            g.fillCircle(R16(cx), R16(cy), R16(R + ringW * 0.5f), accent);
+            g.fillCircle(R16(cx), R16(cy), R16(R - ringW * 0.5f), C_BG);
+
+            // twelve ticks: long and thick at 12 / 3 / 6 / 9, short and thin between
+            for (int i = 0; i < 12; i++)
+            {
+                const float a = i * 0.5235988f, sx = sinf(a), sy = -cosf(a);
+                const bool q = (i % 3 == 0);
+                const float r0 = (q ? 33.3f : 34.0f) * sc, r1 = (q ? 40.5f : 39.0f) * sc;
+                thickLine(g, cx + sx * r0, cy + sy * r0, cx + sx * r1, cy + sy * r1, (q ? 1.9f : 1.5f) * sc, whiteHand);
+            }
+
+            if (!have)
+            {
+                caption(g, R16(cx), R16(cy + R * 0.5f), "Syncing...", C_SOFT, C_SOFT, false);
+                return;
+            }
+
+            const float hr = (ti.tm_hour % 12) + ti.tm_min / 60.0f; // seconds are not shown: the hands move once a minute
+            const float ah = hr / 12.0f * 6.2831853f, am = ti.tm_min / 60.0f * 6.2831853f;
+            const float hl = 24.0f * sc, ml = 27.0f * sc; // hour hand / minute hand length
+            gradLine(g, cx, cy, cx + sinf(ah) * hl, cy - cosf(ah) * hl, 2.2f * sc, whiteHand, pinkTip);
+            thickLine(g, cx, cy, cx + sinf(am) * ml, cy - cosf(am) * ml, 2.3f * sc, whiteHand);
+            g.fillCircle(R16(cx), R16(cy), imax(3, R16(4.4f * sc)), C_CAP);
+        }
+
+        // ------------------------------------------------------------------ Minimal
+        // The Minimal face as designed: hour over minute in big ExtraBold white digits with a blue glow (ClockBold45 /
+        // ClockBold90) on the left; on the right, top to bottom: the weather (icon + temperature), the weekday and
+        // "21 Oct". The weather row is left out until a reading exists. Its icon (display_wxicon.cpp) is animated, so this
+        // face redraws about 10 times a second while the weather is shown (see clockScreenSig).
 
         // One string with its text cursor at x and its digits centred on cy: wide halo, near halo, then the white core.
         void glowString(TFT_eSPI &g, const uint8_t *font, int16_t caph, const char *str, int16_t x, int16_t cy, uint16_t on)
@@ -427,8 +436,15 @@ namespace disp
         {
             const uint16_t violet = C_RETRO;
             const int16_t dh = (int16_t)(H * 0.32f), dw = (int16_t)(dh * 0.56f), gap = imax(2, u(3)), cw = imax(4, u(8));
-            const int16_t total = 4 * dw + 4 * gap + cw, x0 = W / 2 - total / 2, dy = (int16_t)(H * 0.375f) - dh / 2;
+            const int16_t total = 4 * dw + 4 * gap + cw, x0 = W / 2 - total / 2;
+            int16_t dy; // set below: the whole block is centred
             const int16_t xs[4] = {x0, (int16_t)(x0 + dw + gap), (int16_t)(x0 + 2 * dw + 3 * gap + cw), (int16_t)(x0 + 3 * dw + 4 * gap + cw)};
+            // digits, date and wave are one block centred on the screen: top of the digits .. bottom of the wave
+            const float amp = 3.0f * sc, th = 2.2f * sc;
+            const int16_t dateDy = (int16_t)(H * 0.287f), waveDy = (int16_t)(H * 0.425f); // from the middle of the digits
+            const int16_t blockH = (int16_t)(dh / 2 + waveDy + amp + th * 0.5f + 1);
+            const int16_t yMid = (H - blockH) / 2 + dh / 2; // the vertical middle of the digits
+            dy = yMid - dh / 2;
             const int8_t d[4] = {(int8_t)(have ? ti.tm_hour / 10 : -1), (int8_t)(have ? ti.tm_hour % 10 : -1),
                                  (int8_t)(have ? ti.tm_min / 10 : -1), (int8_t)(have ? ti.tm_min % 10 : -1)};
             for (uint8_t phase = 0; phase < 3; phase++) // glows first, then the ghosts, then the lit pills: nothing covers a glow
@@ -459,12 +475,12 @@ namespace disp
                 strftime(mo, sizeof(mo), "%b", &ti);
                 snprintf(cap, sizeof(cap), "%s, %s %d", wd, mo, ti.tm_mday);
             }
-            smoothText(g, ClockSm12, CLOCKSM12_CAPH, cap, W / 2, (int16_t)(H * 0.662f), C_BASELINE, mixColor(violet, C_WHITE, 0.82f), C_BG); // small, like the design
+            const Ink ic = vlwInk(ClockSm12, cap);
+            smoothText(g, ClockSm12, CLOCKSM12_CAPH, cap, (int16_t)(W / 2 - (ic.l + ic.r) / 2), (int16_t)(yMid + dateDy), L_BASELINE, mixColor(violet, C_WHITE, 0.82f), C_BG); // small, like the design
 
             // the little wave: one period, drifting, violet -> pink along its length, round and glowing
             const uint16_t pink = rgb(236, 130, 226);
-            const int16_t wy = (int16_t)(H * 0.80f), ww = (int16_t)(34 * sc);
-            const float amp = 3.0f * sc, th = 2.2f * sc;
+            const int16_t wy = (int16_t)(yMid + waveDy), ww = (int16_t)(34 * sc);
             float px = 0, py = 0;
             for (int16_t i = 0; i <= ww; i++)
             {
