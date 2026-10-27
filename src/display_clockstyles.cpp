@@ -270,7 +270,9 @@ namespace disp
             const uint16_t whiteHand = neonCore(accent, 0.90f);         // ticks and minute hand
             const uint16_t pinkTip = mixColor(C_BLUSH, C_WHITE, 0.35f); // the tip of the hour hand
             const float cx = W * 0.5f, cy = H * 0.5f;                   // the dial is exactly in the middle of the screen
-            const float R = 45.0f * sc, ringW = 2.4f * sc;
+            const float ringW = 3.0f * sc;
+            const float R = H * 0.5f - 5.0f * sc - ringW * 0.5f; // the ring's outer edge is 5 px from the top and bottom edge
+            const float k = R / 45.0f;                           // everything else was drawn for R = 45: scale it with the dial
 
             // the ring
             g.fillCircle(R16(cx), R16(cy), R16(R + ringW * 0.5f), accent);
@@ -281,8 +283,8 @@ namespace disp
             {
                 const float a = i * 0.5235988f, sx = sinf(a), sy = -cosf(a);
                 const bool q = (i % 3 == 0);
-                const float r0 = (q ? 33.3f : 34.0f) * sc, r1 = (q ? 40.5f : 39.0f) * sc;
-                thickLine(g, cx + sx * r0, cy + sy * r0, cx + sx * r1, cy + sy * r1, (q ? 1.9f : 1.5f) * sc, whiteHand);
+                const float r0 = (q ? 33.3f : 34.0f) * k, r1 = (q ? 40.5f : 39.0f) * k;
+                thickLine(g, cx + sx * r0, cy + sy * r0, cx + sx * r1, cy + sy * r1, (q ? 1.9f : 1.5f) * k, whiteHand);
             }
 
             if (!have)
@@ -293,10 +295,10 @@ namespace disp
 
             const float hr = (ti.tm_hour % 12) + ti.tm_min / 60.0f; // seconds are not shown: the hands move once a minute
             const float ah = hr / 12.0f * 6.2831853f, am = ti.tm_min / 60.0f * 6.2831853f;
-            const float hl = 24.0f * sc, ml = 27.0f * sc; // hour hand / minute hand length
-            gradLine(g, cx, cy, cx + sinf(ah) * hl, cy - cosf(ah) * hl, 2.2f * sc, whiteHand, pinkTip);
-            thickLine(g, cx, cy, cx + sinf(am) * ml, cy - cosf(am) * ml, 2.3f * sc, whiteHand);
-            g.fillCircle(R16(cx), R16(cy), imax(3, R16(4.4f * sc)), C_CAP);
+            const float hl = 24.0f * k, ml = 28.0f * k; // hour hand / minute hand length
+            gradLine(g, cx, cy, cx + sinf(ah) * hl, cy - cosf(ah) * hl, 2.2f * k, whiteHand, pinkTip);
+            thickLine(g, cx, cy, cx + sinf(am) * ml, cy - cosf(am) * ml, 2.3f * k, whiteHand);
+            g.fillCircle(R16(cx), R16(cy), imax(3, R16(4.4f * k)), C_CAP);
         }
 
         // ------------------------------------------------------------------ Minimal
