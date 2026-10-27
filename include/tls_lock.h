@@ -26,6 +26,14 @@ SemaphoreHandle_t tls_lock_handle();
 #define TLS_MIN_FREE 100000
 #endif
 
+// 0 (default): the display NEVER gives its sprite back for a TLS connection. A 40960-byte sprite that was freed
+// can often not be re-created afterwards (the TLS buffers fragment the heap, the biggest free block is then
+// ~41 KB), and without the sprite every frame is drawn straight on the panel = permanent flicker.
+// 1: old behaviour (free the sprites when the heap is too small, re-create them later).
+#ifndef TLS_RELEASE_SPRITES
+#define TLS_RELEASE_SPRITES 0
+#endif
+
 bool tls_heap_ok();      // enough heap for a TLS connection right now (without freeing anything)
 bool tls_wants_memory(); // a TlsGuard is waiting for the display to free its sprites
 
