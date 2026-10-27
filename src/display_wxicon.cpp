@@ -54,15 +54,27 @@ namespace disp
         // 0..1..0: fade in at the start of a fall and out at its end.
         float edge(float t)
         {
-            float a = t * 5.0f, b = (1.0f - t) * 5.0f, m = a < b ? a : b;
+            float a = t * 8.0f, b = (1.0f - t) * 6.0f, m = a < b ? a : b;
             return m > 1.0f ? 1.0f : m;
         }
 
-        void cloud(TFT_eSPI &g, float cx, float cy, float s, uint16_t c)
+        // The cloud outline grown by pad px (pad > 0 in the background colour = a gap that separates it from what is behind).
+        void cloudShape(TFT_eSPI &g, float cx, float cy, float s, uint16_t c, float pad)
         {
-            g.fillRoundRect(R(cx - 0.85f * s), R(cy - 0.05f * s), R(1.7f * s), R(0.7f * s), R(0.35f * s), c);
-            g.fillCircle(R(cx - 0.40f * s), R(cy - 0.05f * s), imax(1, R(0.38f * s)), c);
-            g.fillCircle(R(cx + 0.12f * s), R(cy - 0.25f * s), imax(1, R(0.52f * s)), c);
+            g.fillRoundRect(R(cx - 0.85f * s - pad), R(cy - 0.05f * s - pad), R(1.7f * s + 2 * pad), R(0.7f * s + 2 * pad),
+                            R(0.35f * s + pad), c);
+            g.fillCircle(R(cx - 0.40f * s), R(cy - 0.05f * s), imax(1, R(0.38f * s + pad)), c);
+            g.fillCircle(R(cx + 0.12f * s), R(cy - 0.25f * s), imax(1, R(0.52f * s + pad)), c);
+        }
+
+        // gap = a thin dark rim around it, so the cloud stands out from the sun, moon or cloud behind it.
+        // A darker strip along the bottom gives the flat cloud a little body.
+        void cloud(TFT_eSPI &g, float cx, float cy, float s, uint16_t c, bool gap = false)
+        {
+            if (gap)
+                cloudShape(g, cx, cy, s, C_BG, fmaxf2(1.0f, 0.12f * s));
+            cloudShape(g, cx, cy, s, c, 0);
+            g.fillRoundRect(R(cx - 0.52f * s), R(cy + 0.46f * s), R(1.04f * s), imax(1, R(0.19f * s)), R(0.09f * s), mixColor(c, C_BG, 0.22f));
         }
 
         // The sun: a disc with eight rays that turn slowly and "breathe".
@@ -71,12 +83,12 @@ namespace disp
             g.fillCircle(R(x), R(y), imax(2, R(r)), SUN);
             if (!rays)
                 return;
-            const float a0 = now * 0.0005f, w = fmaxf2(1.0f, 0.42f * r);
+            const float a0 = now * 0.0005f, w = fmaxf2(1.6f, 0.4f * r);
             for (int i = 0; i < 8; i++)
             {
                 const float a = a0 + i * 0.7853982f, sx = sinf(a), sy = -cosf(a);
                 const float pulse = 1.0f + 0.16f * sinf(now / 380.0f + i * 0.8f);
-                const float r0 = 1.62f * r, r1 = r0 + 0.62f * r * pulse;
+                const float r0 = 1.55f * r, r1 = r0 + 0.6f * r * pulse;
                 seg(g, x + sx * r0, y + sy * r0, x + sx * r1, y + sy * r1, w, SUN);
             }
         }
@@ -91,10 +103,10 @@ namespace disp
         void moon(TFT_eSPI &g, float x, float y, float r, uint32_t now)
         {
             g.fillCircle(R(x), R(y), imax(2, R(r)), MOON);
-            g.fillCircle(R(x + 0.5f * r), R(y - 0.35f * r), imax(2, R(0.82f * r)), C_BG);
+            g.fillCircle(R(x + 0.55f * r), R(y - 0.32f * r), imax(2, R(0.76f * r)), C_BG);
             const float k1 = 0.5f + 0.5f * sinf(now / 330.0f), k2 = 0.5f + 0.5f * sinf(now / 270.0f + 2.0f);
-            star(g, R(x + 0.5f * r), R(y - 0.35f * r), 1, tint(STAR, 0.3f + 0.7f * k1));
-            g.drawPixel(R(x + 1.25f * r), R(y + 0.7f * r), tint(STAR, 0.2f + 0.8f * k2));
+            star(g, R(x + 0.5f * r), R(y - 0.3f * r), imax(1, R(0.16f * r)), tint(STAR, 0.3f + 0.7f * k1));
+            star(g, R(x + 1.2f * r), R(y + 0.62f * r), imax(1, R(0.1f * r)), tint(STAR, 0.2f + 0.8f * k2));
         }
 
         // The body of the sky: sun by day, moon by night. r = the sun's disc radius.
@@ -114,7 +126,11 @@ namespace disp
             {
                 const float x = cx + (i - (n - 1) * 0.5f) * spacing, t = cyc(now, period, i * 0.382f + (i & 1) * 0.17f);
                 const float y = yTop + (yBot - yTop) * t;
-                seg(g, x, y, x - slant, y + len, w, tint(col, edge(t)));
+                const uint16_t c = tint(col, edge(t));
+                const int k = (int)lroundf(w); // stroke thickness in px: parallel lines side by side
+                for (int j = 0; j < k; j++)
+                    g.drawLine(R(x) + j - k / 2, R(y), R(x - slant) + j - k / 2, R(y + len), c);
+                g.fillCircle(R(x - slant), R(y + len), imax(1, k / 2), c); // the round tip of the drop
             }
         }
 
@@ -129,9 +145,28 @@ namespace disp
                 const float y = yTop + (yBot - yTop) * t;
                 const uint16_t c = tint(col, edge(t));
                 if (r < 1.0f)
-                    g.drawPixel(R(x), R(y), c);
-                else
+                    g.fillRect(R(x), R(y), 2, 2, c); // grains
+                else if (r > 3.0f) // hail stones: round
                     g.fillCircle(R(x), R(y), R(r), c);
+                else // an asterisk
+                {
+                    const int16_t k = imax(2, R(r * 1.1f)), xi = R(x), yi = R(y);
+                    star(g, xi, yi, k, c);
+                    g.drawPixel(xi - 1, yi - 1, c);
+                    g.drawPixel(xi + 1, yi - 1, c);
+                    g.drawPixel(xi - 1, yi + 1, c);
+                    g.drawPixel(xi + 1, yi + 1, c);
+                }
+            }
+        }
+
+        // Hail stones: round white balls that fall straight and fast.
+        void hail(TFT_eSPI &g, float cx, float spacing, int n, float yTop, float yBot, uint32_t now, float period, float s, float)
+        {
+            for (int i = 0; i < n; i++)
+            {
+                const float t = cyc(now, period, i * 0.45f), x = cx + (i - (n - 1) * 0.5f) * spacing, y = yTop + (yBot - yTop) * t;
+                g.fillCircle(R(x), R(y), imax(2, R(0.17f * s)), tint(HAIL, edge(t)));
             }
         }
 
@@ -152,7 +187,7 @@ namespace disp
         // The snowflake of the design: three arms with branches, turning slowly.
         void snowflake(TFT_eSPI &g, float cx, float cy, float s, uint32_t now)
         {
-            const float w = fmaxf2(1.0f, 0.2f * s), a0 = now * 0.0004f;
+            const float w = fmaxf2(1.5f, 0.14f * s), a0 = now * 0.0004f;
             for (int i = 0; i < 3; i++)
             {
                 const float a = a0 + i * 1.0471976f, sx = sinf(a), sy = -cosf(a);
@@ -164,83 +199,80 @@ namespace disp
                         for (int d = -1; d <= 1; d += 2)
                         {
                             const float b = a + (e > 0 ? 0.0f : 3.1415927f) + d * 0.7f;
-                            seg(g, tx, ty, tx - sinf(b) * 0.38f * s, ty + cosf(b) * 0.38f * s, w, SNOWC);
+                            seg(g, tx, ty, tx - sinf(b) * 0.3f * s, ty + cosf(b) * 0.3f * s, w, SNOWC);
                         }
                     }
             }
         }
 
-        // The lightning bolt (a zigzag). It flickers: mostly dim, with two quick bright flashes every couple of seconds.
-        // Returns true during a flash (the cloud lights up with it).
-        bool bolt(TFT_eSPI &g, float cx, float cy, float s, uint32_t now)
+        // The lightning bolt: a filled zigzag (two wedges). It flickers: steady yellow, with two quick bright flashes every
+        // couple of seconds (the cloud lights up with them, see drawWxIcon).
+        void bolt(TFT_eSPI &g, float cx, float cy, float s, bool flash)
         {
-            const float t = cyc(now, 2200.0f, 0.0f);
-            const bool flash = t < 0.07f || (t > 0.14f && t < 0.22f);
-            const float w = fmaxf2(2.0f, 0.3f * s);
-            const float x0 = cx + 0.20f * s, y0 = cy, x1 = cx - 0.12f * s, y1 = cy + 0.50f * s, x2 = cx + 0.14f * s,
-                        y2 = cy + 0.45f * s, x3 = cx - 0.16f * s, y3 = cy + 0.98f * s;
-            const uint16_t c = flash ? BOLT : tint(BOLT, 0.82f);
-            seg(g, x0, y0, x1, y1, w, c);
-            seg(g, x1, y1, x2, y2, w, c);
-            seg(g, x2, y2, x3, y3, w, c);
-            if (flash)
-            {
-                seg(g, x0, y0, x1, y1, fmaxf2(1.0f, w * 0.4f), BOLT_HI);
-                seg(g, x2, y2, x3, y3, fmaxf2(1.0f, w * 0.4f), BOLT_HI);
-            }
-            return flash;
+            const uint16_t c = flash ? BOLT_HI : BOLT;
+            auto P = [&](float x, float y, int16_t &ox, int16_t &oy) { ox = R(cx + x * s); oy = R(cy + y * s); };
+            int16_t ax, ay, bx, by, cxx, cyy, dx, dy, ex, ey, fx, fy;
+            P(0.30f, 0.00f, ax, ay);   // upper wedge
+            P(-0.30f, 0.62f, bx, by);
+            P(0.12f, 0.62f, cxx, cyy);
+            g.fillTriangle(ax, ay, bx, by, cxx, cyy, c);
+            P(0.34f, 0.40f, dx, dy);   // lower wedge
+            P(-0.26f, 1.12f, ex, ey);
+            P(-0.04f, 0.40f, fx, fy);
+            g.fillTriangle(dx, dy, ex, ey, fx, fy, c);
+            g.fillTriangle(ax, ay, cxx, cyy, dx, dy, c); // the joint between the two
         }
 
         // Fog: a cloud and bars that slide against each other. ice = rime fog (45 -> 48): a few glints between the bars.
         void fog(TFT_eSPI &g, float cx, float cy, float s, uint32_t now, bool ice)
         {
-            cloud(g, cx, cy - 0.38f * s, 0.85f * s, CLOUD);
-            const float h = fmaxf2(2.0f, 0.26f * s);
-            for (int i = 0; i < 2; i++)
+            cloud(g, cx, cy - 0.45f * s, 0.8f * s, CLOUD);
+            const float h = fmaxf2(2.0f, 0.2f * s);
+            for (int i = 0; i < 3; i++)
             {
-                const float y = cy + (0.5f + 0.42f * i) * s, len = (1.5f - 0.35f * i) * s;
-                const float sway = sinf(now / 900.0f + i * 2.2f) * 0.22f * s;
-                g.fillRoundRect(R(cx - len * 0.5f + sway), R(y - h * 0.5f), R(len), R(h), R(h * 0.5f), FOG);
+                const float y = cy + (0.38f + 0.36f * i) * s, len = (1.55f - 0.2f * (i & 1)) * s;
+                const float sway = sinf(now / 900.0f + i * 2.1f) * 0.24f * s;
+                g.fillRoundRect(R(cx - len * 0.5f + sway), R(y - h * 0.5f), R(len), R(h), R(h * 0.5f), (i & 1) ? FOG : mixColor(FOG, C_WHITE, 0.25f));
             }
             if (ice)
             {
                 const float k = 0.5f + 0.5f * sinf(now / 260.0f);
-                g.drawPixel(R(cx - 0.8f * s), R(cy + 0.5f * s - 0.55f * s), tint(ICE, 0.3f + 0.7f * k));
-                g.drawPixel(R(cx + 0.75f * s), R(cy + 0.5f * s + 0.55f * s), tint(ICE, 1.0f - 0.7f * k));
+                star(g, R(cx - 0.9f * s), R(cy + 0.75f * s), imax(1, R(0.13f * s)), tint(ICE, 0.3f + 0.7f * k));
+                star(g, R(cx + 0.9f * s), R(cy + 0.35f * s), imax(1, R(0.13f * s)), tint(ICE, 1.0f - 0.7f * k));
             }
         }
 
         // ---- the families -----------------------------------------------------------------------------------------
 
-        // cloud over falling drops: n drops, heavy = darker cloud and bigger, faster drops
+        // drops / flakes fall out from behind the cloud: n drops; heavy = darker cloud, longer and faster drops
         void rainIcon(TFT_eSPI &g, float cx, float cy, float s, uint32_t now, int n, bool heavy, bool freezing, bool drizzle)
         {
-            cloud(g, cx, cy - 0.32f * s, 0.85f * s, heavy ? CLOUD_DARK : CLOUD);
-            const float w = fmaxf2(1.6f, (drizzle ? 0.2f : 0.26f) * s);
-            const float len = (drizzle ? 0.28f : heavy ? 0.44f : 0.38f) * s;
-            const float period = heavy ? 520.0f : (drizzle ? 1100.0f : 760.0f);
-            const float sp = (n >= 4 ? 0.4f : 0.5f) * s;
-            drops(g, cx + 0.05f * s, cy + 0.34f * s, cy + 0.78f * s, sp, n, now, period, len, 0.12f * s, w, heavy ? DROP_HVY : DROP);
+            const float w = fmaxf2(1.8f, (drizzle ? 0.2f : 0.25f) * s);
+            const float len = (drizzle ? 0.3f : heavy ? 0.46f : 0.4f) * s;
+            const float period = heavy ? 560.0f : (drizzle ? 1100.0f : 800.0f);
+            const float sp = (n >= 4 ? 0.42f : 0.55f) * s;
+            drops(g, cx + 0.05f * s, cy + 0.1f * s, cy + 0.72f * s, sp, n, now, period, len, 0.14f * s, w, heavy ? DROP_HVY : DROP);
             if (freezing)
-                crystals(g, cx - 0.02f * s, cy + 0.36f * s, cy + 0.9f * s, 0.9f * s, 2, now, fmaxf2(1.2f, 0.17f * s));
+                crystals(g, cx - 0.02f * s, cy + 0.15f * s, cy + 0.85f * s, 0.95f * s, 2, now, fmaxf2(2.0f, 0.2f * s));
+            cloud(g, cx, cy - 0.36f * s, 0.9f * s, heavy ? CLOUD_DARK : CLOUD);
         }
 
         void snowIcon(TFT_eSPI &g, float cx, float cy, float s, uint32_t now, int n, float r, float period)
         {
-            cloud(g, cx, cy - 0.32f * s, 0.85f * s, CLOUD);
-            flakes(g, cx, cy + 0.36f * s, cy + 0.95f * s, (n >= 5 ? 0.34f : 0.5f) * s, n, now, period, r * s, 0.1f * s, FLAKE);
+            flakes(g, cx, cy + 0.1f * s, cy + 0.9f * s, (n >= 5 ? 0.36f : 0.52f) * s, n, now, period, r * s, 0.1f * s, FLAKE);
+            cloud(g, cx, cy - 0.36f * s, 0.9f * s, CLOUD);
         }
 
-        // sun / moon peeking out behind a cloud, with whatever falls in front: kind 0 none, 1 rain, 2 snow
+        // sun / moon peeking out behind a cloud, with whatever falls in front: kind 1 rain, 2 snow
         void peekIcon(TFT_eSPI &g, bool day, float cx, float cy, float s, uint32_t now, int kind, int n, bool heavy)
         {
-            body(g, day, cx - 0.42f * s, cy - 0.56f * s, 0.32f * s, now);
-            cloud(g, cx + 0.1f * s, cy - 0.1f * s, 0.85f * s, heavy ? CLOUD_DARK : CLOUD);
+            body(g, day, cx - 0.45f * s, cy - 0.58f * s, 0.33f * s, now);
             if (kind == 1)
-                drops(g, cx + 0.15f * s, cy + 0.5f * s, cy + 0.9f * s, (n >= 4 ? 0.36f : 0.46f) * s, n, now, heavy ? 520.0f : 760.0f,
-                      0.34f * s, 0.1f * s, fmaxf2(1.6f, 0.22f * s), heavy ? DROP_HVY : DROP);
-            else if (kind == 2)
-                flakes(g, cx + 0.15f * s, cy + 0.5f * s, cy + 1.0f * s, 0.42f * s, n, now, 1300.0f, 0.13f * s, 0.08f * s, FLAKE);
+                drops(g, cx + 0.15f * s, cy + 0.25f * s, cy + 0.85f * s, (n >= 4 ? 0.38f : 0.5f) * s, n, now, heavy ? 560.0f : 800.0f,
+                      0.36f * s, 0.12f * s, fmaxf2(1.8f, 0.23f * s), heavy ? DROP_HVY : DROP);
+            else
+                flakes(g, cx + 0.15f * s, cy + 0.25f * s, cy + 1.0f * s, 0.42f * s, n, now, 1300.0f, 0.16f * s, 0.08f * s, FLAKE);
+            cloud(g, cx + 0.12f * s, cy - 0.14f * s, 0.88f * s, heavy ? CLOUD_DARK : CLOUD, true);
         }
     } // namespace
 
@@ -250,23 +282,23 @@ namespace disp
         {
         case 0: // clear
             if (day)
-                sun(g, cx, cy, 0.45f * s, now, true);
+                sun(g, cx, cy, 0.42f * s, now, true);
             else
-                moon(g, cx, cy, 0.62f * s, now);
+                moon(g, cx, cy, 0.78f * s, now);
             return;
         case 1: // mainly clear: the sky with a little cloud in the corner
-            body(g, day, cx - 0.15f * s, cy - 0.22f * s, 0.38f * s, now);
-            cloud(g, cx + 0.42f * s, cy + 0.42f * s, 0.55f * s, CLOUD);
+            body(g, day, cx - 0.15f * s, cy - 0.22f * s, 0.4f * s, now);
+            cloud(g, cx + 0.42f * s, cy + 0.4f * s, 0.6f * s, CLOUD, true);
             return;
         case 2: // partly cloudy
             body(g, day, cx - 0.42f * s, cy - 0.5f * s, 0.34f * s, now);
-            cloud(g, cx + 0.1f * s, cy + 0.12f * s, 0.95f * s, CLOUD);
+            cloud(g, cx + 0.1f * s, cy + 0.12f * s, 0.95f * s, CLOUD, true);
             return;
         case 3: // overcast: two clouds drifting against each other
         {
             const float d = sinf(now / 1500.0f) * 0.12f * s;
-            cloud(g, cx - 0.32f * s - d, cy - 0.38f * s, 0.75f * s, CLOUD_BACK);
-            cloud(g, cx + 0.12f * s + d, cy + 0.1f * s, 0.95f * s, CLOUD);
+            cloud(g, cx - 0.5f * s - d, cy - 0.68f * s, 0.85f * s, CLOUD_BACK);
+            cloud(g, cx + 0.12f * s + d, cy + 0.1f * s, 0.95f * s, CLOUD, true);
             return;
         }
         case 45:
@@ -309,13 +341,13 @@ namespace disp
             return;
         // snow
         case 71: // slight: a few big flakes
-            snowIcon(g, cx, cy, s, now, 2, 0.14f, 1500.0f);
+            snowIcon(g, cx, cy, s, now, 2, 0.17f, 1500.0f);
             return;
         case 73: // moderate: the snowflake of the design, turning
             snowflake(g, cx, cy, s, now);
             return;
         case 75: // heavy: many flakes, quick
-            snowIcon(g, cx, cy, s, now, 5, 0.12f, 950.0f);
+            snowIcon(g, cx, cy, s, now, 5, 0.15f, 950.0f);
             return;
         case 77: // snow grains: lots of tiny dots
             snowIcon(g, cx, cy, s, now, 6, 0.0f, 800.0f);
@@ -340,17 +372,17 @@ namespace disp
         case 96: // ... with slight hail
         case 99: // ... with heavy hail
         {
-            // the flash lights the cloud up; draw the cloud first, so find out about the flash from the same clock
+            // the flash lights the cloud up
             const float t = cyc(now, 2200.0f, 0.0f);
             const bool flash = t < 0.07f || (t > 0.14f && t < 0.22f);
-            cloud(g, cx, cy - 0.34f * s, 0.85f * s, flash ? mixColor(CLOUD_DARK, C_WHITE, 0.35f) : CLOUD_DARK);
-            bolt(g, cx, cy + 0.05f * s, s, now);
+            cloud(g, cx, cy - 0.4f * s, 0.9f * s, flash ? mixColor(CLOUD_DARK, C_WHITE, 0.35f) : CLOUD_DARK);
+            bolt(g, cx, cy - 0.02f * s, s, flash);
             if (code == 96) // slight hail: a stone on each side of the bolt
-                flakes(g, cx, cy + 0.3f * s, cy + 0.95f * s, 1.3f * s, 2, now, 620.0f, 0.15f * s, 0.0f, HAIL);
+                hail(g, cx, 1.3f * s, 2, cy + 0.3f * s, cy + 0.95f * s, now, 620.0f, s, 0.0f);
             else if (code == 99) // heavy hail: two on each side
             {
-                flakes(g, cx - 0.65f * s, cy + 0.3f * s, cy + 0.95f * s, 0.34f * s, 2, now, 560.0f, 0.15f * s, 0.0f, HAIL);
-                flakes(g, cx + 0.65f * s, cy + 0.3f * s, cy + 0.95f * s, 0.34f * s, 2, now + 280, 560.0f, 0.15f * s, 0.0f, HAIL);
+                hail(g, cx - 0.65f * s, 0.34f * s, 2, cy + 0.3f * s, cy + 0.95f * s, now, 560.0f, s, 0.0f);
+                hail(g, cx + 0.65f * s, 0.34f * s, 2, cy + 0.3f * s, cy + 0.95f * s, now + 280, 560.0f, s, 0.0f);
             }
             return;
         }

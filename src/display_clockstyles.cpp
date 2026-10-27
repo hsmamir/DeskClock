@@ -147,11 +147,7 @@ namespace disp
                 float glow;
             };
             // far halo (square ring), near halo (plus shape), then the core on top
-            const Pass passes[] = {{(int16_t)-r2, 0, 0.16f}, {r2, 0, 0.16f},  {0, (int16_t)-r2, 0.16f}, {0, r2, 0.16f},
-                                   {(int16_t)-r1, (int16_t)-r1, 0.16f}, {r1, (int16_t)-r1, 0.16f},
-                                   {(int16_t)-r1, r1, 0.16f}, {r1, r1, 0.16f},
-                                   {(int16_t)-r1, 0, 0.38f}, {r1, 0, 0.38f}, {0, (int16_t)-r1, 0.38f}, {0, r1, 0.38f},
-                                   {0, 0, -1.0f}};
+            const Pass passes[] = {{(int16_t)-r2, 0, 0.16f}, {r2, 0, 0.16f}, {0, (int16_t)-r2, 0.16f}, {0, r2, 0.16f}, {(int16_t)-r1, (int16_t)-r1, 0.16f}, {r1, (int16_t)-r1, 0.16f}, {(int16_t)-r1, r1, 0.16f}, {r1, r1, 0.16f}, {(int16_t)-r1, 0, 0.38f}, {r1, 0, 0.38f}, {0, (int16_t)-r1, 0.38f}, {0, r1, 0.38f}, {0, 0, -1.0f}};
             for (const Pass &p : passes)
             {
                 const bool isCore = p.glow < 0;
@@ -265,11 +261,7 @@ namespace disp
                 int16_t dx, dy;
                 float glow;
             };
-            const Pass passes[] = {{(int16_t)-r2, 0, 0.22f}, {r2, 0, 0.22f}, {0, (int16_t)-r2, 0.22f}, {0, r2, 0.22f},
-                                   {(int16_t)-r1, (int16_t)-r1, 0.22f}, {r1, (int16_t)-r1, 0.22f},
-                                   {(int16_t)-r1, r1, 0.22f}, {r1, r1, 0.22f},
-                                   {(int16_t)-r1, 0, 0.48f}, {r1, 0, 0.48f}, {0, (int16_t)-r1, 0.48f}, {0, r1, 0.48f},
-                                   {0, 0, -1.0f}};
+            const Pass passes[] = {{(int16_t)-r2, 0, 0.22f}, {r2, 0, 0.22f}, {0, (int16_t)-r2, 0.22f}, {0, r2, 0.22f}, {(int16_t)-r1, (int16_t)-r1, 0.22f}, {r1, (int16_t)-r1, 0.22f}, {(int16_t)-r1, r1, 0.22f}, {r1, r1, 0.22f}, {(int16_t)-r1, 0, 0.48f}, {r1, 0, 0.48f}, {0, (int16_t)-r1, 0.48f}, {0, r1, 0.48f}, {0, 0, -1.0f}};
             g.loadFont(font);
             g.setTextDatum(C_BASELINE);
             for (const Pass &p : passes)
@@ -308,12 +300,12 @@ namespace disp
             readWeather(wxOk, tC, code, upd);
             if (wxOk)
             {
-                const float s = 6.5f * sc;
-                const int16_t cy = (int16_t)(H * 0.34f);
+                const float s = 11.0f * sc; // icon half width: a 22 px wide icon on the 160 x 128 screen (sc = 1 there)
+                const int16_t cy = (int16_t)(H * 0.31f);
                 drawWxIcon(g, code, !have || sun_is_day(ti), xr + s, cy, s, now); // animated, day or night sky
                 char t[10];
                 snprintf(t, sizeof(t), "%d\xC2\xB0", (int)lroundf(tC));
-                smoothText(g, ClockSm18, CLOCKSM18_CAPH, t, (int16_t)(xr + 2 * s + u(4)), cy, L_BASELINE, neonCore(accent, 0.9f), C_BG);
+                smoothText(g, ClockSm18, CLOCKSM18_CAPH, t, (int16_t)(xr + 2 * s + u(3)), cy, L_BASELINE, neonCore(accent, 0.9f), C_BG);
             }
             char wd[8] = "--", dm[16] = "";
             if (have)
@@ -329,40 +321,121 @@ namespace disp
         }
 
         // ------------------------------------------------------------------ Retro
+        // The Retro face: the classic seven-segment digits (the segments touch, as on every other face) in violet with a
+        // proper neon look - violet edge, a lighter tube inside and a soft glow that fades out over three steps - plus
+        // round colon dots, a small date line and the wave that keeps moving. No bezel, no scan lines.
+        struct Rc
+        {
+            int16_t x, y, w, h;
+        };
+
+        // phase 0 = glow of the lit segments, 1 = the unlit "ghost" segments, 2 = the lit segments. d < 0: nothing lit.
+        void retroDigit(TFT_eSPI &g, int16_t x, int16_t y, int16_t w, int16_t h, int8_t d, uint8_t phase, uint16_t violet)
+        {
+            static const uint8_t MASK[10] = {0x3F, 0x06, 0x5B, 0x4F, 0x66, 0x6D, 0x7D, 0x07, 0x7F, 0x6F}; // bit0 = a (top) ... bit6 = g (middle)
+            const int16_t t = imax(2, w / 5), vh = (h - 3 * t) / 2;
+            const Rc s[7] = {{(int16_t)(x + t), y, (int16_t)(w - 2 * t), t},                      // a top
+                             {(int16_t)(x + w - t), (int16_t)(y + t), t, vh},                     // b top right
+                             {(int16_t)(x + w - t), (int16_t)(y + 2 * t + vh), t, vh},            // c bottom right
+                             {(int16_t)(x + t), (int16_t)(y + h - t), (int16_t)(w - 2 * t), t},   // d bottom
+                             {x, (int16_t)(y + 2 * t + vh), t, vh},                               // e bottom left
+                             {x, (int16_t)(y + t), t, vh},                                        // f top left
+                             {(int16_t)(x + t), (int16_t)(y + t + vh), (int16_t)(w - 2 * t), t}}; // g middle
+            const uint8_t m = (d >= 0 && d <= 9) ? MASK[d] : 0;
+            const uint16_t tube = mixColor(violet, C_WHITE, 0.55f); // the bright inside of the neon tube
+            for (int i = 0; i < 7; i++)
+            {
+                const bool lit = (m >> i) & 1;
+                const Rc &r = s[i];
+                if (phase == 0 && lit)
+                {
+                    g.fillRoundRect(r.x - 3, r.y - 3, r.w + 6, r.h + 6, t / 2 + 3, tint(violet, 0.05f));
+                    g.fillRoundRect(r.x - 2, r.y - 2, r.w + 4, r.h + 4, t / 2 + 2, tint(violet, 0.12f));
+                    g.fillRoundRect(r.x - 1, r.y - 1, r.w + 2, r.h + 2, t / 2 + 1, tint(violet, 0.28f));
+                }
+                else if (phase == 1 && !lit)
+                    g.fillRoundRect(r.x, r.y, r.w, r.h, t / 2, tint(violet, 0.14f));
+                else if (phase == 2 && lit)
+                {
+                    g.fillRoundRect(r.x, r.y, r.w, r.h, t / 2, violet);
+                    if (t >= 3)
+                        g.fillRoundRect(r.x + 1, r.y + 1, r.w - 2, r.h - 2, imax(0, t / 2 - 1), tube);
+                    else
+                        g.fillRoundRect(r.x, r.y, r.w, r.h, t / 2, mixColor(violet, tube, 0.6f));
+                }
+            }
+        }
+
         void styleRetro(TFT_eSPI &g, bool have, const struct tm &ti, uint32_t now)
         {
             const uint16_t violet = C_RETRO;
-            // a CRT bezel
-            g.drawRoundRect(u(3), u(3), W - 2 * u(3), H - 2 * u(3), u(9), tint(violet, 0.35f));
-            g.drawRoundRect(u(4), u(4), W - 2 * u(4), H - 2 * u(4), u(8), tint(violet, 0.14f));
-            const int16_t dh = (int16_t)(H * 0.36f), dy = (int16_t)(H * 0.20f);
-            const bool colonOn = !have || (ti.tm_sec & 1) == 0; // the colon blinks with the seconds
-            timeDigits(g, W / 2, dy, dh, have, ti, violet, colonOn ? violet : tint(violet, 0.25f), 15, tint(violet, 0.14f));
-            // scan lines over the digits
-            for (int16_t y = dy; y < dy + dh; y += imax(3, u(3)))
-                g.drawFastHLine(u(12), y, W - 2 * u(12), C_BG);
+            const int16_t dh = (int16_t)(H * 0.32f), dw = (int16_t)(dh * 0.56f), gap = imax(2, u(3)), cw = imax(4, u(8));
+            const int16_t total = 4 * dw + 4 * gap + cw, x0 = W / 2 - total / 2, dy = (int16_t)(H * 0.375f) - dh / 2;
+            const int16_t xs[4] = {x0, (int16_t)(x0 + dw + gap), (int16_t)(x0 + 2 * dw + 3 * gap + cw), (int16_t)(x0 + 3 * dw + 4 * gap + cw)};
+            const int8_t d[4] = {(int8_t)(have ? ti.tm_hour / 10 : -1), (int8_t)(have ? ti.tm_hour % 10 : -1),
+                                 (int8_t)(have ? ti.tm_min / 10 : -1), (int8_t)(have ? ti.tm_min % 10 : -1)};
+            for (uint8_t phase = 0; phase < 3; phase++) // glows first, then the ghosts, then the lit pills: nothing covers a glow
+                for (int i = 0; i < 4; i++)
+                    retroDigit(g, xs[i], dy, dw, dh, d[i], phase, violet);
+
+            // the colon: two round dots that blink with the seconds
+            const bool colonOn = !have || (ti.tm_sec & 1) == 0;
+            const int16_t cx = x0 + 2 * dw + 2 * gap + cw / 2, cr = imax(2, u(1.8f));
+            const uint16_t dot = colonOn ? mixColor(violet, C_WHITE, 0.45f) : tint(violet, 0.25f);
+            for (int i = 0; i < 2; i++)
+            {
+                const int16_t cy = dy + (int16_t)(dh * (i ? 0.70f : 0.30f));
+                if (colonOn)
+                {
+                    g.fillCircle(cx, cy, cr + 2, tint(violet, 0.09f));
+                    g.fillCircle(cx, cy, cr + 1, tint(violet, 0.22f));
+                }
+                g.fillCircle(cx, cy, cr, dot);
+            }
+
+            // the date, white-lavender (the small font)
             char cap[24] = "Syncing...";
             if (have)
-                strftime(cap, sizeof(cap), "%a, %b %d", &ti);
-            caption(g, W / 2, (int16_t)(H * 0.70f), cap, mixColor(violet, C_WHITE, 0.35f), violet, false);
-            // the little wave under it
-            const int16_t wy = (int16_t)(H * 0.82f), ww = (int16_t)(W * 0.30f);
-            for (int16_t x = -ww / 2; x <= ww / 2; x++)
             {
-                float ph = (x + now / 90.0f) * 0.55f;
-                int16_t y = wy + R16(sinf(ph) * u(2.2f));
-                g.drawPixel(W / 2 + x, y, violet);
-                g.drawPixel(W / 2 + x, y + 1, tint(violet, 0.4f));
+                char wd[8], mo[8];
+                strftime(wd, sizeof(wd), "%a", &ti);
+                strftime(mo, sizeof(mo), "%b", &ti);
+                snprintf(cap, sizeof(cap), "%s, %s %d", wd, mo, ti.tm_mday);
+            }
+            smoothText(g, ClockSm12, CLOCKSM12_CAPH, cap, W / 2, (int16_t)(H * 0.662f), C_BASELINE, mixColor(violet, C_WHITE, 0.82f), C_BG); // small, like the design
+
+            // the little wave: one period, drifting, violet -> pink along its length, round and glowing
+            const uint16_t pink = rgb(236, 130, 226);
+            const int16_t wy = (int16_t)(H * 0.80f), ww = (int16_t)(34 * sc);
+            const float amp = 3.0f * sc, th = 2.2f * sc;
+            float px = 0, py = 0;
+            for (int16_t i = 0; i <= ww; i++)
+            {
+                const float k = (float)i / ww;
+                const float x = W / 2 - ww / 2 + i, y = wy + amp * sinf(k * 6.2831853f + now / 650.0f);
+                const uint16_t c = mixColor(violet, pink, k);
+                if (i > 0)
+                {
+                    thickLine(g, px, py, x, y, th + 2.0f, tint(c, 0.20f)); // glow
+                }
+                px = x;
+                py = y;
+            }
+            px = W / 2 - ww / 2;
+            py = wy + amp * sinf(now / 650.0f);
+            for (int16_t i = 1; i <= ww; i++)
+            {
+                const float k = (float)i / ww;
+                const float x = W / 2 - ww / 2 + i, y = wy + amp * sinf(k * 6.2831853f + now / 650.0f);
+                thickLine(g, px, py, x, y, th, mixColor(violet, pink, k));
+                px = x;
+                py = y;
             }
         }
 
         // ------------------------------------------------------------------ LED (dot matrix)
         const uint8_t FONT5X7[10][7] = {
-            {0x0E, 0x11, 0x13, 0x15, 0x19, 0x11, 0x0E}, {0x04, 0x0C, 0x04, 0x04, 0x04, 0x04, 0x0E},
-            {0x0E, 0x11, 0x01, 0x02, 0x04, 0x08, 0x1F}, {0x1F, 0x02, 0x04, 0x02, 0x01, 0x11, 0x0E},
-            {0x02, 0x06, 0x0A, 0x12, 0x1F, 0x02, 0x02}, {0x1F, 0x10, 0x1E, 0x01, 0x01, 0x11, 0x0E},
-            {0x06, 0x08, 0x10, 0x1E, 0x11, 0x11, 0x0E}, {0x1F, 0x01, 0x02, 0x04, 0x08, 0x08, 0x08},
-            {0x0E, 0x11, 0x11, 0x0E, 0x11, 0x11, 0x0E}, {0x0E, 0x11, 0x11, 0x0F, 0x01, 0x02, 0x0C}};
+            {0x0E, 0x11, 0x13, 0x15, 0x19, 0x11, 0x0E}, {0x04, 0x0C, 0x04, 0x04, 0x04, 0x04, 0x0E}, {0x0E, 0x11, 0x01, 0x02, 0x04, 0x08, 0x1F}, {0x1F, 0x02, 0x04, 0x02, 0x01, 0x11, 0x0E}, {0x02, 0x06, 0x0A, 0x12, 0x1F, 0x02, 0x02}, {0x1F, 0x10, 0x1E, 0x01, 0x01, 0x11, 0x0E}, {0x06, 0x08, 0x10, 0x1E, 0x11, 0x11, 0x0E}, {0x1F, 0x01, 0x02, 0x04, 0x08, 0x08, 0x08}, {0x0E, 0x11, 0x11, 0x0E, 0x11, 0x11, 0x0E}, {0x0E, 0x11, 0x11, 0x0F, 0x01, 0x02, 0x0C}};
 
         void ledDot(TFT_eSPI &g, int16_t x, int16_t y, int16_t p, bool lit, uint16_t accent)
         {
@@ -419,7 +492,7 @@ namespace disp
     {
         uint32_t sig = (uint32_t)ui_clock_style() << 28;
         if (!haveTime)
-            return sig | 0x08000000u | (now / 90); // the syncing animation
+            return sig | 0x08000000u | (now / 90);        // the syncing animation
         if (ui_clock_style() == ClockStyle::ANALOG_CLOCK) // no seconds, no colon: the dial changes once a minute
             return sig | ((uint32_t)(ti.tm_hour * 3600 + ti.tm_min * 60) & 0x1FFFF);
         if (ui_clock_style() == ClockStyle::MINIMAL) // once a minute, when the temperature changes, and per frame of the icon
@@ -431,9 +504,9 @@ namespace disp
             readWeather(ok, tC, code, upd);
             int tq = (int)lroundf(tC) + 100; // 0 = no reading
             tq = tq < 1 ? 1 : (tq > 255 ? 255 : tq);
-            sig |= (uint32_t)(ti.tm_hour * 60 + ti.tm_min) & 0x7FFu;               // bits 0..10
-            sig |= (uint32_t)(ok ? tq : 0) << 11;                                   // bits 11..18
-            sig |= (uint32_t)(ok ? (now / 100) & 0x1Fu : 0u) << 19;                 // bits 19..23: animation frame
+            sig |= (uint32_t)(ti.tm_hour * 60 + ti.tm_min) & 0x7FFu; // bits 0..10
+            sig |= (uint32_t)(ok ? tq : 0) << 11;                    // bits 11..18
+            sig |= (uint32_t)(ok ? (now / 100) & 0x1Fu : 0u) << 19;  // bits 19..23: animation frame
             if (persona.digitPulse > 0)
                 sig |= 1u << 27;
             return sig;
@@ -477,7 +550,6 @@ namespace disp
             styleSimple(g, haveTime, ti, now, accent, on);
             break;
         }
-        if (ui_clock_style() != ClockStyle::RETRO) // the retro face has its own bezel in that corner
-            alarmChip(g, now);
+        alarmChip(g, now);
     }
 } // namespace disp
