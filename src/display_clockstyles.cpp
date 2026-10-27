@@ -251,8 +251,53 @@ namespace disp
         // "21 Oct". The weather row is left out until a reading exists. Its icon (display_wxicon.cpp) is animated, so this
         // face redraws about 10 times a second while the weather is shown (see clockScreenSig).
 
-        // One string centred on cx, its digits centred on cy: wide halo, near halo, then the white core.
-        void glowString(TFT_eSPI &g, const uint8_t *font, int16_t caph, const char *str, int16_t cx, int16_t cy, uint16_t on)
+        // Where the ink of a string lies in a VLW font, measured from the text cursor: l = left edge of the first glyph,
+        // r = right edge of the last one. (textWidth() counts the empty side bearings too, so the layout would be a few px
+        // off; this reads the glyph table of the font itself, see make_vlw.py for the format.)
+        struct Ink
+        {
+            int16_t l, r;
+        };
+
+        int32_t vlwI32(const uint8_t *p)
+        {
+            return (int32_t)(((uint32_t)pgm_read_byte(p) << 24) | ((uint32_t)pgm_read_byte(p + 1) << 16) |
+                             ((uint32_t)pgm_read_byte(p + 2) << 8) | (uint32_t)pgm_read_byte(p + 3));
+        }
+
+        Ink vlwInk(const uint8_t *font, const char *s)
+        {
+            const int32_t n = vlwI32(font);
+            const int32_t space = (vlwI32(font + 16) + vlwI32(font + 20)) * 2 / 7; // what TFT_eSPI uses for a blank
+            int32_t x = 0, l = 0, r = 0;
+            bool first = true;
+            for (const uint8_t *c = (const uint8_t *)s; *c;)
+            {
+                uint32_t cp = *c++;
+                if (cp >= 0xC0 && *c) // a two-byte UTF-8 character (the degree sign)
+                    cp = ((cp & 0x1Fu) << 6) | (*c++ & 0x3Fu);
+                bool found = false;
+                const uint8_t *gp = font + 24;
+                for (int32_t i = 0; i < n; i++, gp += 28)
+                    if ((uint32_t)vlwI32(gp) == cp)
+                    {
+                        const int32_t w = vlwI32(gp + 8), adv = vlwI32(gp + 12), dx = vlwI32(gp + 20);
+                        if (first)
+                            l = x + dx;
+                        r = x + dx + w;
+                        first = false;
+                        x += adv;
+                        found = true;
+                        break;
+                    }
+                if (!found && cp == ' ')
+                    x += space;
+            }
+            return {(int16_t)l, (int16_t)r};
+        }
+
+        // One string with its text cursor at x and its digits centred on cy: wide halo, near halo, then the white core.
+        void glowString(TFT_eSPI &g, const uint8_t *font, int16_t caph, const char *str, int16_t x, int16_t cy, uint16_t on)
         {
             const uint16_t core = neonCore(on, 0.92f);
             const int16_t r2 = imax(2, u(2.2f)), r1 = imax(1, u(1.0f));
@@ -263,61 +308,73 @@ namespace disp
             };
             const Pass passes[] = {{(int16_t)-r2, 0, 0.22f}, {r2, 0, 0.22f}, {0, (int16_t)-r2, 0.22f}, {0, r2, 0.22f}, {(int16_t)-r1, (int16_t)-r1, 0.22f}, {r1, (int16_t)-r1, 0.22f}, {(int16_t)-r1, r1, 0.22f}, {r1, r1, 0.22f}, {(int16_t)-r1, 0, 0.48f}, {r1, 0, 0.48f}, {0, (int16_t)-r1, 0.48f}, {0, r1, 0.48f}, {0, 0, -1.0f}};
             g.loadFont(font);
-            g.setTextDatum(C_BASELINE);
+            g.setTextDatum(L_BASELINE);
             for (const Pass &p : passes)
             {
                 if (p.glow < 0)
                     g.setTextColor(core, tint(on, 0.48f));
                 else
                     g.setTextColor(tint(on, p.glow), C_BG);
-                g.drawString(str, cx + p.dx, cy + caph / 2 + p.dy);
+                g.drawString(str, x + p.dx, cy + caph / 2 + p.dy);
             }
             g.unloadFont();
         }
 
+        // Everything sits in one block that is centred on the screen: the same distance to the left and the right edge, and
+        // to the top and the bottom edge. Left: the hour over the minute (the top of the hour and the bottom of the minute
+        // are the top and bottom of the block). Right: weather, weekday, date, left-aligned. The widths are measured from
+        // the ink of the real text, so the block stays centred whatever the day name, date or temperature is.
         void styleMinimal(TFT_eSPI &g, bool have, const struct tm &ti, uint32_t now, uint16_t accent, uint16_t on)
         {
             const bool big = sc >= 1.5f;
             const uint8_t *bold = big ? ClockBold90 : ClockBold45;
             const int16_t boldCap = big ? CLOCKBOLD90_CAPH : CLOCKBOLD45_CAPH;
             char hh[4] = "--", mm[4] = "--";
+            char wd[8] = "--", dm[16] = "", tx[12] = "";
             if (have)
             {
+                char mo[8];
                 snprintf(hh, sizeof(hh), "%02d", ti.tm_hour);
                 snprintf(mm, sizeof(mm), "%02d", ti.tm_min);
+                strftime(wd, sizeof(wd), "%a", &ti);
+                strftime(mo, sizeof(mo), "%b", &ti);
+                snprintf(dm, sizeof(dm), "%d %s", ti.tm_mday, mo);
             }
-            const int16_t xc = (int16_t)(W * 0.368f);
-            glowString(g, bold, boldCap, hh, xc, (int16_t)(H * 0.33f), on);
-            glowString(g, bold, boldCap, mm, xc, (int16_t)(H * 0.677f), on);
-
-            // the right column
-            const int16_t xr = (int16_t)(W * 0.633f);
-            const uint16_t lav = neonCore(accent, 0.58f);
             bool wxOk;
             float tC;
             int code;
             uint32_t upd;
             readWeather(wxOk, tC, code, upd);
             if (wxOk)
+                snprintf(tx, sizeof(tx), "%d\xC2\xB0", (int)lroundf(tC));
+
+            // widths of the ink
+            const float s = 11.0f * sc; // icon half width: a 22 px wide icon on the 160 x 128 screen (sc = 1 there)
+            const int16_t iconGap = u(3), colGap = u(16);
+            const Ink ih = vlwInk(bold, hh), im = vlwInk(bold, mm), iw = vlwInk(ClockSm18, wd), id = vlwInk(ClockSm18, dm),
+                      it = vlwInk(ClockSm18, tx);
+            // the digit column keeps the width of a wide pair ("00" / "88"), so the block does not wobble as "11" or "20" come by
+            const Ink i00 = vlwInk(bold, "00"), i88 = vlwInk(bold, "88");
+            const int16_t wl = imax(imax(i00.r - i00.l, i88.r - i88.l), imax(ih.r - ih.l, im.r - im.l));
+            const int16_t wRow = wxOk ? (int16_t)(R16(2 * s) + iconGap + (it.r - it.l)) : (int16_t)0;
+            const int16_t wr = imax(wRow, imax(iw.r - iw.l, id.r - id.l));
+            const int16_t xL = (W - (wl + colGap + wr)) / 2; // left edge of the block
+            const int16_t xR = xL + wl + colGap;             // left edge of the right column
+
+            // the rows: hour and minute the same distance above and below the middle (the design: 22 px of 128)
+            const int16_t yH = (int16_t)(H / 2 - H * 0.1735f), yM = (int16_t)(H / 2 + H * 0.1735f);
+            glowString(g, bold, boldCap, hh, (int16_t)(xL + wl / 2 - (ih.l + ih.r) / 2), yH, on);
+            glowString(g, bold, boldCap, mm, (int16_t)(xL + wl / 2 - (im.l + im.r) / 2), yM, on);
+
+            const uint16_t lav = neonCore(accent, 0.58f);
+            if (wxOk)
             {
-                const float s = 11.0f * sc; // icon half width: a 22 px wide icon on the 160 x 128 screen (sc = 1 there)
-                const int16_t cy = (int16_t)(H * 0.31f);
-                drawWxIcon(g, code, !have || sun_is_day(ti), xr + s, cy, s, now); // animated, day or night sky
-                char t[10];
-                snprintf(t, sizeof(t), "%d\xC2\xB0", (int)lroundf(tC));
-                smoothText(g, ClockSm18, CLOCKSM18_CAPH, t, (int16_t)(xr + 2 * s + u(3)), cy, L_BASELINE, neonCore(accent, 0.9f), C_BG);
+                drawWxIcon(g, code, !have || sun_is_day(ti), xR + s, yH, s, now); // animated, day or night sky
+                smoothText(g, ClockSm18, CLOCKSM18_CAPH, tx, (int16_t)(xR + R16(2 * s) + iconGap - it.l), yH, L_BASELINE, neonCore(accent, 0.9f), C_BG);
             }
-            char wd[8] = "--", dm[16] = "";
+            smoothText(g, ClockSm18, CLOCKSM18_CAPH, wd, (int16_t)(xR - iw.l), (int16_t)(yM - u(9)), L_BASELINE, lav, C_BG);
             if (have)
-            {
-                char mo[8];
-                strftime(wd, sizeof(wd), "%a", &ti);
-                strftime(mo, sizeof(mo), "%b", &ti);
-                snprintf(dm, sizeof(dm), "%d %s", ti.tm_mday, mo);
-            }
-            smoothText(g, ClockSm18, CLOCKSM18_CAPH, wd, xr, (int16_t)(H * 0.608f), L_BASELINE, lav, C_BG);
-            if (have)
-                smoothText(g, ClockSm18, CLOCKSM18_CAPH, dm, xr, (int16_t)(H * 0.748f), L_BASELINE, lav, C_BG);
+                smoothText(g, ClockSm18, CLOCKSM18_CAPH, dm, (int16_t)(xR - id.l), (int16_t)(yM + u(9)), L_BASELINE, lav, C_BG);
         }
 
         // ------------------------------------------------------------------ Retro
