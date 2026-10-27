@@ -220,6 +220,16 @@ void display_tick()
     {
         // an earlier createSprite failed: the heap is usually in one piece again a moment later
         lastSpriteRetryMs = now;
+        {
+            // diagnostics: a missing sprite = flicker; say so (at most every 5 s) together with the heap state
+            static uint32_t lastMissLogMs = 0;
+            if ((uint32_t)(now - lastMissLogMs) >= 5000)
+            {
+                lastMissLogMs = now;
+                Serial.printf("display: SPRITE MISSING (face=%d, need %u B in one block) free heap %u, largest block %u -> drawing straight on the panel = flicker\n",
+                              (int)faceCv.ok, (unsigned)faceCv.w * faceCv.sh * 2, (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMaxAllocHeap());
+            }
+        }
         if (ensureSprites("retry", false))
         {
             lastInfoSig = 0xFFFFFFFFu;

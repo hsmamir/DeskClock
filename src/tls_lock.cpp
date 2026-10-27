@@ -45,6 +45,7 @@ TlsGuard::TlsGuard()
     // Otherwise ask the display to free them; it sees the request within one frame (~33 ms).
     int waited = 0;
     const bool ok = tls_heap_ok();
+#if TLS_RELEASE_SPRITES
     if (!ok)
     {
         s_wantsMemory = true;
@@ -54,6 +55,7 @@ TlsGuard::TlsGuard()
             waited += 50;
         }
     }
+#endif
     Serial.printf("TLS: heap free %u, largest block %u (%s, waited %d ms)\n", (unsigned)ESP.getFreeHeap(),
                   (unsigned)ESP.getMaxAllocHeap(), ok ? "display keeps running" : "display freed its sprites", waited);
 }
