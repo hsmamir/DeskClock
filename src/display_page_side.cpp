@@ -146,6 +146,14 @@ namespace disp
         }
 
         // ------------------------------------------------------------------ Weather
+        // Layout (160 x 128), every block centred on the screen:
+        //   y  9   top strip:  condition (left)                       today's range ^hi  vlo (right)
+        //   y 40   main row:   big animated icon | big temperature (glow)
+        //   y 73   chips:      feels like | humidity | wind   (value + caption), thin dividers between them
+        //   y 95   divider
+        //   y 99.. next five hours: hour, temperature, rain bar ("Now" sits on a faint pill)
+        // Without the details (no daily range / hourly data yet) the main row moves to the middle of the screen and the
+        // condition goes under the temperature in the bigger font.
         void drawWeatherPage(TFT_eSPI &g, bool day, uint32_t now)
         {
             g.fillRect(0, 0, W, H, C_BG);
@@ -161,10 +169,10 @@ namespace disp
 
             if (!ok) // no reading yet (boot, no WiFi, new city)
             {
-                drawWxIcon(g, 3, day, W / 2, u(42), u(20), now); // a plain cloud
-                smoothText(g, PageSm18, PAGESM18_CAPH, "No weather yet", W / 2, u(84), C_BASELINE, lav, C_BG);
+                drawWxIcon(g, 3, day, W / 2, u(44), u(24), now); // a plain cloud
+                smoothText(g, PageSm18, PAGESM18_CAPH, "No weather yet", W / 2, u(86), C_BASELINE, lav, C_BG);
                 const char *sub = WiFi.status() == WL_CONNECTED ? "Updating..." : "Waiting for WiFi";
-                smoothText(g, capFont(), capFontH(), sub, W / 2, u(102), C_BASELINE, C_SOFT, C_BG);
+                smoothText(g, capFont(), capFontH(), sub, W / 2, u(104), C_BASELINE, C_SOFT, C_BG);
                 return;
             }
 
@@ -173,40 +181,42 @@ namespace disp
             WeatherDetail d;
             readWeatherDetail(d);
             const bool full = d.valid;
-            const int16_t dy = full ? 0 : u(12); // without the details the main row sits lower
-
-            // ---- main row: icon, big temperature, condition ----
-            drawWxIcon(g, code, day, u(33), u(34) + dy, u(19), now);
+            const uint16_t coreCol = stale ? tint(white, 0.6f) : white;
+            const uint16_t condCol = stale ? tint(lav, 0.6f) : lav;
+            const char *cl = condLabel(code, day);
 
             char tb[12];
             snprintf(tb, sizeof(tb), "%d\xC2\xB0", (int)lroundf(tC));
-            glowText(g, PageTemp36, PAGETEMP36_CAPH, tb, u(64), u(30) + dy, L_BASELINE, accent, stale ? tint(white, 0.6f) : white);
+
+            // ---- main row: icon + glowing temperature ----
+            // The block (icon | gap | temperature) is centred horizontally on the screen.
             {
-                const char *cl = condLabel(code, day);
-                const bool fits = smoothWidth(g, PageSm18, cl) <= W - u(64) - u(4); // "Mostly sunny" / "Partly cloudy" do not
-                smoothText(g, fits ? PageSm18 : capFont(), fits ? PAGESM18_CAPH : capFontH(), cl, u(64), u(55) + dy, L_BASELINE,
-                           stale ? tint(lav, 0.6f) : lav, C_BG);
+                const int16_t is = u(20);                          // icon half width
+                const int16_t tw = smoothWidth(g, PageTemp36, tb); // temperature width
+                const int16_t gap = u(9);
+                const int16_t total = 2 * is + gap + tw;
+                const int16_t x0 = (W - total) / 2;
+                const int16_t rowCy = full ? u(40) : u(50);
+                drawWxIcon(g, code, day, x0 + is, rowCy + u(1), is, now);
+                const int16_t tx = x0 + 2 * is + gap;
+                const int16_t tCy = full ? rowCy - u(1) : rowCy - u(8);
+                glowText(g, PageTemp36, PAGETEMP36_CAPH, tb, tx, tCy, L_BASELINE, accent, coreCol);
+                if (!full) // the condition under the temperature
+                {
+                    const int16_t room = W - tx - u(4);
+                    const bool fits = smoothWidth(g, PageSm18, cl) <= room;
+                    smoothText(g, fits ? PageSm18 : capFont(), fits ? PAGESM18_CAPH : capFontH(), cl, tx, tCy + u(24), L_BASELINE, condCol, C_BG);
+                }
             }
 
-            // top left: how old the reading is, once it is stale
-            if (stale)
+            // ---- top strip: condition (or how old the reading is, once it is stale) | range ----
+            if (full)
             {
-                char ab[16], ag[8];
-                fmtAge(ag, sizeof(ag), age);
-                snprintf(ab, sizeof(ab), "%s ago", ag);
-                smoothText(g, capFont(), capFontH(), ab, u(6), u(9), L_BASELINE, C_AMBER, C_BG);
-            }
-
-            if (!full)
-                return;
-
-            // top right: today's range  ^24  v15
-            {
+                const int16_t cy = u(9), mx = u(6);
                 char hi[8], lo[8];
                 snprintf(hi, sizeof(hi), "%d\xC2\xB0", (int)lroundf(d.maxC));
                 snprintf(lo, sizeof(lo), "%d\xC2\xB0", (int)lroundf(d.minC));
-                const int16_t cy = u(9);
-                int16_t xr = W - u(6);
+                int16_t xr = W - mx;
                 smoothText(g, capFont(), capFontH(), lo, xr, cy, R_BASELINE, lav, C_BG);
                 int16_t x = xr - smoothWidth(g, capFont(), lo) - u(5);
                 g.fillTriangle(x, cy + u(3), x - u(3), cy - u(2), x + u(3), cy - u(2), C_ICE);
@@ -214,11 +224,35 @@ namespace disp
                 smoothText(g, capFont(), capFontH(), hi, x, cy, R_BASELINE, lav, C_BG);
                 x -= smoothWidth(g, capFont(), hi) + u(5);
                 g.fillTriangle(x, cy - u(3), x - u(3), cy + u(2), x + u(3), cy + u(2), C_HI);
+                const int16_t rangeL = x - u(4); // left edge of the range block
+
+                char ab[24];
+                const char *left = cl;
+                if (stale)
+                {
+                    char ag[8];
+                    fmtAge(ag, sizeof(ag), age);
+                    snprintf(ab, sizeof(ab), "%s ago", ag);
+                    left = ab;
+                }
+                const bool fits = mx + smoothWidth(g, capFont(), left) <= rangeL;
+                if (fits)
+                    smoothText(g, capFont(), capFontH(), left, mx, cy, L_BASELINE, stale ? C_AMBER : condCol, C_BG);
             }
+            else if (stale)
+            {
+                char ab[16], ag[8];
+                fmtAge(ag, sizeof(ag), age);
+                snprintf(ab, sizeof(ab), "%s ago", ag);
+                smoothText(g, capFont(), capFontH(), ab, W / 2, u(9), C_BASELINE, C_AMBER, C_BG);
+            }
+
+            if (!full)
+                return;
 
             // ---- chips: feels like, humidity, wind ----
             {
-                const int16_t vCy = u(76), cCy = u(90);
+                const int16_t vCy = u(72), cCy = u(85);
                 char v[12];
                 if (!isnan(d.feelsC))
                 {
@@ -233,15 +267,19 @@ namespace disp
                 if (d.windKmh >= 0)
                 {
                     snprintf(v, sizeof(v), "%d", (int)lroundf(d.windKmh));
-                    chip(g, W * 5 / 6, vCy, cCy, Icon::WIND, v, "km/h", "Wind", d.windDirDeg, white, lav, lav);
+                    chip(g, W * 5 / 6, vCy, cCy, Icon::WIND, v, nullptr, "km/h", d.windDirDeg, white, lav, lav);
                 }
             }
 
             // ---- the next hours: hour, temperature, rain chance ----
             if (d.barCount > 0)
             {
-                drawDivider(g, u(8), W - u(8), u(98));
+                drawDivider(g, u(8), W - u(8), u(96));
                 const int n = d.barCount < 5 ? d.barCount : 5;
+                const int16_t colW = W / 5;
+                { // "Now" sits on a faint pill
+                    g.fillRoundRect(u(3), u(99), colW - u(4), u(27), u(6), tint(accent, 0.22f));
+                }
                 for (int i = 0; i < n; i++)
                 {
                     const int16_t cx = (int16_t)((i * 2 + 1) * W / (2 * 5));
@@ -251,12 +289,13 @@ namespace disp
                     else
                         snprintf(hb, sizeof(hb), "%d", d.hour[i]);
                     snprintf(tb2, sizeof(tb2), "%d\xC2\xB0", (int)d.tempC[i]);
-                    smoothText(g, capFont(), capFontH(), hb, cx, u(107), C_BASELINE, C_SOFT, C_BG);
-                    smoothText(g, capFont(), capFontH(), tb2, cx, u(116), C_BASELINE, mixColor(tempColor((float)d.tempC[i]), C_WHITE, 0.45f), C_BG);
+                    smoothText(g, capFont(), capFontH(), hb, cx, u(106), C_BASELINE, i == 0 ? C_WHITE : C_SOFT, i == 0 ? tint(accent, 0.22f) : C_BG);
+                    smoothText(g, capFont(), capFontH(), tb2, cx, u(114), C_BASELINE, mixColor(tempColor((float)d.tempC[i]), C_WHITE, 0.45f),
+                               i == 0 ? tint(accent, 0.22f) : C_BG);
                     if (d.rainPct[i] >= 0)
                     {
                         const int16_t bw = u(20), bh = imax(2, u(3));
-                        drawNeonBar(g, cx - bw / 2, u(122), bw, bh, d.rainPct[i] / 100.0f, C_ICE, false);
+                        drawNeonBar(g, cx - bw / 2, u(120), bw, bh, d.rainPct[i] / 100.0f, C_ICE, false);
                     }
                 }
             }
