@@ -271,6 +271,10 @@ namespace disp
             return dm[mon];
         }
 
+        // The Date page: the top strip is "what day is it" (big day number, weekday, month and year, ISO week), the rest
+        // of the screen is the month calendar over the whole width, so the day numbers have room (21 px per column).
+        // Today is a pink pill with a glow; days before it are dim, days after it bright, and the empty cells at the
+        // start / end of the grid show the neighbouring months very faintly.
         void drawDatePage(TFT_eSPI &g, bool haveTime, const struct tm &ti)
         {
             g.fillRect(0, 0, W, H, C_BG);
@@ -284,74 +288,93 @@ namespace disp
                 return;
             }
 
-            const bool big = sc >= 1.5f;
-            const int16_t colX = u(31); // centre of the left column
-            char buf[16];
+            char buf[32];
+            const int16_t mx = u(8); // left / right margin of the top strip
 
-            // weekday
-            strftime(buf, sizeof(buf), "%A", &ti);
-            {
-                const bool fits = smoothWidth(g, PageSm18, buf) <= u(58);
-                smoothText(g, fits ? PageSm18 : capFont(), fits ? PAGESM18_CAPH : capFontH(), buf, colX, u(20), C_BASELINE, lav, C_BG);
-            }
-
-            // the day number, big, with a glow
+            // ---- top strip: the day number (big, glowing) | weekday over month + year | week chip ----
             snprintf(buf, sizeof(buf), "%d", ti.tm_mday);
-            glowText(g, big ? ClockBig92 : ClockBig48, big ? CLOCKBIG92_CAPH : CLOCKBIG48_CAPH, buf, colX, u(56), C_BASELINE,
-                     accent, white);
+            glowText(g, PageTemp36, PAGETEMP36_CAPH, buf, mx, u(21), L_BASELINE, accent, white);
+            const int16_t xT = mx + smoothWidth(g, PageTemp36, buf) + u(9); // the text column right of the number
 
-            // month in capitals (ClockSm26 only has capitals), year under it
+            // week chip (ISO week), top right: a thin rounded outline with "W43" inside
+            int16_t chipX = W; // left edge of the chip; W = there is none
             {
-                char mon[8];
-                strftime(mon, sizeof(mon), "%b", &ti);
-                for (char *p = mon; *p; p++)
-                    if (*p >= 'a' && *p <= 'z')
-                        *p -= 32;
-                smoothText(g, ClockSm26, CLOCKSM26_CAPH, mon, colX, u(92), C_BASELINE, white, C_BG);
-                strftime(buf, sizeof(buf), "%Y", &ti);
-                smoothText(g, capFont(), capFontH(), buf, colX, u(110), C_BASELINE, C_SOFT, C_BG);
+                char wk[8];
+                strftime(wk, sizeof(wk), "%V", &ti);
+                snprintf(buf, sizeof(buf), "W%d", atoi(wk));
+                const int16_t tw = smoothWidth(g, capFont(), buf), cw = tw + u(9), ch = u(13);
+                chipX = W - mx - cw;
+                drawFrame(g, chipX, u(15) - ch / 2, cw, ch, ch / 2, tint(C_SOFT, 0.55f));
+                smoothText(g, capFont(), capFontH(), buf, chipX + cw / 2, u(15), C_BASELINE, lav, C_BG);
             }
 
-            // thin rule between the two halves
-            g.drawFastVLine(u(62), u(14), H - u(28), tint(C_SOFT, 0.25f));
+            strftime(buf, sizeof(buf), "%A", &ti); // weekday: the big font if it fits beside the chip
+            {
+                const bool fits = xT + smoothWidth(g, PageSm18, buf) + u(6) <= chipX;
+                smoothText(g, fits ? PageSm18 : capFont(), fits ? PAGESM18_CAPH : capFontH(), buf, xT, u(15), L_BASELINE, white, C_BG);
+            }
+            strftime(buf, sizeof(buf), "%B %Y", &ti); // "September 2026" if it fits, else "Sep 2026"
+            if (xT + smoothWidth(g, capFont(), buf) > W - mx)
+                strftime(buf, sizeof(buf), "%b %Y", &ti);
+            smoothText(g, capFont(), capFontH(), buf, xT, u(31), L_BASELINE, lav, C_BG);
 
-            // ---- month calendar ----
-            static const char WD_INITIAL[7] = {'S', 'M', 'T', 'W', 'T', 'F', 'S'}; // Sunday first, like tm_wday
-            const int16_t gx0 = u(66), gw = W - u(4) - gx0;
-            const float colW = gw / 7.0f;
+            drawDivider(g, mx, W - mx, u(43));
+
+            // ---- the month calendar, full width ----
+            static const char *WD2[7] = {"Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"}; // index = tm_wday
+            const int16_t sideM = u(6);
+            const float colW = (W - 2 * sideM) / 7.0f;
+            auto colCx = [&](int c)
+            { return (int16_t)(sideM + (c + 0.5f) * colW); };
+
             const int first = (((ti.tm_wday - (ti.tm_mday - 1)) % 7) + 7) % 7; // weekday of the 1st, 0 = Sunday
-            const int off = (first - CALENDAR_WEEK_START + 7) % 7;             // empty cells before the 1st
+            const int off = (first - CALENDAR_WEEK_START + 7) % 7;             // cells before the 1st
             const int dim = daysInMonth(ti.tm_year + 1900, ti.tm_mon);
+            const int prevDim = daysInMonth(ti.tm_mon == 0 ? ti.tm_year + 1899 : ti.tm_year + 1900, (ti.tm_mon + 11) % 12);
             const int weeks = (off + dim + 6) / 7;
-            const int16_t pitch = u(14), hdrH = u(13);
-            const int16_t top = (H - (hdrH + weeks * pitch)) / 2;
-            auto colCx = [&](int c) { return (int16_t)(gx0 + (c + 0.5f) * colW); };
+
+            const int16_t hdrCy = u(51), y0 = u(59), bottom = H - u(4);
+            const int16_t pitch = imin(u(14), (int16_t)((bottom - y0) / weeks)); // 6-week months get a little tighter
 
             for (int c = 0; c < 7; c++)
             {
                 const int wd = (CALENDAR_WEEK_START + c) % 7;
-                const char t[2] = {WD_INITIAL[wd], 0};
-                smoothText(g, capFont(), capFontH(), t, colCx(c), top + hdrH / 2, C_BASELINE,
-                           wd == ti.tm_wday ? C_BLUSH : tint(C_SOFT, 0.8f), C_BG);
+                smoothText(g, capFont(), capFontH(), WD2[wd], colCx(c), hdrCy, C_BASELINE, wd == ti.tm_wday ? C_BLUSH : tint(C_SOFT, 0.85f), C_BG);
             }
 
-            const uint16_t pastCol = tint(C_SOFT, 0.55f);
-            const uint16_t futureCol = mixColor(C_SOFT, C_WHITE, 0.55f);
-            for (int day = 1; day <= dim; day++)
+            const uint16_t pastCol = tint(C_SOFT, 0.6f);
+            const uint16_t futureCol = mixColor(C_SOFT, C_WHITE, 0.6f);
+            const uint16_t otherCol = tint(C_SOFT, 0.28f); // the neighbouring months
+            for (int idx = 0; idx < weeks * 7; idx++)
             {
-                const int idx = off + day - 1;
                 const int16_t cx = colCx(idx % 7);
-                const int16_t cy = (int16_t)(top + hdrH + (idx / 7) * pitch + pitch / 2);
-                snprintf(buf, sizeof(buf), "%d", day);
-                if (day == ti.tm_mday) // today: a pink pill
+                const int16_t cy = (int16_t)(y0 + (idx / 7) * pitch + pitch / 2);
+                const int day = idx - off + 1; // < 1: previous month, > dim: next month
+                int shown = day;
+                uint16_t col;
+                if (day < 1)
                 {
-                    const int16_t pw = imax(u(11), (int16_t)(smoothWidth(g, capFont(), buf) + u(4)));
-                    const int16_t ph = u(12);
+                    shown = prevDim + day;
+                    col = otherCol;
+                }
+                else if (day > dim)
+                {
+                    shown = day - dim;
+                    col = otherCol;
+                }
+                else
+                    col = day < ti.tm_mday ? pastCol : futureCol;
+                snprintf(buf, sizeof(buf), "%d", shown);
+                if (day == ti.tm_mday) // today: a pink pill with a soft glow
+                {
+                    const int16_t pw = imax(u(16), (int16_t)(smoothWidth(g, capFont(), buf) + u(6)));
+                    const int16_t ph = imin(u(12), (int16_t)(pitch - 1));
+                    g.fillRoundRect(cx - pw / 2 - 2, cy - ph / 2 - 2, pw + 4, ph + 4, ph / 2 + 2, tint(C_BLUSH, 0.28f));
                     g.fillRoundRect(cx - pw / 2, cy - ph / 2, pw, ph, ph / 2, C_BLUSH);
                     smoothText(g, capFont(), capFontH(), buf, cx, cy, C_BASELINE, C_WHITE, C_BLUSH);
                 }
                 else
-                    smoothText(g, capFont(), capFontH(), buf, cx, cy, C_BASELINE, day < ti.tm_mday ? pastCol : futureCol, C_BG);
+                    smoothText(g, capFont(), capFontH(), buf, cx, cy, C_BASELINE, col, C_BG);
             }
         }
     } // namespace
