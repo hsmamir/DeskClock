@@ -208,6 +208,7 @@ void display_tick()
         otaScreenShown = false;
         otaDrawnPct = -1;
         lastInfoSig = 0xFFFFFFFFu;
+        clockWasShown = false; // FIX: the landscape clock / Date page was wiped by fillScreen(): draw it again at once
     }
     if (spritesReleased && !tlsActive)
     {
@@ -265,6 +266,7 @@ void display_tick()
         frameDirty = true;
         portalScreenShown = false;
         lastInfoSig = 0xFFFFFFFFu;
+        clockWasShown = false; // FIX: same as after a failed update
     }
 
     bool alarm = (mood == Mood::ALARM_ALERT);
@@ -398,7 +400,14 @@ void display_tick()
 #endif
         personaUpdate(pin);
     }
-    momentUpdate(haveTime ? &ti : nullptr, mode == DisplayMode::CLOCK && !fullLayout, alarm, happy, now); // special minutes (easter eggs)
+    // FIX: on the landscape UI the home view can be the clock page. The face is not drawn there, so a special minute
+    // (easter egg) must not start (it would play invisibly and be marked "done for today").
+#if LANDSCAPE_UI
+    const bool faceIsHome = !ui_home_is_clock();
+#else
+    const bool faceIsHome = true;
+#endif
+    momentUpdate(haveTime ? &ti : nullptr, mode == DisplayMode::CLOCK && !fullLayout && faceIsHome, alarm, happy, now); // special minutes (easter eggs)
 
     occasionUpdate(haveTime ? &ti : nullptr, now);
 
@@ -416,13 +425,21 @@ void display_tick()
             if (REMINDER_FULL_BRIGHT)
                 backlightUpdate(false, true);
             diagShown = false;
+            creditsStop();         // FIX: a reminder ends the credits
+            clockWasShown = false; // FIX: the reminder replaced the page on screen: redraw the page below when it closes
             menuScreenLeft();
             drawReminderScreenL(rv, now);
             return;
         }
         if (mode == DisplayMode::DIAG && !alarm)
         {
+            clockWasShown = false; // FIX: otherwise the Analog / Minimal clock and the Date page stay frozen after leaving
             menuScreenLeft();
+            if (drawCreditsScreen(now)) // FIX: the hidden credits (easter egg) replace the diagnostics page while they run
+            {
+                diagShown = false; // the diagnostics page is drawn again at once when they end
+                return;
+            }
             if (!diagShown || now - lastDiagDrawMs >= 500)
             {
                 lastDiagDrawMs = now;
@@ -432,8 +449,10 @@ void display_tick()
             return;
         }
         diagShown = false;
+        creditsStop(); // FIX: not on the diagnostics page any more: the credits end
         if (mode == DisplayMode::MENU && !alarm)
         {
+            clockWasShown = false; // FIX: same as the diagnostics page
             drawMenuScreenL(now);
             return;
         }
@@ -443,13 +462,15 @@ void display_tick()
         // An alarm always brings the face back; the boot wake-up is not interrupted.
         if (!alarm && (mode == DisplayMode::DATE || mode == DisplayMode::WEATHER) && persona.stage == PStage::RUN)
         {
-            const uint32_t sig = sidePageSig(mode, haveTime, ti, now);
+            // FIX: the "hold for diagnostics" ring (touch.cpp) was only drawn on the face; it is part of the signature now
+            const uint32_t sig = sidePageSig(mode, haveTime, ti, now) ^ ((uint32_t)g_state.modeHoldPct * 0x9E3779B1u);
             if (!clockWasShown || sig != lastClockSig) // (clockWasShown / lastClockSig are shared with the clock page)
             {
                 lastClockSig = sig;
                 clockWasShown = true;
                 TFT_eSPI &g = faceCv.begin();
                 drawSidePage(g, mode, haveTime, ti, scn.day, now);
+                drawHoldRing(g); // FIX
                 faceCv.endAt(0);
             }
             return;
@@ -458,13 +479,14 @@ void display_tick()
         // Home: the face (eyes) or the clock, as the knob left it. The boot wake-up and the alarm always show the face.
         if (ui_home_is_clock() && !alarm && persona.stage == PStage::RUN)
         {
-            const uint32_t sig = clockScreenSig(haveTime, ti, now);
+            const uint32_t sig = clockScreenSig(haveTime, ti, now) ^ ((uint32_t)g_state.modeHoldPct * 0x9E3779B1u); // FIX: ring
             if (!clockWasShown || sig != lastClockSig)
             {
                 lastClockSig = sig;
                 clockWasShown = true;
                 TFT_eSPI &g = faceCv.begin();
                 drawClockScreen(g, haveTime, ti, now);
+                drawHoldRing(g); // FIX
                 faceCv.endAt(0);
             }
             return;
@@ -558,16 +580,7 @@ void display_tick()
         {
             drawOccasionFront(g, now);
             drawMomentFront(g, now);
-            // Accessories of the weather, drawn over the face. (The face mask is drawn inside drawFace(), at the layer
-            // between the eyes and the fly / spray; it depends on the air only.)
-            const bool eyesHere = !sleepy && !persona.asleep && !persona.snoozed && !persona.frown && persona.peek <= 0.01f;
-            const bool hatOcc = occ.kind == Occasion::EASTER || occ.kind == Occasion::CHRISTMAS || occ.kind == Occasion::NEW_YEAR_EVE;
-            const bool umbrellaOk = !happy && eyesHere && !hatOcc;
-            const bool shadesOk = !happy && eyesHere && occ.kind == Occasion::NONE && exprCur == Expr::NONE &&
-                                  !persona.thinking && !persona.sulking && !persona.flyOn && persona.relief <= 0.15f &&
-                                  !persona.sneezeMouth && persona.hiccupHop <= 0.3f && persona.sneezeSpray <= 0.0f &&
-                                  persona.hiccupText <= 0.0f && !momentActive();
-            drawWeatherAccessory(g, now, scn, umbrellaOk, shadesOk);
+            // (umbrella and sunglasses removed on request; the face mask is switched off with WX_AIRQ_MASK_AQI=0)
         }
         drawStatusIcons(g, now);
         drawHoldRing(g);

@@ -3,7 +3,8 @@
 // g_state.creditsSeq). The text scrolls up through both cards like film credits. The two small eyes at the top read
 // it: the gaze sweeps along the line that is passing the middle of the screen, then jumps back for the next line.
 // On the last line the eyes turn into happy "^ ^" eyes. A tap on the pad skips the credits (touch.cpp clears
-// g_state.creditsActive), and so does leaving the page. Drawn like the diagnostics page: two cards, one seamless page.
+// g_state.creditsActive), and so does leaving the page. Drawn like the diagnostics page: two cards, one seamless page
+// (landscape UI: one full-screen canvas).
 #include "display_internal.h"
 #include "display_style.h"
 #include "version.h"
@@ -251,6 +252,14 @@ namespace disp
         sGazeX += (tx - sGazeX) * 0.35f;
         sGazeY += (ty - sGazeY) * 0.2f;
 
+#if LANDSCAPE_UI
+        // FIX: landscape UI = ONE full-screen canvas (faceH == H, no info card), the whole page is drawn in one go
+        TFT_eSPI &gl = faceCv.begin();
+        gl.fillRect(0, 0, W, H, C_BG);
+        drawCreditsContent(gl, 0, H, scroll, finale, now);
+        faceCv.endAt(0);
+        return true;
+#endif
         TFT_eSPI &gt = faceCv.begin();
         gt.fillRect(0, 0, W, faceH, C_BG);
         drawCreditsContent(gt, 0, faceH, scroll, finale, now);
