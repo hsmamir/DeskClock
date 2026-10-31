@@ -362,6 +362,8 @@ namespace disp
                 strftime(buf, sizeof(buf), "%b %Y", &ti);
             smoothText(g, capFont(), capFontH(), buf, xT, u(31), L_BASELINE, lav, C_BG);
 
+            drawWifiLostMini(g, W - mx - u(5), u(33), u(5)); // WiFi down: crossed-out icon right of the month, under the week chip
+
             drawDivider(g, mx, W - mx, u(43));
 
             // ---- the month calendar, full width ----

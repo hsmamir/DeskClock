@@ -21,6 +21,11 @@ namespace disp
     // Like clockScreenSig(): changes whenever the page would look different (the Weather page: ten times a second, for the icon).
     uint32_t sidePageSig(DisplayMode mode, bool haveTime, const struct tm &ti, uint32_t now);
 
+    // WiFi state for the pages (display_screens.cpp): wifiLost() is true while the WiFi is down; drawWifiLostMini() draws
+    // the crossed-out WiFi icon at (cx, cy) with outer radius r, and nothing while online.
+    bool wifiLost();
+    void drawWifiLostMini(TFT_eSPI &g, int16_t cx, int16_t cy, int16_t r);
+
     // Quick menu, diagnostics and reminder pages (full screen).
     void drawMenuScreenL(uint32_t now);
     void drawDiagScreenL(uint32_t now);

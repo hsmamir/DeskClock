@@ -463,7 +463,7 @@ void display_tick()
         if (!alarm && (mode == DisplayMode::DATE || mode == DisplayMode::WEATHER) && persona.stage == PStage::RUN)
         {
             // FIX: the "hold for diagnostics" ring (touch.cpp) was only drawn on the face; it is part of the signature now
-            const uint32_t sig = sidePageSig(mode, haveTime, ti, now) ^ ((uint32_t)g_state.modeHoldPct * 0x9E3779B1u);
+            const uint32_t sig = sidePageSig(mode, haveTime, ti, now) ^ ((uint32_t)g_state.modeHoldPct * 0x9E3779B1u) ^ (wifiLost() ? 0x5A5A5A5Au : 0u); // FIX: ring + WiFi icon
             if (!clockWasShown || sig != lastClockSig) // (clockWasShown / lastClockSig are shared with the clock page)
             {
                 lastClockSig = sig;
@@ -479,13 +479,14 @@ void display_tick()
         // Home: the face (eyes) or the clock, as the knob left it. The boot wake-up and the alarm always show the face.
         if (ui_home_is_clock() && !alarm && persona.stage == PStage::RUN)
         {
-            const uint32_t sig = clockScreenSig(haveTime, ti, now) ^ ((uint32_t)g_state.modeHoldPct * 0x9E3779B1u); // FIX: ring
+            const uint32_t sig = clockScreenSig(haveTime, ti, now) ^ ((uint32_t)g_state.modeHoldPct * 0x9E3779B1u) ^ (wifiLost() ? 0x5A5A5A5Au : 0u); // FIX: ring + WiFi icon
             if (!clockWasShown || sig != lastClockSig)
             {
                 lastClockSig = sig;
                 clockWasShown = true;
                 TFT_eSPI &g = faceCv.begin();
                 drawClockScreen(g, haveTime, ti, now);
+                drawStatusIcons(g, now); // FIX: the crossed-out WiFi icon (top right) was only on the face
                 drawHoldRing(g); // FIX
                 faceCv.endAt(0);
             }

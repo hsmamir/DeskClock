@@ -146,6 +146,22 @@ namespace disp
         g.drawLine(cx - r + 1, cy - r, cx + r + 1, cy + 4, C_RED);
     }
 
+    // The WiFi is down (the cached state pollWifi() keeps; the landscape pages put it into their signatures).
+    bool wifiLost() { return !wifiOkNow; }
+
+    // The same "WiFi lost" icon as drawStatusIcons(), at any place and size (r = radius of the outer arc), for the
+    // landscape pages: the clock page uses drawStatusIcons(), the Date page this one. Nothing is drawn while online.
+    void drawWifiLostMini(TFT_eSPI &g, int16_t cx, int16_t cy, int16_t r)
+    {
+        if (wifiOkNow)
+            return;
+        drawWifiIcon(g, cx, cy, r, dimColor(C_SOFT, 170));
+        const int16_t dy = (int16_t)((r * 4) / 7);
+        g.drawLine(cx - r, cy - r - 1, cx + r, cy + dy - 1, C_BG); // bg-coloured shadow so the slash stays readable
+        g.drawLine(cx - r, cy - r, cx + r, cy + dy, C_RED);
+        g.drawLine(cx - r + 1, cy - r, cx + r + 1, cy + dy, C_RED);
+    }
+
     // Ring that fills while the knob button is held toward the diagnostics page
     // (g_state.modeHoldPct, set by touch.cpp). Drawn over the middle of the face.
     void drawHoldRing(TFT_eSPI &g)
