@@ -6,6 +6,9 @@
 //
 //   Date     left: weekday, big day number, month, year     right: month calendar (today = pink pill)
 //   Weather  icon + big temperature + condition; feels like / humidity / wind; the next hours with their rain chance
+//            The Weather page has up to three VIEWS, the knob steps through them (touch.cpp, g_state.weatherScrollStep):
+//            0 = Now (above), 1 = Next days (7-day forecast), 2 = Air quality (AQI, PM2.5, PM10, pollen, UV, pressure).
+//            A view without data is skipped; small dots at the right edge show which one is up.
 //
 // Fonts: PageSm12 / PageSm18 / PageTemp36 (display_fonts_pages.h, made by tools/make_vlw_pages.py), plus the big digits
 // and the capital month names of display_fonts.h.
@@ -15,7 +18,9 @@
 #include "display_wxicon.h"
 #include "display_fonts_pages.h"
 #include "weather_mood.h"
+#include "weather_extras.h"
 #include <WiFi.h>
+#include <string.h>
 
 namespace disp
 {
@@ -416,6 +421,259 @@ namespace disp
                     smoothText(g, capFont(), capFontH(), buf, cx, cy, C_BASELINE, col, C_BG);
             }
         }
+
+        // ------------------------------------------------------------------ Weather views 1 and 2: Next days / Air quality
+        uint16_t aqiCol(int aqi)
+        {
+            if (aqi < 0)
+                return C_SOFT;
+            if (aqi <= 50)
+                return rgb(90, 230, 130);
+            if (aqi <= 100)
+                return C_AMBER;
+            if (aqi <= 150)
+                return rgb(255, 140, 60);
+            if (aqi <= 200)
+                return C_RED;
+            if (aqi <= 300)
+                return rgb(200, 100, 255);
+            return rgb(170, 50, 90);
+        }
+
+        const char *aqiWordL(int aqi)
+        {
+            if (aqi < 0)
+                return "--";
+            if (aqi <= 50)
+                return "Good";
+            if (aqi <= 100)
+                return "Moderate";
+            if (aqi <= 150)
+                return "Sensitive";
+            if (aqi <= 200)
+                return "Unhealthy";
+            if (aqi <= 300)
+                return "V.Unhealthy";
+            return "Hazardous";
+        }
+
+        // PM2.5 / PM10 in ug/m3, coloured with the US breakpoints
+        uint16_t pmCol(float v, float b1, float b2, float b3)
+        {
+            if (v < 0)
+                return C_SOFT;
+            if (v <= b1)
+                return rgb(90, 230, 130);
+            if (v <= b2)
+                return C_AMBER;
+            if (v <= b3)
+                return rgb(255, 140, 60);
+            return C_RED;
+        }
+
+        const char *pollenWordL(int level)
+        {
+            static const char *const w[5] = {"None", "Low", "Moderate", "High", "V.High"};
+            return (level >= 0 && level <= 4) ? w[level] : "n/a";
+        }
+
+        uint16_t pollenCol(int level)
+        {
+            switch (level)
+            {
+            case 1:
+                return rgb(90, 230, 130);
+            case 2:
+                return C_AMBER;
+            case 3:
+                return rgb(255, 140, 60);
+            case 4:
+                return C_RED;
+            default:
+                return C_SOFT;
+            }
+        }
+
+        // Title strip of the two extra views: name on the left, a hint on the right, a rule under it.
+        void viewTitle(TFT_eSPI &g, const char *left, const char *right, uint16_t lav)
+        {
+            const int16_t cy = u(9), mx = u(6);
+            smoothText(g, capFont(), capFontH(), left, mx, cy, L_BASELINE, lav, C_BG);
+            if (right)
+                smoothText(g, capFont(), capFontH(), right, W - u(12), cy, R_BASELINE, C_SOFT, C_BG);
+            drawDivider(g, mx, W - mx, u(16));
+        }
+
+        // Which views of the Weather page have something to show (0 = Now always).
+        struct WxViews
+        {
+            bool avail[3];
+        };
+
+        // "Next days": one row per day - weekday, icon, chance of rain, high / low.
+        void drawDaysPage(TFT_eSPI &g, const WeatherExtra &x)
+        {
+            static const char *const kDow[7] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
+            g.fillRect(0, 0, W, H, C_BG);
+            const uint16_t accent = C_ACCENT;
+            const uint16_t white = neonCore(accent, 0.9f);
+            const uint16_t lav = neonCore(accent, 0.6f);
+            viewTitle(g, "Next days", "rain %", lav);
+
+            const int n = x.dayCount < WX_MAX_DAYS ? x.dayCount : WX_MAX_DAYS;
+            if (n <= 0)
+            {
+                smoothText(g, PageSm18, PAGESM18_CAPH, "No forecast", W / 2, H / 2, C_BASELINE, lav, C_BG);
+                return;
+            }
+            const int16_t top = u(19), bottom = H - u(3);
+            const int16_t pitch = imin(u(15), (int16_t)((bottom - top) / n));
+            const int16_t xr = W - u(12); // right edge of the low temperature (the view dots sit right of it)
+            for (int i = 0; i < n; i++)
+            {
+                const WxDay &d = x.day[i];
+                const int16_t cy = (int16_t)(top + i * pitch + pitch / 2);
+                const uint16_t rowBg = (i & 1) ? tint(C_SOFT, 0.07f) : C_BG; // every second row a faint stripe
+                if (i & 1)
+                    g.fillRect(u(2), cy - pitch / 2, xr + u(3) - u(2), pitch, rowBg);
+
+                const char *name = (i == 0) ? "Today" : kDow[d.dow % 7];
+                smoothText(g, PageSm18, PAGESM18_CAPH, name, u(6), cy, L_BASELINE, i == 0 ? white : lav, rowBg);
+
+                drawWxIcon(g, d.code, true, (float)u(52), (float)cy, (float)u(6.5f), 0); // still: now = 0
+
+                char b[10];
+                if (d.rainPct >= 0)
+                {
+                    snprintf(b, sizeof(b), "%d%%", d.rainPct);
+                    smoothText(g, capFont(), capFontH(), b, u(72), cy, L_BASELINE,
+                               d.rainPct >= WEATHER_BAR_RAIN_PCT ? C_ICE : tint(C_SOFT, 0.85f), rowBg);
+                }
+                snprintf(b, sizeof(b), "%d", (int)d.minC);
+                smoothText(g, PageSm18, PAGESM18_CAPH, b, xr, cy, R_BASELINE, lav, rowBg);
+                snprintf(b, sizeof(b), "%d", (int)d.maxC);
+                smoothText(g, PageSm18, PAGESM18_CAPH, b, xr - u(28), cy, R_BASELINE, mixColor(tempColor((float)d.maxC), C_WHITE, 0.45f), rowBg);
+            }
+        }
+
+        // "Air quality": big US AQI with its word, PM2.5 / PM10, a gauge, pollen, and UV + pressure of the day.
+        void drawAirPage(TFT_eSPI &g, const WeatherExtra &x, const WeatherDetail &wd, uint32_t now)
+        {
+            static const char *const kPollenName[6] = {"Alder", "Birch", "Grass", "Mugwort", "Olive", "Ragweed"};
+            g.fillRect(0, 0, W, H, C_BG);
+            const uint16_t accent = C_ACCENT;
+            const uint16_t lav = neonCore(accent, 0.6f);
+            viewTitle(g, "Air quality", "US AQI", lav);
+
+            if (!x.aqValid)
+            {
+                smoothText(g, PageSm18, PAGESM18_CAPH, "No air data", W / 2, H / 2, C_BASELINE, lav, C_BG);
+                return;
+            }
+            const int16_t mx = u(6);
+            const int aqi = x.usAqi;
+            const uint16_t col = aqiCol(aqi);
+            char buf[28];
+
+            // ---- left: the big number and the word for it ----
+            if (aqi >= 0)
+            {
+                snprintf(buf, sizeof(buf), "%d", aqi);
+                glowText(g, PageTemp36, PAGETEMP36_CAPH, buf, mx, u(37), L_BASELINE, col, neonCore(col, 0.8f));
+                smoothText(g, PageSm18, PAGESM18_CAPH, aqiWordL(aqi), mx, u(60), L_BASELINE, col, C_BG);
+            }
+            else
+                smoothText(g, PageSm18, PAGESM18_CAPH, "--", mx, u(37), L_BASELINE, C_SOFT, C_BG);
+
+            // ---- right: PM2.5 and PM10 ----
+            {
+                const int16_t lx = u(92), vx = W - u(12);
+                smoothText(g, capFont(), capFontH(), "PM2.5", lx, u(30), L_BASELINE, C_SOFT, C_BG);
+                smoothText(g, capFont(), capFontH(), "PM10", lx, u(47), L_BASELINE, C_SOFT, C_BG);
+                if (x.pm25 >= 0)
+                {
+                    snprintf(buf, sizeof(buf), "%d", (int)lroundf(x.pm25));
+                    smoothText(g, PageSm18, PAGESM18_CAPH, buf, vx, u(30), R_BASELINE, pmCol(x.pm25, 12.0f, 35.4f, 55.4f), C_BG);
+                }
+                else
+                    smoothText(g, PageSm18, PAGESM18_CAPH, "--", vx, u(30), R_BASELINE, C_SOFT, C_BG);
+                if (x.pm10 >= 0)
+                {
+                    snprintf(buf, sizeof(buf), "%d", (int)lroundf(x.pm10));
+                    smoothText(g, PageSm18, PAGESM18_CAPH, buf, vx, u(47), R_BASELINE, pmCol(x.pm10, 54.0f, 154.0f, 254.0f), C_BG);
+                }
+                else
+                    smoothText(g, PageSm18, PAGESM18_CAPH, "--", vx, u(47), R_BASELINE, C_SOFT, C_BG);
+                smoothText(g, capFont(), capFontH(), "ug/m3", vx, u(61), R_BASELINE, tint(C_SOFT, 0.6f), C_BG);
+            }
+
+            // ---- gauge: five bands from 0 to 300 and a marker ----
+            {
+                const int16_t gx = mx, gw = W - mx - u(14), gy = u(77), gh = imax(3, u(5));
+                static const int kBandLo[5] = {0, 50, 100, 150, 200};
+                static const int kBandHi[5] = {50, 100, 150, 200, 300};
+                static const int kBandRep[5] = {25, 75, 125, 175, 250}; // a value inside each band: its colour
+                for (int b = 0; b < 5; b++)
+                {
+                    const int16_t xa = gx + (int16_t)((long)gw * kBandLo[b] / 300);
+                    const int16_t xb = gx + (int16_t)((long)gw * kBandHi[b] / 300);
+                    g.fillRect(xa, gy, xb - xa - 1, gh, tint(aqiCol(kBandRep[b]), 0.65f));
+                }
+                if (aqi >= 0)
+                {
+                    const int v = aqi > 300 ? 300 : aqi;
+                    const int16_t mk = gx + (int16_t)((long)gw * v / 300);
+                    g.fillRect(mk - 1, gy - u(1), 2, gh + 2 * u(1), C_WHITE);
+                    g.fillTriangle(mk, gy - u(2), mk - u(3), gy - u(6), mk + u(3), gy - u(6), C_WHITE);
+                }
+            }
+
+            // ---- pollen ----
+            smoothText(g, capFont(), capFontH(), "Pollen", mx, u(97), L_BASELINE, C_SOFT, C_BG);
+            smoothText(g, PageSm18, PAGESM18_CAPH, pollenWordL(x.pollenLevel), W - u(12), u(97), R_BASELINE, pollenCol(x.pollenLevel), C_BG);
+            if (x.pollenLevel >= 1)
+            {
+                snprintf(buf, sizeof(buf), "%s %d /m3", kPollenName[x.pollenType % 6], (int)lroundf(x.pollenPeak));
+                smoothText(g, capFont(), capFontH(), buf, W - u(12), u(110), R_BASELINE, tint(C_SOFT, 0.85f), C_BG);
+            }
+
+            // ---- bottom line: how old the reading is | UV of the day, pressure ----
+            {
+                char ag[8];
+                fmtAge(ag, sizeof(ag), ageSince(now, x.aqMs));
+                snprintf(buf, sizeof(buf), "%s ago", ag);
+                smoothText(g, capFont(), capFontH(), buf, mx, u(121), L_BASELINE, tint(C_SOFT, 0.7f), C_BG);
+
+                char ex[28] = "";
+                if (wd.valid && wd.uvMax >= 0)
+                    snprintf(ex, sizeof(ex), "UV %d", (int)lroundf(wd.uvMax));
+                if (wd.valid && wd.pressureHpa > 0)
+                {
+                    const size_t l = strlen(ex);
+                    snprintf(ex + l, sizeof(ex) - l, "%s%d hPa", l ? "  " : "", wd.pressureHpa);
+                }
+                if (ex[0])
+                    smoothText(g, capFont(), capFontH(), ex, W - u(12), u(121), R_BASELINE, tint(C_SOFT, 0.85f), C_BG);
+            }
+        }
+
+        // The little dots at the right edge: one per available view, the one that is up is lit.
+        void viewDots(TFT_eSPI &g, int cur, const WxViews &v)
+        {
+            int n = 0;
+            for (int i = 0; i < 3; i++)
+                n += v.avail[i] ? 1 : 0;
+            if (n < 2)
+                return;
+            const int16_t x = W - u(4), step = u(8);
+            int16_t y = (int16_t)(u(52) - (n - 1) * step / 2);
+            for (int i = 0; i < 3; i++)
+                if (v.avail[i])
+                {
+                    drawRingDot(g, x, y, i == cur, C_ACCENT);
+                    y += step;
+                }
+        }
     } // namespace
 
     uint32_t sidePageSig(DisplayMode mode, bool haveTime, const struct tm &ti, uint32_t now)
@@ -431,7 +689,30 @@ namespace disp
     void drawSidePage(TFT_eSPI &g, DisplayMode mode, bool haveTime, const struct tm &ti, bool day, uint32_t now)
     {
         if (mode == DisplayMode::WEATHER)
-            drawWeatherPage(g, day, now);
+        {
+            // views: 0 = Now, 1 = Next days, 2 = Air quality (the knob picks it, touch.cpp). One without data falls back to Now.
+            WxViews wv = {{true, false, false}};
+            WeatherExtra x = {};
+            if (weather_extra_get(x))
+            {
+                wv.avail[1] = WX_DAILY_ENABLED && x.forecastValid && x.dayCount > 0;
+                wv.avail[2] = WX_AIRQ_ENABLED && x.aqValid;
+            }
+            int view = g_state.weatherScrollStep;
+            if (view < 0 || view > 2 || !wv.avail[view])
+                view = 0;
+            if (view == 1)
+                drawDaysPage(g, x);
+            else if (view == 2)
+            {
+                WeatherDetail wd;
+                readWeatherDetail(wd);
+                drawAirPage(g, x, wd, now);
+            }
+            else
+                drawWeatherPage(g, day, now);
+            viewDots(g, view, wv);
+        }
         else
             drawDatePage(g, haveTime, ti);
     }

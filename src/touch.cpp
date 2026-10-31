@@ -311,14 +311,29 @@ static void turnPages(int steps, uint32_t now)
 {
     static const DisplayMode kOrder[3] = {DisplayMode::CLOCK, DisplayMode::DATE, DisplayMode::WEATHER};
     const int dir = steps > 0 ? 1 : -1;
+#if LANDSCAPE_UI
+    // Views of the Weather page: 0 = Now (always), 1 = Next days, 2 = Air quality. A view without data is skipped.
+    // Asked BEFORE g_stateMutex is taken (weather_extra_get takes it itself).
+    bool wxAvail[3] = {true, false, false};
+    {
+        WeatherExtra x = {};
+        if (weather_extra_get(x))
+        {
+            wxAvail[1] = WX_DAILY_ENABLED && x.forecastValid && x.dayCount > 0;
+            wxAvail[2] = WX_AIRQ_ENABLED && x.aqValid;
+        }
+    }
+#endif
     xSemaphoreTake(g_stateMutex, portMAX_DELAY);
 #if LANDSCAPE_UI
     {
         // Landscape UI: the knob walks through the pages  Face -> Clock -> Date -> Weather -> Face  (clockwise) and the
         // same way back (counter-clockwise). Face and Clock are the two "home" views (ui_home_is_clock), Date and
         // Weather are the DisplayModes of the same name (display.cpp draws them, display_page_side.cpp). Leaving the
-        // diagnostics page / the menu with a turn goes home without moving on. Weather has no scrolling any more: it is
-        // one screen. After DISPLAY_RETURN_MS without input autoReturnToClock() brings Date / Weather back home.
+        // diagnostics page / the menu with a turn goes home without moving on. The Weather page is one screen per VIEW
+        // (Now / Next days / Air quality, g_state.weatherScrollStep = the view): a turn steps to the next view, and at the
+        // last one (after WEATHER_SCROLL_EDGE_PAUSE_MS without turning) on to the next page. After DISPLAY_RETURN_MS
+        // without input autoReturnToClock() brings Date / Weather back home.
         const bool leaving = g_state.displayMode == DisplayMode::DIAG || g_state.displayMode == DisplayMode::MENU;
         if (leaving)
         {
@@ -326,6 +341,33 @@ static void turnPages(int steps, uint32_t now)
         }
         else
         {
+            if (g_state.displayMode == DisplayMode::WEATHER)
+            {
+                const bool still = (uint32_t)(now - lastWeatherTurnMs) >= (uint32_t)WEATHER_SCROLL_EDGE_PAUSE_MS;
+                lastWeatherTurnMs = now;
+                int v = g_state.weatherScrollStep;
+                if (v < 0 || v > 2)
+                    v = 0;
+                int nv = -1; // the next view in the turning direction that has data
+                for (int c = v + dir; c >= 0 && c <= 2; c += dir)
+                    if (wxAvail[c])
+                    {
+                        nv = c;
+                        break;
+                    }
+                if (nv >= 0)
+                {
+                    g_state.weatherScrollStep = (uint8_t)nv;
+                    xSemaphoreGive(g_stateMutex);
+                    return;
+                }
+                if (!still) // at the last view, but the knob was just moving: stay on the page
+                {
+                    xSemaphoreGive(g_stateMutex);
+                    return;
+                }
+                // still at the last view: fall through and move on to the neighbouring page
+            }
             int cur; // 0 = face, 1 = clock, 2 = date, 3 = weather
             if (g_state.displayMode == DisplayMode::DATE)
                 cur = 2;
@@ -337,7 +379,20 @@ static void turnPages(int steps, uint32_t now)
             if (next == 2)
                 g_state.displayMode = DisplayMode::DATE;
             else if (next == 3)
+            {
                 g_state.displayMode = DisplayMode::WEATHER;
+                // coming from Date: the first view; coming back from the face: the last view that has data
+                int first = 0;
+                if (dir < 0)
+                    for (int c = 2; c > 0; c--)
+                        if (wxAvail[c])
+                        {
+                            first = c;
+                            break;
+                        }
+                g_state.weatherScrollStep = (uint8_t)first;
+                lastWeatherTurnMs = now; // the turn that brought us here must not also leave again
+            }
             else
             {
                 ui_set_home_clock(next == 1);
@@ -345,7 +400,6 @@ static void turnPages(int steps, uint32_t now)
             }
         }
         xSemaphoreGive(g_stateMutex);
-        (void)now;
         return;
     }
 #endif

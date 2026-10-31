@@ -425,7 +425,7 @@ void display_tick()
             if (REMINDER_FULL_BRIGHT)
                 backlightUpdate(false, true);
             diagShown = false;
-            creditsStop();         // FIX: a reminder ends the credits
+            creditsStop(); // FIX: a reminder ends the credits
             clockWasShown = false; // FIX: the reminder replaced the page on screen: redraw the page below when it closes
             menuScreenLeft();
             drawReminderScreenL(rv, now);
