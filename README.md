@@ -32,7 +32,8 @@ Everything else - alarm time, volume, city, timezone - is set from a small web p
   Persian calendar: Chaharshanbe Suri (bonfires and fireworks), Yalda (pomegranate and watermelon) and Nowruz (spring look).
   See [Yearly occasions](#yearly-occasions).
 - **Weather** from Open-Meteo (free, no API key): current conditions, today's high / low, feels-like, humidity,
-  wind, UV, pressure, sunrise / sunset and hourly forecast bars with the chance of rain.
+  wind, UV, pressure, sunrise / sunset, hourly forecast bars with the chance of rain, a 7-day forecast and the
+  air quality (US AQI, PM2.5, PM10, pollen).
 - **Date page** with the weekday, a big day number and a month calendar (today highlighted).
 - **Alarm** with weekday mask, snooze, auto-off, missed-alarm catch-up and a servo sweep with red eyes.
   It keeps working without WiFi.
@@ -166,31 +167,41 @@ still works after a power cut without WiFi.
 
 ### Touch pad and knob
 
-| Input          | Action                                                                                                                            |
-| -------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| **Touch pad**  | Touch: a pet reaction. While the alarm rings: snooze (5 min); after 3 snoozes the next touch ends the alarm                       |
-|                | Hold 1 s: purring (stops when released, or after 8 s). While the alarm rings or is snoozed: switch the alarm off                  |
-| **Knob, turn** | Clockwise: Clock -> Date -> Weather -> Clock. Counter-clockwise: the other way round. On the Weather page a turn scrolls it first |
-| **Knob, push** | Tap: back to the clock. Hold 1 s: open / close the diagnostics page (a ring fills while holding)                                  |
+| Input          | Action                                                                                                                                                                              |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Touch pad**  | Touch: a pet reaction. While the alarm rings: snooze (5 min); after 3 snoozes the next touch ends the alarm                                                                         |
+|                | Hold 1 s: purring (stops when released, or after 8 s). While the alarm rings or is snoozed: switch the alarm off                                                                    |
+| **Knob, turn** | Clockwise: Face -> Clock -> Date -> Weather -> Face. Counter-clockwise: the other way round. On the Weather page a turn steps through its views first (Now, Next days, Air quality) |
+| **Knob, push** | Tap: on the Face and Clock pages open the quick menu, on any other page back home. Hold 1 s: open / close the diagnostics page (a ring fills while holding, on every page)          |
 
 A visible reminder is closed by the first touch, turn or push (that input is then used up).
 While the alarm is snoozed a touch is still a normal pet; only a 1 s hold switches the alarm off
 (`PAD_HOLD_DISMISSES_SNOOZE` in `include/config.h`).
 
-The Date, Weather and diagnostics pages return to the clock by themselves after 15 s without any input.
+The Date and Weather pages return home by themselves after 45 s without any input (`DISPLAY_RETURN_MS`), the
+diagnostics page after 15 s (`DIAG_RETURN_MS`). Home is whichever of Face and Clock you were on last.
 An unattended alarm stops by itself after 3 minutes. The next day's alarm is never affected by dismissing one.
 
 ### Pages
 
-- **Clock**: the face, the time, the alarm bell with its time (red and flashing while ringing).
-- **Date**: weekday, big day number, month and year, and a month calendar.
-- **Weather**: one tall page that the knob scrolls (a thin bar at the right edge shows where you are). At the top
-  is _Now_: icon, big temperature, condition, today's high / low, feels-like, humidity, wind (speed and arrow) and
-  chance of rain. Scroll down for the _Forecast_: hourly bars with the temperature and the chance of rain, plus
-  sunrise, sunset, UV and pressure. At the top or bottom edge, pause briefly and turn again to move on to the
-  neighbouring page. Old readings are shown dimmed with their age.
+The screen is 160 x 128 (landscape, `LANDSCAPE_UI 1`, the default); every page fills it. `-D LANDSCAPE_UI=0` brings
+back the old tall layout (two cards, scrolling Weather page). See [docs/landscape-ui.md](docs/landscape-ui.md).
+
+- **Face**: the eyes (home). Moods, reactions, idle life, yearly occasions and the special-minute surprises are shown
+  here only. A crossed-out WiFi icon appears at the top right while the WiFi is down.
+- **Clock**: the time in the style you pick in the quick menu (Simple, Analog, Minimal, Retro, LED), the alarm bell
+  with its time (red and flashing while ringing) and the WiFi icon like on the Face (a smaller one is on the Date page).
+- **Date**: weekday, big day number, month and year, the ISO week, and a month calendar (today highlighted).
+- **Weather**: three views, each one screen; the knob steps through the ones that have data and small dots at the
+  right edge show which one is up. _Now_: icon, big temperature, condition, today's high / low, feels-like, humidity,
+  wind and the next hours with their chance of rain. _Next days_: the 7-day forecast (weekday, icon, chance of
+  rain, high / low). _Air quality_: US AQI with a gauge, PM2.5, PM10, pollen, today's UV and the pressure. Old
+  readings are shown dimmed with their age.
+- **Quick menu** (tap on the Face or Clock page): alarm on / off, alarm time, volume, alarm volume, pet reactions
+  on / off and the clock style. Turn to move, push to change, _Close_ to leave (`QUICK_MENU_ENABLED`).
 - **Diagnostics**: IP address, WiFi signal, free memory, last NTP sync, age of the weather reading, firmware version and
-  whether a newer release is available.
+  whether a newer release is available. Tap the touch pad `EGG_CREDITS_TAPS` times quickly here for a hidden credits
+  roll (`EGG_CREDITS_ENABLED`).
 
 ### Idle life
 
@@ -339,7 +350,8 @@ src/display_*.cpp   the screen, split by job:
                     core (canvases, frame loop), eyes / face / emotion (expressions),
                     persona (boot, sleep, chime, sulking), scene / ambient (background),
                     occasion (yearly face animations, dates in occasionUpdate()),
-                    theme / backlight, digits / fonts / widgets, pages (date, weather),
+                    theme / backlight, digits / fonts / widgets, pages (date, weather: display_page_side.cpp),
+                    clock styles (display_clockstyles.cpp), quick menu (display_menu.cpp), credits,
                     info / screens / diag
 tools/          make_vlw.py builds the smooth fonts (needs Pillow); vlw_check.py checks them;
                 make_update_certs.py regenerates include/update_certs.h
