@@ -35,14 +35,6 @@ namespace disp
             }
         }
 
-        // The same line as a neon stroke: glow, colour, white core.
-        void neonLine(TFT_eSPI &g, float x0, float y0, float x1, float y1, float w, uint16_t accent)
-        {
-            thickLine(g, x0, y0, x1, y1, w + 4.0f * sc, tint(accent, 0.16f));
-            thickLine(g, x0, y0, x1, y1, w + 2.0f * sc, accent);
-            thickLine(g, x0, y0, x1, y1, w, neonCore(accent, 0.85f));
-        }
-
         void miniBell(TFT_eSPI &g, int16_t cx, int16_t cy, int16_t r, uint16_t c)
         {
             g.fillCircle(cx, cy - 1, r, c);

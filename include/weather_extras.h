@@ -38,12 +38,6 @@
 #ifndef WX_POLLEN_ENABLED
 #define WX_POLLEN_ENABLED 1 // pollen is only modelled for Europe, elsewhere the row shows "n/a"
 #endif
-#ifndef WX_AIRQ_MASK_AQI
-#define WX_AIRQ_MASK_AQI 151 // US AQI at or above this: face mask + cough (151 = "Unhealthy"). 0 = never
-#endif
-#ifndef WX_COUGH_PERIOD_MS
-#define WX_COUGH_PERIOD_MS 20000UL // he coughs once per period while the mask is on
-#endif
 
 // ---- Rain warning ----
 #ifndef WX_RAIN_SOON_ENABLED

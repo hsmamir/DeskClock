@@ -23,4 +23,3 @@ const char *ui_clock_style_name(ClockStyle s);
 // Home view: false = the face (eyes), true = the clock. The knob / mode button toggles it.
 bool ui_home_is_clock();
 void ui_set_home_clock(bool clockView);
-void ui_toggle_home();

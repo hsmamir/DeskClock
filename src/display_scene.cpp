@@ -5,18 +5,6 @@
 namespace disp
 {
 
-    void drawSpinner(TFT_eSPI &g, int16_t cx, int16_t cy, int16_t r, uint16_t c)
-    {
-        uint8_t head = (millis() / 90) % 8;
-        for (uint8_t i = 0; i < 8; i++)
-        {
-            float a = i * ((float)M_PI / 4.0f);
-            uint8_t age = (uint8_t)((head - i) & 7);
-            g.fillCircle(cx + (int16_t)(r * cosf(a)), cy + (int16_t)(r * sinf(a)),
-                         imax(1, u(2)), tint(c, (255 - age * 30) / 255.0f));
-        }
-    }
-
     void drawCloud(TFT_eSPI &g, int16_t cx, int16_t cy, int16_t r, uint16_t c)
     {
         g.fillCircle(cx - r * 0.6f, cy + r * 0.2f, r * 0.40f, c);

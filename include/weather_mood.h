@@ -32,15 +32,10 @@ float wxColdIntensity(float tempC);
 bool wxIsWindy(float windKmh);
 float wxWindIntensity(float windKmh);
 
-// The extras (display_wx.cpp and the persona ask these, so the mask, the cough, the sunglasses and the sneezes all
-// agree with the faces above):
-//   wxIsBadAir     US AQI at or above WX_AIRQ_MASK_AQI (hysteresis WX_AIRQ_HYST_AQI). aqi < 0 = unknown = unchanged.
-//   wxAirIntensity 0..1: 0 at the mask limit, 1 at WX_AIRQ_FULL_AQI (the cough gets more frequent)
+// The extras (the persona asks these, so the squint and the sneezes agree with the faces above):
 //   wxIsHighUv     UV index at or above WX_UV_SHADES_MIN (hysteresis WX_UV_HYST). uv < 0 = unknown = unchanged.
-//   wxIsBright     the sky the display shows is bright enough for sunglasses / a squint: anything but rain, a
+//   wxIsBright     the sky the display shows is bright enough for a squint: anything but rain, a
 //                  thunderstorm or fog (snow counts: it glares)
-bool wxIsBadAir(int usAqi);
-float wxAirIntensity(int usAqi);
 bool wxIsHighUv(float uvIndex);
 inline bool wxIsBright(int c) { return !wxIsRain(c) && !wxIsStorm(c) && !wxIsFog(c); }
 

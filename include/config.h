@@ -462,14 +462,6 @@ static_assert(AMBIENT_MOTES >= 3 && AMBIENT_MOTES <= 5, "AMBIENT_MOTES must be 3
 #define REACT_WIND_FULL_KMH 75
 #define REACT_WIND_HYST_KMH 8
 
-// Bad air (display_wx.cpp, weather_mood.h): the mask comes on at WX_AIRQ_MASK_AQI and goes off again only
-// WX_AIRQ_HYST_AQI below it, so an index hovering around the limit does not make the mask flicker (the model is
-// refreshed every 30 min). The worse the air, the more often he coughs (see WX_COUGH_PERIOD_MS: that is the period
-// at the start; at WX_AIRQ_FULL_AQI it is WX_COUGH_PERIOD_MIN_MS).
-#define WX_AIRQ_HYST_AQI 12
-#define WX_AIRQ_FULL_AQI 300
-#define WX_COUGH_PERIOD_MIN_MS 9000UL
-
 // High UV: the sunglasses need a sky that is bright (no rain, storm or fog on the display, whatever the UV index of
 // the model says) and the UV index has a hysteresis of WX_UV_HYST below WX_UV_SHADES_MIN. While the UV is high the
 // idle squint in bright light also happens in any bright weather, not only at noon on a cloudless sky.

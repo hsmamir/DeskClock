@@ -581,7 +581,6 @@ void display_tick()
         {
             drawOccasionFront(g, now);
             drawMomentFront(g, now);
-            // (umbrella and sunglasses removed on request; the face mask is switched off with WX_AIRQ_MASK_AQI=0)
         }
         drawStatusIcons(g, now);
         drawHoldRing(g);

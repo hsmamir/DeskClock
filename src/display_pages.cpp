@@ -50,15 +50,6 @@ namespace disp
         pageSlideX = (int16_t)(W * inv * inv * inv) * slideDir;
     }
 
-    void pageSlideStart(uint32_t now, uint32_t ms)
-    {
-        slideOn = true;
-        slideDir = 1;
-        slideStartMs = now;
-        slideMs = ms;
-        slideCompute(now);
-    }
-
     // When the page has finished sliding in (animations that start on arrival wait for this); `now` if it is not sliding.
     uint32_t pageSlideSettleMs(uint32_t now)
     {

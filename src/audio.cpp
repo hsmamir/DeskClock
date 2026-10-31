@@ -190,13 +190,6 @@ void audio_play_preview(uint16_t fileIndex, uint8_t volume)
     markPlayed();
 }
 
-void audio_play(uint16_t fileIndex)
-{
-    AudioLock lock;
-    sendPlay(fileIndex);
-    markPlayed();
-}
-
 void audio_play_gentle(uint16_t fileIndex)
 {
     uint8_t volume = (uint8_t)settings_get().volume;

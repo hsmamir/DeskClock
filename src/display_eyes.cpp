@@ -230,12 +230,10 @@ namespace disp
     //  Cheeks and mouth (only in reactions / one-off expressions; idle = eyes only)
     // =====================================================================
 
-    static float affection = 0;                   // 0..1: how fond the pet is of you -> faint permanent cheeks
     static MouthKind mouthKind = MouthKind::NONE; // what is drawn right now
     static MouthKind mouthWant = MouthKind::NONE; // what the situation asks for
     static float mouthA = 0;                      // fade 0..1
 
-    void eyesSetAffection(float a) { affection = clamp01(a); }
     void eyesSetMouth(MouthKind want) { mouthWant = want; }
     static float smooth01(float a)
     {
@@ -512,8 +510,8 @@ namespace disp
         float lt = clamp01(s.lidTop), lb = clamp01(s.lidBot);
         float dIn = clamp01(lt + s.slant * 0.5f), dOut = clamp01(lt - s.slant * 0.5f);
 
-        // cheeks under the eye: a faint permanent hint (affection), more with a smile / happy lids
-        float cheekS = fmaxf(affection * 0.45f, fmaxf(clamp01((lb - 0.2f) * 3.3f), smileCheek()));
+        // cheeks under the eye: more with a smile / happy lids
+        float cheekS = fmaxf(clamp01((lb - 0.2f) * 3.3f), smileCheek());
         drawCheek(g, (int16_t)lroundf(cxf), (int16_t)lroundf(topf + h) + u(3), (int16_t)(w / 4) + u(1),
                   imax(2, (int16_t)(w / 8)), cheekS);
 

@@ -342,7 +342,6 @@ namespace disp
     void eyesSetMouth(MouthKind want); // fades the old one out, then the new one in
     void drawMouth(TFT_eSPI &g, int16_t cx, int16_t my);
     float eyesMouthAlpha();         // current fade 0..1
-    void eyesSetAffection(float a); // 0..1: faint permanent cheeks (hook, not wired to anything yet)
     // Three concentric ellipses (tint 0.12 / 0.20 / 0.30 x strength).
     void drawCheek(TFT_eSPI &g, int16_t cx, int16_t cy, int16_t rx, int16_t ry, float strength);
     constexpr uint16_t ANTICIPATE_MS = 80;
@@ -360,15 +359,7 @@ namespace disp
     void drawFace(TFT_eSPI &g, uint32_t now, bool alarm, bool happy, bool purr, bool sleepy,
                   const SceneInfo &scn, Reaction reaction, float exprP);
 
-    // ---- Face mask for bad air (display_wx.cpp) ----
-    // Whether it is worn depends on the air alone (faceMaskUpdate, once per frame in drawFace). It is not a face state:
-    // no act, expression or reaction switches it off. The character is aware of it, though: what would be drawn where the
-    // mouth is (smile, yawn, tongue, spray, puff) is left out or comes out at the mask's edges, and the mask goes with the head.
-    extern bool faceMaskUp;
-    bool faceMaskUpdate(uint32_t now);
-    void faceMaskRect(int16_t &x0, int16_t &y0, int16_t &w, int16_t &h);
-    void drawFaceMask(TFT_eSPI &g, uint32_t now, int16_t dx, int16_t dy, bool puff);
-    bool momentActive(); // an easter-egg minute (display_moments.cpp) is playing: no sunglasses on top of it
+    bool momentActive(); // an easter-egg minute (display_moments.cpp) is playing
 
     // ---- Persona: behaviours that span many frames (display_persona.cpp) ----
     // personaUpdate() runs once per tick, after the reaction is known, and fills `persona`; drawFace(),
@@ -511,7 +502,6 @@ namespace disp
                        float p, int8_t dir, uint16_t on);
 
     // ---- Scene / weather glyphs ----
-    void drawSpinner(TFT_eSPI &g, int16_t cx, int16_t cy, int16_t r, uint16_t c);
     void drawCloud(TFT_eSPI &g, int16_t cx, int16_t cy, int16_t r, uint16_t c);
     void drawSceneBackground(TFT_eSPI &g, uint32_t now, const SceneInfo &scn);
     void drawWeatherIcon(TFT_eSPI &g, int code, int16_t cx, int16_t cy, int16_t r, uint32_t now);
@@ -524,7 +514,6 @@ namespace disp
     bool isFullPage(DisplayMode m);
     bool pageSliding();                                               // this frame is part of a slide (the landing frame included)
     void pageFlowUpdate(DisplayMode shown, bool alarm, uint32_t now); // once per tick, before anything is drawn
-    void pageSlideStart(uint32_t now, uint32_t ms);                   // start a slide of both cards (page / weather view change)
     uint32_t pageSlideSettleMs(uint32_t now);                         // when the page has stopped sliding (now if it is not)
     void gapPaint(int16_t dx);                                        // the strip between the two cards: frame colour or page background
     void gapInvalidate();                                             // the strip was wiped by something else: the next gapPaint() repaints it

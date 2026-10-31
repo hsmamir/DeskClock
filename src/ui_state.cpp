@@ -65,4 +65,3 @@ const char *ui_clock_style_name(ClockStyle s)
 
 bool ui_home_is_clock() { return s_homeClock; }
 void ui_set_home_clock(bool c) { s_homeClock = c; }
-void ui_toggle_home() { s_homeClock = !s_homeClock; }

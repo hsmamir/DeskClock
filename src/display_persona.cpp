@@ -1186,7 +1186,7 @@ namespace disp
 #if CHARACTER_STYLE
             // the "?" of the design sheet, up and to the right where the eyes are looking, bobbing a little
             const int16_t qy = cy - R - u(3) - (int16_t)(sinf(now / 330.0f) * u(1.6f));
-            const uint16_t qc = faceMaskUp ? rgb(40, 80, 150) : mixColor(rgb(120, 155, 255), C_EYE_BOT, 0.25f);
+            const uint16_t qc = mixColor(rgb(120, 155, 255), C_EYE_BOT, 0.25f);
             drawCharMono(g, CharMono::QUESTION, W / 2 + 2 * R + u(14), qy, 1.15f * sc, qc);
 #else
             int16_t y = cy + eyeH / 2 + u(9), gap = u(8), r = imax(1, u(2));
@@ -1198,8 +1198,7 @@ namespace disp
                 float b = sinf(ph * 6.2832f);
                 if (b < 0)
                     b = 0;
-                const uint16_t dc = faceMaskUp ? mixColor(rgb(150, 185, 205), rgb(30, 70, 105), 0.35f + 0.6f * b) // dark on the cloth
-                                               : tint(C_EYE_TOP, 0.35f + 0.6f * b);
+                const uint16_t dc = tint(C_EYE_TOP, 0.35f + 0.6f * b);
                 g.fillCircle(W / 2 + (i - 1) * gap, y - (int16_t)(b * u(3)), r, dc);
             }
 #endif
@@ -1247,23 +1246,6 @@ namespace disp
             // the spray of the sneeze: a fan of small drops from the mouth, flying down and outwards, fading as they go
             const float p = persona.sneezeSpray;
             const float fly = 1.0f - (1.0f - p) * (1.0f - p); // quick at first, then slower
-            if (faceMaskUp)
-            {
-                // nothing sprays out through a mask: the drops escape at both of its sides
-                int16_t bx, by, bw, bh;
-                faceMaskRect(bx, by, bw, bh);
-                const int16_t sy = by + bh / 2 + (int16_t)(cy - (int16_t)(faceH * FACE_CY_FRAC));
-                for (int i = 0; i < 6; i++)
-                {
-                    const int side = (i & 1) ? 1 : -1;
-                    const float a = 0.15f + 0.55f * (i / 2) / 2.0f;
-                    const float reach = u(10) + u(7) * ((i * 5) % 3);
-                    const int16_t px = W / 2 + side * (bw / 2 + u(3)) + (int16_t)(side * cosf(a) * reach * fly * 1.3f);
-                    const int16_t py = sy + (int16_t)(sinf(a) * reach * fly) + (int16_t)(p * p * u(6));
-                    g.fillCircle(px, py, imax(1, (int16_t)(u(2.2f) * (1.0f - 0.6f * p))), tint(C_ICE, 0.9f * (1.0f - p)));
-                }
-            }
-            else
             {
                 const int16_t mx = W / 2, my = cy + eyeH / 2 + u(10);
                 for (int i = 0; i < 7; i++)
@@ -1278,15 +1260,8 @@ namespace disp
         }
         if (persona.relief > 0.2f)
         {
-            int16_t mouthY = cy + eyeH / 2 + u(10);
-            int16_t puffX = W / 2 + u(4); // the sigh leaves at the mouth, or at the edge of the mask
-            if (faceMaskUp)
-            {
-                int16_t bx, by, bw, bh;
-                faceMaskRect(bx, by, bw, bh);
-                puffX = bx + bw - u(2);
-                mouthY = by + bh / 2 - u(2);
-            }
+            const int16_t mouthY = cy + eyeH / 2 + u(10);
+            const int16_t puffX = W / 2 + u(4); // the sigh leaves at the mouth
             for (int k = 0; k < 3; k++)
             {
                 float pk = clamp01((persona.relief - 0.2f - 0.1f * k) / 0.6f);

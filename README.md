@@ -167,12 +167,12 @@ still works after a power cut without WiFi.
 
 ### Touch pad and knob
 
-| Input          | Action                                                                                                                                                                              |
-| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Touch pad**  | Touch: a pet reaction. While the alarm rings: snooze (5 min); after 3 snoozes the next touch ends the alarm                                                                         |
-|                | Hold 1 s: purring (stops when released, or after 8 s). While the alarm rings or is snoozed: switch the alarm off                                                                    |
+| Input          | Action                                                                                                                            |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| **Touch pad**  | Touch: a pet reaction. While the alarm rings: snooze (5 min); after 3 snoozes the next touch ends the alarm                       |
+|                | Hold 1 s: purring (stops when released, or after 8 s). While the alarm rings or is snoozed: switch the alarm off                  |
 | **Knob, turn** | Clockwise: Face -> Clock -> Date -> Weather -> Face. Counter-clockwise: the other way round. On the Weather page a turn steps through its views first (Now, Next days, Air quality) |
-| **Knob, push** | Tap: on the Face and Clock pages open the quick menu, on any other page back home. Hold 1 s: open / close the diagnostics page (a ring fills while holding, on every page)          |
+| **Knob, push** | Tap: on the Face and Clock pages open the quick menu, on any other page back home. Hold 1 s: open / close the diagnostics page (a ring fills while holding, on every page) |
 
 A visible reminder is closed by the first touch, turn or push (that input is then used up).
 While the alarm is snoozed a touch is still a normal pet; only a 1 s hold switches the alarm off
