@@ -259,6 +259,7 @@ void quickmenu_press()
         return;
     Save what = Save::NONE;
     bool closeMenu = false;
+    bool openDiag = false; // the Diagnostics tile: close the shade and go to the diagnostics page
     bool alarmOn, pet;
     int hour, minute, volume, alarmVolume;
     {
@@ -290,6 +291,10 @@ void quickmenu_press()
             case MenuItem::VOLUME:
             case MenuItem::ALARM_VOLUME:
                 m.editing = true;
+                break;
+            case MenuItem::DIAGNOSTICS:
+                closeMenu = true;
+                openDiag = true;
                 break;
             case MenuItem::CLOSE:
             default:
@@ -334,6 +339,8 @@ void quickmenu_press()
     if (closeMenu)
     {
         quickmenu_close();
+        if (openDiag)
+            setModeIf(DisplayMode::CLOCK, DisplayMode::DIAG); // quickmenu_close() put the page back on the clock
         return;
     }
     if (what != Save::NONE)

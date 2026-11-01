@@ -6,10 +6,10 @@ navy background, white "neon" strokes with a blue glow, pink blush accents.
 | Page | How you get there |
 |------|-------------------|
 | Face (the eyes, home) | default; turn the knob: Face -> Clock -> Date -> Weather -> Face (counter-clockwise goes back) |
-| Clock | turn the knob; style = quick menu -> **Clock** (push to cycle) |
+| Clock | turn the knob; style = control shade -> **Style** tile (push to cycle) |
 | Date | turn the knob; weekday, big day number, month, year and a month calendar (week start = `CALENDAR_WEEK_START`) |
 | Weather | turn the knob; three views, each one screen: **Now** (icon, temperature, condition, feels like / humidity / wind, the next hours with rain chance), **Next days** (7-day forecast) and **Air quality** (US AQI, PM2.5, PM10, pollen, UV, pressure). Turning steps through the views that have data (dots at the right edge show which one is up); after the last one it moves on to the next page |
-| Quick menu | push the knob |
+| Control shade (replaces the quick menu) | push the knob: a panel slides down with the alarm, volumes, reactions, clock style and diagnostics tiles |
 | Diagnostics | hold the knob |
 | Reminder | appears when one is due |
 

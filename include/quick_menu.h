@@ -1,15 +1,17 @@
 #pragma once
 #include <stdint.h>
 
-// Quick menu: change the most used settings with the rotary knob alone, without opening the web page.
+// Control shade (the "quick menu"): change the most used settings with the rotary knob alone, without opening the
+// web page. On the landscape UI it is drawn as a panel that slides down from the top edge (display_menu.cpp): a status
+// strip (WiFi, time, next alarm) and a grid of tiles, one per row below.
 //
-//   Clock page, tap the knob  -> the menu opens
+//   Clock page, tap the knob  -> the shade opens
 //   turn                      -> move the cursor (or change the value being edited)
 //   push                      -> toggle an ON/OFF row, start editing a value row, save the value being edited
 //   hold                      -> leave the menu (an unsaved edit is dropped)
 //   no input for QUICK_MENU_TIMEOUT_MS, or the alarm starts ringing -> the menu closes by itself
 //
-// Rows: Alarm ON/OFF | Time (hour, then minute) | Volume | Alarm volume | Pet reactions | Close
+// Tiles: Alarm ON/OFF | Time (hour, then minute) | Volume | Alarm volume | Pet reactions | Clock style | Diagnostics | Close
 // Every change is saved to flash through settings_update() (the same path as the web page), so the alarm task
 // and the audio code pick it up by themselves. Nothing is written to flash while a value is only being turned.
 //
@@ -37,6 +39,7 @@ enum class MenuItem : uint8_t
     ALARM_VOLUME,
     PET_REACTIONS,
     CLOCK_STYLE, // landscape UI: push = next clock style (Simple, Analog, Minimal, Retro, LED)
+    DIAGNOSTICS, // push = close the shade and open the diagnostics page
     CLOSE,
     COUNT
 };
