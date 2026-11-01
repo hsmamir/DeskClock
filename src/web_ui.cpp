@@ -565,6 +565,29 @@ static void handleUpdateInstall()
     server.send(200, "application/json", "{\"ok\":true}");
 }
 
+// FACTORY RESET from the settings page: erases everything (settings.h) and restarts. Three locks against a mistake or
+// a request from another web page: it must be a JSON POST (see requireJsonPost), the body must carry the word RESET
+// (the page makes the user type it), and the erase happens ~1.5 s after the answer, so the browser gets its reply.
+static bool s_resetPending = false;
+static uint32_t s_resetAtMs = 0;
+
+static void handleFactoryReset()
+{
+    if (!authorized() || !requireJsonPost())
+        return;
+    JsonDocument doc;
+    if (!readJsonBody(doc))
+        return;
+    if (strcmp(doc["confirm"] | "", "RESET") != 0)
+    {
+        sendError(400, "type RESET to confirm");
+        return;
+    }
+    server.send(200, "application/json", "{\"ok\":true}");
+    s_resetPending = true;
+    s_resetAtMs = millis() + 1500;
+}
+
 // The page only changes with the firmware, so the browser may keep its copy: on a repeat visit
 // it asks "still this version?" (If-None-Match) and gets an empty 304 instead of the whole page.
 // __DATE__/__TIME__ are those of this file's last build, which also reruns when web_page.h changes.
@@ -610,6 +633,7 @@ static void startServer()
     server.on("/api/update", HTTP_GET, handleGetUpdate);
     server.on("/api/update/check", HTTP_POST, handleUpdateCheck);
     server.on("/api/update/install", HTTP_POST, handleUpdateInstall);
+    server.on("/api/factory-reset", HTTP_POST, handleFactoryReset);
     server.onNotFound([]()
                       { server.send(404, "text/plain", "not found"); });
     server.begin();
@@ -642,6 +666,9 @@ void web_ui_tick()
 
     if (s_serverStarted)
         server.handleClient();
+
+    if (s_resetPending && (int32_t)(millis() - s_resetAtMs) >= 0)
+        settings_factory_reset(); // does not return
 
     if (s_restoreVolume && (int32_t)(millis() - s_restoreAtMs) >= 0)
     {

@@ -41,3 +41,8 @@ int settings_alarm_sound_at(int i);
 // and sets *err to a short English message; nothing is changed.
 // Volume / weather side effects are the caller's job (see web_ui.cpp).
 bool settings_update(const Settings &s, const char **err);
+
+// FACTORY RESET: erases the whole NVS partition (settings, alarm state, reminders, pet, boot log, saved time and the
+// saved WiFi network) and restarts. The firmware itself stays. After the restart the clock starts with the config.h
+// defaults and opens the WiFi setup portal. Does not return.
+void settings_factory_reset();

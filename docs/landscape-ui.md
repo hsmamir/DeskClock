@@ -9,7 +9,8 @@ navy background, white "neon" strokes with a blue glow, pink blush accents.
 | Clock | turn the knob; style = control shade -> **Style** tile (push to cycle) |
 | Date | turn the knob; weekday, big day number, month, year and a month calendar (week start = `CALENDAR_WEEK_START`) |
 | Weather | turn the knob; three views, each one screen: **Now** (icon, temperature, condition, feels like / humidity / wind, the next hours with rain chance), **Next days** (7-day forecast) and **Air quality** (US AQI, PM2.5, PM10, pollen, UV, pressure). Turning steps through the views that have data (dots at the right edge show which one is up); after the last one it moves on to the next page |
-| Control shade (replaces the quick menu) | push the knob: a panel slides down with the alarm, volumes, reactions, clock style and diagnostics tiles |
+| Control shade (replaces the quick menu) | push the knob: a panel slides down with the alarm, volumes, reactions, clock style, diagnostics and **System** tiles. The neon edge at the bottom is the handle: it is the last stop of the cursor (push = close) |
+| Factory reset | control shade -> **System** tile -> push -> **Factory reset** row (the cursor starts on *Back*, so a push by mistake does nothing) -> push; then **hold the knob for 3 s** (`QUICK_MENU_RESET_HOLD_MS`) while the bar fills. A push or a turn cancels. Also on the settings page: *System* tab -> *Factory reset* (collapsed; the word `RESET` must be typed). It erases the whole NVS (settings, alarm, reminders, pet, boot log, saved WiFi) and restarts; the firmware stays and the WiFi setup portal opens afterwards |
 | Diagnostics | hold the knob |
 | Reminder | appears when one is due |
 

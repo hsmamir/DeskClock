@@ -348,6 +348,16 @@ dialog .foot{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding-top:12px
 <details><summary>Brownout یعنی چه؟</summary>
 <p class="hint">Brownout یعنی افت ولتاژ تغذیه (سروو و صدا روی یک تغذیه‌اند): منبع تغذیه و کابل را بررسی کنید. ثبت‌ها در حافظهٔ فلش می‌مانند و با قطع برق پاک نمی‌شوند.</p></details>
 </div>
+
+<div class="card" id="frSec">
+<h2><svg class="ic"><use href="#i-power"/></svg>ریست کارخانه</h2>
+<details><summary>پاک‌کردن همه‌چیز</summary>
+<p class="hint">همه‌ی تنظیمات، آلارم، یادآورها، اطلاعات نوازش و شبکه‌ی WiFi ذخیره‌شده پاک می‌شود و ساعت دوباره راه‌اندازی می‌شود. نرم‌افزار ساعت پاک نمی‌شود. بعد از آن باید ساعت را دوباره به WiFi وصل کنید (ساعت شبکه‌ی راه‌اندازی خودش را باز می‌کند). این کار قابل بازگشت نیست.</p>
+<div class="row"><input type="text" id="frTxt" dir="ltr" placeholder="RESET" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="برای تأیید، RESET را تایپ کنید" style="flex:1"></div>
+<p class="hint">برای فعال‌شدن دکمه، کلمه‌ی RESET را با حروف بزرگ تایپ کنید.</p>
+<div class="pad"><button type="button" class="btn danger" id="frBtn" disabled style="width:100%">ریست کارخانه</button></div>
+</details>
+</div>
 </section>
 
 </main>
@@ -742,6 +752,13 @@ async function bootLog(){
  $('rTest').onclick=()=>{const t=$('rText').value.trim();if(!t){toast('متن را وارد کنید','err');return;}rPost('/api/reminders/test',{text:t},'روی ساعت نمایش داده شد؛ برای بستن یک دکمه را بزنید');};
 
  $('uCheck').onclick=()=>uPost('/api/update/check');
+ $('frTxt').oninput=()=>{$('frBtn').disabled=$('frTxt').value.trim()!=='RESET';};
+ $('frBtn').onclick=async()=>{
+  if($('frTxt').value.trim()!=='RESET')return;
+  if(!confirm('همه‌چیز پاک شود و ساعت به تنظیمات کارخانه برگردد؟\n\nاین کار قابل بازگشت نیست.'))return;
+  try{await api('/api/factory-reset',{confirm:'RESET'});$('frBtn').disabled=true;$('frTxt').value='';toast('ساعت در حال ریست است…');}
+  catch(e){toast(eMsg(e),'err');}
+ };
  $('uInstall').onclick=()=>{const v=$('uInstall').dataset.v;if(confirm('نسخه‌ی '+v+' نصب شود؟\n\nدانلود و نصب حدود یک دقیقه طول می‌کشد. در این مدت آلارم زنگ نمی‌زند و ساعت دوباره راه‌اندازی می‌شود. ساعت را از برق نکشید.'))uPost('/api/update/install',{version:v});};
 
  poll(refreshStatus,20000);

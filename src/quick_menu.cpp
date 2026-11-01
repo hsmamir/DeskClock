@@ -21,6 +21,11 @@ namespace
         int hour = 0, minute = 0;
         int volume = 0, alarmVolume = 1;
         bool petReactions = true;
+        bool sys = false;      // System page (Factory reset / Back)
+        uint8_t sysCursor = 1; // 0 = Factory reset, 1 = Back (starts on Back)
+        bool confirm = false;  // factory-reset confirm page
+        uint8_t confirmPct = 0;
+        bool resetting = false;
         uint32_t lastInputMs = 0;
         uint32_t lastTurnMs = 0;
         uint32_t seq = 0;
@@ -184,6 +189,11 @@ void quickmenu_open()
         m.open = true;
         m.cursor = 0;
         m.editing = false;
+        m.sys = false;
+        m.sysCursor = 1;
+        m.confirm = false;
+        m.confirmPct = 0;
+        m.resetting = false;
         m.field = 0;
         m.lastInputMs = millis();
         m.lastTurnMs = 0;
@@ -201,6 +211,9 @@ void quickmenu_close()
         Lock l;
         m.open = false;
         m.editing = false;
+        m.sys = false;
+        m.confirm = false;
+        m.confirmPct = 0;
         m.seq++;
     }
     setModeIf(DisplayMode::MENU, DisplayMode::CLOCK);
@@ -223,6 +236,21 @@ void quickmenu_turn(int steps)
     if (!m.open)
         return;
     m.lastInputMs = now;
+    if (m.resetting)
+        return;
+    if (m.confirm) // any turn cancels the factory-reset page (back to the System page)
+    {
+        m.confirm = false;
+        m.confirmPct = 0;
+        m.seq++;
+        return;
+    }
+    if (m.sys) // the System page has two rows: a turn moves between them
+    {
+        m.sysCursor = m.sysCursor ? 0 : 1;
+        m.seq++;
+        return;
+    }
     bool fast = m.lastTurnMs != 0 && (uint32_t)(now - m.lastTurnMs) < QUICK_MENU_FAST_TURN_MS;
     m.lastTurnMs = now;
     m.seq++;
@@ -268,6 +296,25 @@ void quickmenu_press()
             return;
         m.lastInputMs = millis();
         m.seq++;
+        if (m.resetting)
+            return;
+        if (m.confirm) // a push cancels the factory-reset page (back to the System page)
+        {
+            m.confirm = false;
+            m.confirmPct = 0;
+            return;
+        }
+        if (m.sys)
+        {
+            if (m.sysCursor == 0)
+            {
+                m.confirm = true; // the hold on this page (touch.cpp) does the rest
+                m.confirmPct = 0;
+            }
+            else
+                m.sys = false; // Back
+            return;
+        }
         if (!m.editing)
         {
             switch ((MenuItem)m.cursor)
@@ -295,6 +342,10 @@ void quickmenu_press()
             case MenuItem::DIAGNOSTICS:
                 closeMenu = true;
                 openDiag = true;
+                break;
+            case MenuItem::SYSTEM:
+                m.sys = true;
+                m.sysCursor = 1; // on Back: a push by mistake just closes the page again
                 break;
             case MenuItem::CLOSE:
             default:
@@ -357,6 +408,8 @@ void quickmenu_tick(uint32_t now)
         Lock l;
         open = m.open;
         last = m.lastInputMs;
+        if (m.resetting)
+            return; // erasing: nothing may close the page now
     }
 
     xSemaphoreTake(g_stateMutex, portMAX_DELAY);
@@ -392,6 +445,51 @@ bool quickmenu_get(MenuView &v)
     v.alarmVolume = (uint8_t)m.alarmVolume;
     v.petReactions = m.petReactions;
     v.clockStyle = (uint8_t)ui_clock_style();
+    v.systemPage = m.sys;
+    v.sysCursor = m.sysCursor;
+    v.confirmReset = m.confirm;
+    v.confirmPct = m.confirmPct;
+    v.resetting = m.resetting;
     v.seq = m.seq;
     return m.open;
+}
+
+bool quickmenu_in_confirm()
+{
+    if (!mx)
+        return false;
+    Lock l;
+    return m.open && m.confirm && !m.resetting;
+}
+
+void quickmenu_confirm_progress(uint8_t pct)
+{
+    if (!mx)
+        return;
+    Lock l;
+    if (!m.open || !m.confirm || m.resetting)
+        return;
+    pct = (uint8_t)((pct > 100 ? 100 : pct) / 5 * 5); // steps of 5: the display redraws only when it changes
+    m.lastInputMs = millis();                          // holding is input: the page must not time out
+    if (pct != m.confirmPct)
+    {
+        m.confirmPct = pct;
+        m.seq++;
+    }
+}
+
+void quickmenu_factory_reset()
+{
+    if (!mx)
+        return;
+    {
+        Lock l;
+        if (!m.open || !m.confirm || m.resetting)
+            return;
+        m.resetting = true;
+        m.confirmPct = 100;
+        m.seq++;
+    }
+    vTaskDelay(pdMS_TO_TICKS(900)); // the screen shows "Erasing..." for a moment
+    settings_factory_reset();       // does not return
 }

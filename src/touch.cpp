@@ -609,6 +609,21 @@ static bool handleKnobButton()
 
     if (ev == BtnEvent::PRESSED)
         return true;
+
+    // Factory-reset confirm page: here the HOLD is the confirmation (a push or a turn cancels). The bar on the page
+    // follows the hold; at QUICK_MENU_RESET_HOLD_MS everything is erased. No "leave the menu" hold on this page.
+    if (quickmenu_in_confirm() && knobSw.lastStable)
+    {
+        const uint32_t held = (uint32_t)(now - knobPressedAtMs);
+        quickmenu_confirm_progress(held >= QUICK_MENU_RESET_HOLD_MS ? 100 : (uint8_t)(held * 100 / QUICK_MENU_RESET_HOLD_MS));
+        if (held >= QUICK_MENU_RESET_HOLD_MS && !knobLongHandled)
+        {
+            knobLongHandled = true;
+            quickmenu_factory_reset(); // does not return
+        }
+        return true;
+    }
+
     if (knobSw.lastStable && !knobLongHandled && (uint32_t)(now - knobPressedAtMs) >= MODE_LONG_PRESS_MS)
     {
         knobLongHandled = true;

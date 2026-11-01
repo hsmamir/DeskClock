@@ -5,6 +5,8 @@
 #include <ctype.h>
 #include <math.h>
 #include <time.h>
+#include <WiFi.h>
+#include <nvs_flash.h>
 #include "settings.h"
 #include "config.h"
 
@@ -220,4 +222,19 @@ bool settings_update(const Settings &in, const char **err)
     s_cur = in;
     xSemaphoreGive(s_mutex);
     return true;
+}
+
+void settings_factory_reset()
+{
+    Serial.println("Factory reset: erasing all saved data");
+    WiFi.disconnect(true, true); // WiFi off and the saved network forgotten (stops the driver writing to NVS)
+    delay(100);
+    nvs_flash_deinit();
+    esp_err_t e = nvs_flash_erase();
+    Serial.printf("Factory reset: NVS erase %s (%d)\n", e == ESP_OK ? "ok" : "FAILED", (int)e);
+    Serial.flush();
+    delay(200);
+    ESP.restart();
+    for (;;)
+        delay(1000);
 }

@@ -210,9 +210,13 @@ namespace disp
 //   y   0..21   status strip: time (glow) on the left, next alarm (pink pill) and WiFi bars on the right
 //               (while a value is edited: a short hint instead)
 //   y  22       divider with the sparkle
-//   y  26..98   2 rows x 4 tiles:  Alarm | Time | Volume | Alarm vol  /  Reactions | Style | Diag | Close
+//   y  26..98   2 rows x 4 tiles:  Alarm | Time | Volume | Alarm vol  /  Reactions | Style | Diag | System
 //   y 106       caption of the tile under the cursor, between two sparkles
-//   y 116..120  the neon edge with the notch
+//   y 116..120  the neon edge with the notch = the handle: it is the last stop of the cursor (push = close)
+//
+// The System tile opens a small page (Factory reset / Back, the cursor starts on Back) and Factory reset opens a
+// confirm page: a warning, a neon bar that fills while the knob is held (QUICK_MENU_RESET_HOLD_MS), and "push or turn
+// to cancel". So a reset needs: the System tile, a push on the second row, then a 3 s hold.
 //
 // The panel only ever grows downwards while it opens, so it is simply drawn over the last frame of the page that is
 // already in the canvas (no second buffer, no redrawing the page). When it is open nothing is redrawn unless a value
@@ -267,7 +271,7 @@ namespace disp
         }
 
         // The page top bar turned upside down: glow line, faint line above it, a bright notch in the middle.
-        void drawBottomBar(TFT_eSPI &g, int16_t yBottom, uint16_t accent)
+        void drawBottomBar(TFT_eSPI &g, int16_t yBottom, uint16_t accent, bool lit)
         {
             const int16_t t = imax(2, u(2));
             const int16_t y1 = yBottom - t;
@@ -275,6 +279,8 @@ namespace disp
             g.fillRect(0, y1 - imax(1, u(1)), W, imax(1, u(1)), tint(accent, 0.16f));
             const int16_t sw = (int16_t)(W * 0.30f), sx = (W - sw) / 2, m = u(3);
             g.fillRect(sx - m, y1 - imax(1, u(1)), sw + 2 * m, imax(1, u(1)), tint(accent, 0.38f));
+            if (lit) // the cursor is on the handle: a soft halo around the notch
+                g.fillRoundRect(sx - m, y1 - t - 2, sw + 2 * m, 2 * t + 5, t + 2, tint(accent, 0.30f));
             g.fillRoundRect(sx, y1 - t, sw, 2 * t + 1, t, accent);
             g.fillRoundRect(sx + 1, y1, sw - 2, t + 1, imax(1, t / 2), neonCore(accent));
         }
@@ -341,14 +347,93 @@ namespace disp
             }
         }
 
-        void iconClose(TFT_eSPI &g, int16_t cx, int16_t cy, uint16_t c)
+        void iconReset(TFT_eSPI &g, int16_t cx, int16_t cy, uint16_t c) // a circular arrow (factory reset)
         {
-            const int16_t d = u(5);
-            for (int k = 0; k < 2; k++)
+            const int16_t r = imax(4, u(6));
+            g.drawCircleHelper(cx, cy, r, 0x1 | 0x8 | 0x4, c); // top-left, bottom-left, bottom-right
+            g.drawCircleHelper(cx, cy, r - 1, 0x1 | 0x8 | 0x4, c);
+            g.fillTriangle(cx + r - u(3), cy, cx + r + u(3), cy, cx + r, cy - u(5), c); // arrow head, pointing up
+        }
+
+        void iconGear(TFT_eSPI &g, int16_t cx, int16_t cy, uint16_t c)
+        {
+            for (int k = 0; k < 8; k++)
             {
-                g.drawLine(cx - d + k, cy - d, cx + d + k, cy + d, c);
-                g.drawLine(cx - d + k, cy + d, cx + d + k, cy - d, c);
+                const float a = k * 0.785398f;
+                g.fillCircle(cx + (int16_t)lroundf(cosf(a) * 6.0f * sc), cy + (int16_t)lroundf(sinf(a) * 6.0f * sc), imax(1, u(1.4f)), c);
             }
+            g.drawCircle(cx, cy, imax(3, u(4.5f)), c);
+            g.drawCircle(cx, cy, imax(2, u(3.5f)), c);
+        }
+
+        // The System page: two wide rows, Factory reset (warning colour) and Back.
+        void drawSystem(TFT_eSPI &g, const MenuView &v, int16_t yOff)
+        {
+            const uint16_t accent = C_ACCENT, white = colWhite(), lav = colLav(), dim = colDim(), warn = C_ALARM_TOP;
+            const int16_t side = u(6);
+            glowText(g, PageSm18, PAGESM18_CAPH, "System", W / 2, yOff + u(11), C_BASELINE, accent, white);
+            drawDivider(g, side, W - side, yOff + u(22));
+
+            const int16_t rw = W - 2 * side, rh = u(28), r = u(9), rg = u(6);
+            for (int i = 0; i < 2; i++)
+            {
+                const int16_t x = side, y = yOff + u(30) + i * (rh + rg), cy = y + rh / 2;
+                const bool sel = (v.sysCursor == i);
+                const uint16_t edge = (i == 0) ? warn : accent;
+                const uint16_t fill = sel ? tint(edge, 0.24f) : tint(accent, 0.10f);
+                if (sel)
+                {
+                    g.fillRoundRect(x - 1, y - 1, rw + 2, rh + 2, r + 1, tint(edge, 0.22f));
+                    g.fillRoundRect(x, y, rw, rh, r, fill);
+                    drawFrame(g, x, y, rw, rh, r, tint(edge, 0.9f));
+                    drawSparkle(g, x + rw - u(8), y + u(7), 0.55f, neonCore(edge, 0.85f));
+                }
+                else
+                    g.fillRoundRect(x, y, rw, rh, r, fill);
+                const uint16_t col = sel ? (i == 0 ? warn : white) : dim;
+                if (i == 0)
+                    iconReset(g, x + u(17), cy, col);
+                else
+                {
+                    g.fillTriangle(x + u(10), cy, x + u(19), cy - u(5), x + u(19), cy + u(5), col);
+                    g.fillRect(x + u(18), cy - 1, u(7), imax(2, u(2)), col);
+                }
+                smoothText(g, PageSm18, PAGESM18_CAPH, i == 0 ? "Factory reset" : "Back", x + u(34), cy, L_BASELINE, col, fill);
+            }
+            const char *cap = v.sysCursor == 0 ? "Erases everything" : "Back to the shade";
+            const int16_t capY = yOff + u(106);
+            smoothText(g, capFont(), capFontH(), cap, W / 2, capY, C_BASELINE, lav, C_BG);
+            const int16_t half = smoothWidth(g, capFont(), cap) / 2 + u(8);
+            drawSparkle(g, W / 2 - half, capY - u(3), 0.8f, tint(accent, 0.7f));
+            drawSparkle(g, W / 2 + half, capY - u(3), 0.8f, tint(accent, 0.7f));
+        }
+
+        // The factory-reset confirm page (instead of the strip and the tiles).
+        void drawConfirm(TFT_eSPI &g, const MenuView &v, int16_t yOff)
+        {
+            const uint16_t white = colWhite(), lav = colLav(), warn = C_ALARM_TOP;
+            const int16_t side = u(6);
+            const int16_t sy = yOff + u(11);
+
+            const char *title = "Factory reset";
+            const int16_t tw = smoothWidth(g, PageSm18, title);
+            const int16_t tx = W / 2 - (tw + u(16)) / 2;
+            g.fillTriangle(tx + u(6), sy - u(6), tx, sy + u(6), tx + u(12), sy + u(6), warn); // warning sign
+            g.fillRect(tx + u(6) - 1, sy - u(2), 2, imax(2, u(4)), C_BG);
+            g.fillRect(tx + u(6) - 1, sy + u(3), 2, 2, C_BG);
+            glowText(g, PageSm18, PAGESM18_CAPH, title, tx + u(16), sy, L_BASELINE, warn, white);
+            drawDivider(g, side, W - side, yOff + u(22));
+
+            smoothText(g, capFont(), capFontH(), "Erases settings, alarms,", W / 2, yOff + u(35), C_BASELINE, lav, C_BG);
+            smoothText(g, capFont(), capFontH(), "reminders, pet and WiFi.", W / 2, yOff + u(48), C_BASELINE, lav, C_BG);
+            smoothText(g, capFont(), capFontH(), "The clock then restarts.", W / 2, yOff + u(61), C_BASELINE, colDim(), C_BG);
+
+            const int16_t bx = side + u(4), bw = W - 2 * bx;
+            drawNeonBar(g, bx, yOff + u(76), bw, imax(4, u(8)), (float)v.confirmPct / 100.0f, warn, false);
+            const char *label = v.resetting ? "Erasing..." : (v.confirmPct > 0 ? "Keep holding..." : "Hold the knob to confirm");
+            smoothText(g, capFont(), capFontH(), label, W / 2, yOff + u(95), C_BASELINE, v.confirmPct > 0 ? C_AMBER : white, C_BG);
+            if (!v.resetting)
+                smoothText(g, capFont(), capFontH(), "Push or turn to cancel", W / 2, yOff + u(108), C_BASELINE, colDim(), C_BG);
         }
 
         // The alarm time of its tile: HH:MM, the field being edited lit, a small bar under it.
@@ -410,7 +495,18 @@ namespace disp
 
             // ---- the panel itself: the page colour, with the neon edge below ----
             g.fillRect(0, yOff, W, PH, C_BG);
-            drawBottomBar(g, yOff + PH, accent);
+            const bool confirmPage = v.confirmReset || v.resetting;
+            drawBottomBar(g, yOff + PH, accent, !confirmPage && !v.systemPage && v.cursor == (uint8_t)MenuItem::CLOSE);
+            if (confirmPage)
+            {
+                drawConfirm(g, v, yOff);
+                return;
+            }
+            if (v.systemPage)
+            {
+                drawSystem(g, v, yOff);
+                return;
+            }
 
             // ---- status strip (a hint while a value is being edited) ----
             const int16_t sy = yOff + u(11);
@@ -458,7 +554,8 @@ namespace disp
 
             // ---- tiles ----
             char buf[12];
-            for (int i = 0; i < (int)MenuItem::COUNT; i++)
+            const int kTiles = (int)MenuItem::CLOSE; // everything before Close is a tile; Close is the handle
+            for (int i = 0; i < kTiles; i++)
             {
                 const int16_t x = side + (i % kCols) * (tw + gap), y = tilesTop + (i / kCols) * (th + gap);
                 const int16_t cx = x + tw / 2;
@@ -521,10 +618,10 @@ namespace disp
                     iconPulse(g, cx, iy, ic);
                     smoothText(g, capFont(), capFontH(), "Diag", cx, ty, C_BASELINE, txt, fill);
                     break;
-                case MenuItem::CLOSE:
+                case MenuItem::SYSTEM:
                 default:
-                    iconClose(g, cx, iy, ic);
-                    smoothText(g, capFont(), capFontH(), "Close", cx, ty, C_BASELINE, txt, fill);
+                    iconGear(g, cx, iy, ic);
+                    smoothText(g, capFont(), capFontH(), "System", cx, ty, C_BASELINE, txt, fill);
                     break;
                 }
             }
@@ -554,8 +651,11 @@ namespace disp
             case MenuItem::DIAGNOSTICS:
                 strcpy(cap, "Diagnostics");
                 break;
+            case MenuItem::SYSTEM:
+                strcpy(cap, "System");
+                break;
             default:
-                strcpy(cap, "Close");
+                strcpy(cap, "Close"); // the handle
                 break;
             }
             const int16_t capY = tilesTop + 2 * th + gap + u(9);
