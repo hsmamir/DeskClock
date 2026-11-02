@@ -8,6 +8,7 @@
 #include "settings.h"
 #include "audio.h"
 #include "alarm_ctrl.h"
+#include "weather.h"
 #include "config.h"
 
 namespace
@@ -132,6 +133,7 @@ namespace
         if (save)
         {
             Settings s = settings_get();
+            const float oldLat = s.latitude, oldLon = s.longitude;
             const Place &p = kPlaces[place < kPlaceCount ? place : 0];
             s.volume = volume;
             s.alarmEnabled = alarmOn;
@@ -144,7 +146,12 @@ namespace
             snprintf(s.tzPosix, sizeof(s.tzPosix), "%s", p.tzPosix);
             const char *err = "";
             if (settings_update(s, &err))
+            {
                 beep = s.uiSounds;
+                // same as the web page (web_ui.cpp): a new place means the old city's weather must go and the new one be fetched now
+                if (s.latitude != oldLat || s.longitude != oldLon)
+                    weather_refresh_now();
+            }
             else
                 Serial.printf("Setup: saving failed (%s)\n", err);
         }

@@ -497,6 +497,10 @@ static bool handleRotation(uint32_t now)
         rotIgnoring = false;
     }
 
+    // Factory-reset confirm page: while the knob is held in, the hold is the confirmation. A KY-040 can send a stray detent
+    // when its shaft is pressed hard, and a turn cancels the page, so turns are ignored as long as the knob is held.
+    if (quickmenu_in_confirm() && knobSw.lastStable)
+        return true;
     if (setup_is_active())
     {
         setup_turn(steps); // the first-boot setup: changes the value on its page
