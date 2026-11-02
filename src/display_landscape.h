@@ -28,6 +28,10 @@ namespace disp
     // The first-boot setup (display_setup.cpp, model: setup_wizard.h): one full-screen page per step.
     void drawSetupScreenL(uint32_t now);
     void setupScreenLeft(); // not shown: the next time it is drawn from scratch
+    // The Welcome page is the real face with a greeting over it: while this is true display.cpp draws the face as
+    // usual and then calls drawSetupWelcomeOverlay() (text above and below the eyes).
+    bool setupShowsFace();
+    void drawSetupWelcomeOverlay(TFT_eSPI &g);
 
     // Quick menu, diagnostics and reminder pages (full screen).
     void drawMenuScreenL(uint32_t now);

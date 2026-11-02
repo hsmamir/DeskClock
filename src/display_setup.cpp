@@ -2,7 +2,8 @@
 // setup_wizard.cpp; this file only draws them, in the same language as the other pages: deep navy, white neon cores
 // with a soft glow, lavender captions, rounded pills, sparkles.
 //
-//   Welcome   two glowing eyes, a greeting, "push to start / hold to skip"
+//   Welcome   the REAL face of the clock (display.cpp draws it as usual, blinking and looking around) with a greeting
+//             above the eyes and "push to start / hold to skip" below them
 //   Place     a list of cities; the one in the middle is the one picked (weather location + time zone)
 //   Volume    a big glowing number and a neon bar
 //   Style     the REAL clock page in the style that is picked, with a small selector pill over its lower edge
@@ -27,6 +28,12 @@ namespace disp
     static uint32_t s_sig = 0;
 
     void setupScreenLeft() { s_drawn = false; }
+
+    bool setupShowsFace()
+    {
+        SetupView v;
+        return setup_get(v) && v.step == (uint8_t)SetupStep::WELCOME;
+    }
 
     namespace
     {
@@ -119,27 +126,6 @@ namespace disp
         }
 
         // ------------------------------------------------------------------ the pages
-        void pageWelcome(TFT_eSPI &g)
-        {
-            // two eyes, like the face of the clock
-            const int16_t ew = u(22), eh = u(28), er = u(9), ey = u(18);
-            for (int k = 0; k < 2; k++)
-            {
-                const int16_t x = W / 2 + (k == 0 ? -u(18) - ew / 2 : u(18) - ew / 2);
-                g.fillRoundRect(x - 4, ey - 4, ew + 8, eh + 8, er + 4, tint(C_ACCENT, 0.16f));
-                g.fillRoundRect(x - 2, ey - 2, ew + 4, eh + 4, er + 2, tint(C_ACCENT, 0.38f));
-                g.fillRoundRect(x, ey, ew, eh, er, neonCore(C_ACCENT, 0.9f));
-                g.fillRoundRect(x + u(4), ey + u(4), u(6), u(8), u(3), C_WHITE); // a little shine
-            }
-            drawSparkle(g, u(22), u(24), 0.9f, tint(C_ACCENT, 0.8f));
-            drawSparkle(g, W - u(22), u(20), 0.7f, tint(C_ACCENT, 0.8f));
-            drawSparkle(g, W - u(30), u(48), 0.5f, tint(C_ACCENT, 0.6f));
-
-            glowText(g, PageSm18, PAGESM18_CAPH, "Hello!", W / 2, u(64), C_BASELINE, C_ACCENT, colWhite());
-            smoothText(g, capFont(), capFontH(), "Let's set up your clock", W / 2, u(81), C_BASELINE, colLav(), C_BG);
-            smoothText(g, capFont(), capFontH(), "It takes less than a minute", W / 2, u(94), C_BASELINE, colDim(), C_BG);
-        }
-
         void pagePlace(TFT_eSPI &g, const SetupView &v)
         {
             header(g, "Where are you?");
@@ -248,6 +234,20 @@ namespace disp
         }
     } // namespace
 
+    // The greeting of the Welcome page, laid over the face (the eyes sit between about y 40 and y 92 of the 128, so the
+    // text goes above and below them). Drawn by display.cpp right after the face, every frame.
+    void drawSetupWelcomeOverlay(TFT_eSPI &g)
+    {
+        SetupView v;
+        if (!setup_get(v))
+            return;
+        glowText(g, PageSm18, PAGESM18_CAPH, "Hello!", W / 2, u(17), C_BASELINE, C_ACCENT, colWhite());
+        drawSparkle(g, W / 2 - u(40), u(15), 0.8f, tint(C_ACCENT, 0.8f));
+        drawSparkle(g, W / 2 + u(40), u(15), 0.8f, tint(C_ACCENT, 0.8f));
+        smoothText(g, capFont(), capFontH(), "Let's set up your clock", W / 2, u(100), C_BASELINE, colLav(), C_BG);
+        footer(g, v.step, "Push: start   Hold: skip");
+    }
+
     void drawSetupScreenL(uint32_t now)
     {
         SetupView v;
@@ -272,9 +272,8 @@ namespace disp
             g.fillRect(0, 0, W, H, C_BG);
             switch ((SetupStep)v.step)
             {
-            case SetupStep::WELCOME:
-                pageWelcome(g);
-                footer(g, v.step, "Push: start   Hold: skip");
+            case SetupStep::WELCOME: // normally drawn over the real face by display.cpp; this is only the fallback
+                drawSetupWelcomeOverlay(g);
                 break;
             case SetupStep::PLACE:
                 pagePlace(g, v);

@@ -456,7 +456,8 @@ void display_tick()
             drawMenuScreenL(now);
             return;
         }
-        if (mode == DisplayMode::SETUP && !alarm)
+        const bool setupFace = (mode == DisplayMode::SETUP && !alarm && setupShowsFace()); // the Welcome page: the real face, below
+        if (mode == DisplayMode::SETUP && !alarm && !setupFace)
         {
             clockWasShown = false; // same as the menu: the clock page below is drawn again when the setup is over
             menuScreenLeft();
@@ -485,7 +486,7 @@ void display_tick()
         }
 
         // Home: the face (eyes) or the clock, as the knob left it. The boot wake-up and the alarm always show the face.
-        if (ui_home_is_clock() && !alarm && persona.stage == PStage::RUN)
+        if (ui_home_is_clock() && !alarm && persona.stage == PStage::RUN && !setupFace) // (the Welcome page always shows the face)
         {
             const uint32_t sig = clockScreenSig(haveTime, ti, now) ^ ((uint32_t)g_state.modeHoldPct * 0x9E3779B1u) ^ (wifiLost() ? 0x5A5A5A5Au : 0u); // FIX: ring + WiFi icon
             if (!clockWasShown || sig != lastClockSig)
@@ -595,6 +596,8 @@ void display_tick()
 #if LANDSCAPE_UI
         if (alarm)
             drawAlarmOverlay(g, haveTime, ti, alarmFlashOn); // the time under the angry eyes
+        else if (mode == DisplayMode::SETUP)
+            drawSetupWelcomeOverlay(g); // first-boot setup, Welcome page: the greeting over the face
 #endif
     }
 #if LANDSCAPE_UI
