@@ -20,6 +20,7 @@
 #include "reminders.h"
 #include "ota.h"
 #include "update_check.h"
+#include "display_perf.h"
 
 AppState g_state;
 SemaphoreHandle_t g_stateMutex;
@@ -268,6 +269,31 @@ void setup()
 void loop()
 {
     // All real work happens in FreeRTOS tasks; this only prints the stack report.
+#if DISPLAY_PERF_ENABLED && PERF_REPORT_INTERVAL_S > 0
+    // Face frame timing: draw = into the sprite (CPU), push = out to the panel (SPI), period = real time between frames.
+    {
+        static uint32_t lastPerfMs = 0;
+        const uint32_t nowP = millis();
+        if ((uint32_t)(nowP - lastPerfMs) >= (uint32_t)PERF_REPORT_INTERVAL_S * 1000UL)
+        {
+            const uint32_t spanMs = nowP - lastPerfMs;
+            lastPerfMs = nowP;
+            DisplayPerf p;
+            display_perf_get(p, true);
+            if (p.frames > 0)
+            {
+                // fps = frames really drawn in this interval (does not depend on the smoothed period)
+                const uint32_t fps10 = spanMs ? (uint32_t)((uint64_t)p.frames * 10000ULL / spanMs) : 0;
+                Serial.printf("Display perf: draw %u us, push %u us, period %u us | %u.%u fps over %u s | worst frame %u us, slow (>%u us) %u of %u frames\n",
+                              (unsigned)p.drawUs, (unsigned)p.pushUs, (unsigned)p.periodUs,
+                              (unsigned)(fps10 / 10), (unsigned)(fps10 % 10), (unsigned)(spanMs / 1000UL),
+                              (unsigned)p.worstUs, (unsigned)PERF_SLOW_FRAME_US, (unsigned)p.slowFrames, (unsigned)p.frames);
+            }
+            else
+                Serial.println("Display perf: no face frames in this interval (another page is shown)");
+        }
+    }
+#endif
 #if STACK_REPORT_INTERVAL_S > 0
     static uint32_t lastReportMs = 0;
     uint32_t now = millis();

@@ -5,7 +5,13 @@
 namespace disp
 {
 
+    // Wokwi-small simulation (platformio.ini, env wokwi-small): TFT_eSPI's ILI9341 driver header forces 240 x 320 and
+    // ignores -D TFT_WIDTH / TFT_HEIGHT, so the real display's size (128 x 160) is given to the constructor instead.
+#ifdef SIM_TFT_WIDTH
+    TFT_eSPI tft = TFT_eSPI(SIM_TFT_WIDTH, SIM_TFT_HEIGHT);
+#else
     TFT_eSPI tft = TFT_eSPI();
+#endif
 
     // The five themed colours (values are the night look, also used until the clock knows the time).
     uint16_t C_BG = rgb(6, 9, 26);                // background

@@ -679,8 +679,14 @@ static inline bool isNightHour(int hour)
 // web, OTA) are deliberately NOT watched: connecting, the setup portal and an OTA
 // transfer legitimately block for a long time. 0 = no watchdog.
 // After a watchdog reset the Serial log starts with "Reset reason: TASK_WDT".
+#ifndef TASK_WDT_ENABLED
 #define TASK_WDT_ENABLED 1
+#endif
+// (can be raised with -D TASK_WDT_TIMEOUT_S=60: the Wokwi simulator runs the TLS handshake of the weather task so
+// slowly that the idle task of core 0 is starved for more than 10 s - see env wokwi-small in platformio.ini)
+#ifndef TASK_WDT_TIMEOUT_S
 #define TASK_WDT_TIMEOUT_S 10
+#endif
 // Test only: 1 = the alarm task deliberately stops reporting in 20 s after boot, so
 // you can see the reset happen. Use the esp32dev-wdttest env in platformio.ini.
 #ifndef TASK_WDT_SELFTEST

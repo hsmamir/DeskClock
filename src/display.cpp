@@ -8,6 +8,7 @@
 #include "weather_mood.h"
 #include "display_landscape.h"
 #include "ui_state.h"
+#include "display_perf.h"
 
 using namespace disp;
 
@@ -425,7 +426,7 @@ void display_tick()
             if (REMINDER_FULL_BRIGHT)
                 backlightUpdate(false, true);
             diagShown = false;
-            creditsStop(); // FIX: a reminder ends the credits
+            creditsStop();         // FIX: a reminder ends the credits
             clockWasShown = false; // FIX: the reminder replaced the page on screen: redraw the page below when it closes
             menuScreenLeft();
             drawReminderScreenL(rv, now);
@@ -473,7 +474,7 @@ void display_tick()
         {
             // FIX: the "hold for diagnostics" ring (touch.cpp) was only drawn on the face; it is part of the signature now
             const uint32_t sig = sidePageSig(mode, haveTime, ti, now) ^ ((uint32_t)g_state.modeHoldPct * 0x9E3779B1u) ^ (wifiLost() ? 0x5A5A5A5Au : 0u); // FIX: ring + WiFi icon
-            if (!clockWasShown || sig != lastClockSig) // (clockWasShown / lastClockSig are shared with the clock page)
+            if (!clockWasShown || sig != lastClockSig)                                                                                                   // (clockWasShown / lastClockSig are shared with the clock page)
             {
                 lastClockSig = sig;
                 clockWasShown = true;
@@ -496,7 +497,7 @@ void display_tick()
                 TFT_eSPI &g = faceCv.begin();
                 drawClockScreen(g, haveTime, ti, now);
                 drawStatusIcons(g, now); // FIX: the crossed-out WiFi icon (top right) was only on the face
-                drawHoldRing(g); // FIX
+                drawHoldRing(g);         // FIX
                 faceCv.endAt(0);
             }
             return;
@@ -577,6 +578,7 @@ void display_tick()
         gapPaint(pageSlideX); // coming back from a full-screen page: the strip between the cards turns into frame again
 #endif
 
+    const uint32_t perfT0 = micros(); // frame timing (display_perf.h): drawing into the sprite
     TFT_eSPI &g = faceCv.begin();
     uint16_t eyeTopSaved = C_EYE_TOP, eyeBotSaved = C_EYE_BOT; // emoUpdate() recomputes them every tick
     if (!alarm)
@@ -600,10 +602,13 @@ void display_tick()
             drawSetupWelcomeOverlay(g); // first-boot setup, Welcome page: the greeting over the face
 #endif
     }
+    const uint32_t perfT1 = micros(); // drawing done, the push to the panel starts
 #if LANDSCAPE_UI
     faceCv.endAt(0);
+    display_perf_record(perfT1 - perfT0, micros() - perfT1);
 #else
     faceCv.endAt(pageSlideX); // slides in together with the info card when the clock page comes back
+    display_perf_record(perfT1 - perfT0, micros() - perfT1);
 
     drawInfoPanel(alarm, haveTime, ti, now);
 #endif
