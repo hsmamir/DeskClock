@@ -238,3 +238,23 @@ void settings_factory_reset()
     for (;;)
         delay(1000);
 }
+
+bool settings_setup_done()
+{
+    Preferences p;
+    if (!p.begin(NVS_NAMESPACE, true)) // read-only; a missing namespace is a clock that was never set up
+        return false;
+    const bool done = p.getBool("setup", false) || p.isKey("tzP"); // "tzP": the settings were saved once (older firmware)
+    p.end();
+    return done;
+}
+
+void settings_mark_setup_done()
+{
+    Preferences p;
+    if (p.begin(NVS_NAMESPACE, false))
+    {
+        p.putBool("setup", true);
+        p.end();
+    }
+}

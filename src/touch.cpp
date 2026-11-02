@@ -11,6 +11,7 @@
 #include "settings.h"
 #include "reminders.h"
 #include "quick_menu.h"
+#include "setup_wizard.h"
 #include "ui_state.h"
 
 // ---------------------------------------------------------------------------------------
@@ -496,6 +497,11 @@ static bool handleRotation(uint32_t now)
         rotIgnoring = false;
     }
 
+    if (setup_is_active())
+    {
+        setup_turn(steps); // the first-boot setup: changes the value on its page
+        return true;
+    }
     if (quickmenu_is_open())
     {
         quickmenu_turn(steps); // moves the cursor / changes the value being edited
@@ -522,6 +528,11 @@ static bool knobAlarmOffDone = false; // ...and that already happened
 
 static void onKnobTap()
 {
+    if (setup_is_active())
+    {
+        setup_press(); // next page of the first-boot setup
+        return;
+    }
     if (quickmenu_is_open())
     {
         quickmenu_press();
@@ -596,7 +607,8 @@ static bool handleKnobButton()
         if (held > MODE_HOLD_RING_DELAY_MS && held < MODE_LONG_PRESS_MS)
         {
             xSemaphoreTake(g_stateMutex, portMAX_DELAY);
-            bool onDiagOrMenu = g_state.displayMode == DisplayMode::DIAG || g_state.displayMode == DisplayMode::MENU;
+            bool onDiagOrMenu = g_state.displayMode == DisplayMode::DIAG || g_state.displayMode == DisplayMode::MENU ||
+                                g_state.displayMode == DisplayMode::SETUP;
             xSemaphoreGive(g_stateMutex);
             if (!onDiagOrMenu)
             {
@@ -628,7 +640,9 @@ static bool handleKnobButton()
     {
         knobLongHandled = true;
         g_state.modeHoldPct = 0;
-        if (quickmenu_is_open())
+        if (setup_is_active())
+            setup_back(); // one page back (on the first page: skip the setup)
+        else if (quickmenu_is_open())
             quickmenu_close(); // leaves the menu; an unsaved edit is dropped
         else
             toggleDiagPage();
@@ -659,7 +673,7 @@ static void autoReturnToClock(bool activity)
         lastSeenMode = m;
     }
     // the quick menu has its own timeout (quickmenu_tick), which also drops an unsaved edit
-    uint32_t limit = (m == DisplayMode::CLOCK || m == DisplayMode::MENU) ? 0 : (m == DisplayMode::DIAG ? DIAG_RETURN_MS : DISPLAY_RETURN_MS);
+    uint32_t limit = (m == DisplayMode::CLOCK || m == DisplayMode::MENU || m == DisplayMode::SETUP) ? 0 : (m == DisplayMode::DIAG ? DIAG_RETURN_MS : DISPLAY_RETURN_MS);
     if (limit != 0 && (uint32_t)(now - lastActivityMs) >= limit)
     {
         g_state.displayMode = DisplayMode::CLOCK;
@@ -673,6 +687,7 @@ void touch_init()
     pinMode(TOUCH_PAD_PIN, INPUT_PULLDOWN); // TTP223 drives the pin itself; the pull-down only keeps it defined (and makes a plain test button work)
     pinMode(ROTARY_SW_PIN, INPUT_PULLUP);
     quickmenu_init();
+    setup_wizard_init();
     rotaryInit();
 }
 
@@ -685,5 +700,6 @@ void touch_tick()
     activity |= handleRotation(now);
     activity |= handleKnobButton();
     quickmenu_tick(now); // menu time-out; closes it when the alarm starts to ring
+    setup_tick(now);     // first boot: starts the setup when the clock is ready; the volume preview
     autoReturnToClock(activity);
 }

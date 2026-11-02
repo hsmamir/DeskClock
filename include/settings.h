@@ -46,3 +46,8 @@ bool settings_update(const Settings &s, const char **err);
 // saved WiFi network) and restarts. The firmware itself stays. After the restart the clock starts with the config.h
 // defaults and opens the WiFi setup portal. Does not return.
 void settings_factory_reset();
+
+// First-boot setup (setup_wizard.h): has the user been through it (or skipped it)? Clocks that were set up before this
+// existed count as done as soon as they have saved their settings once. A factory reset clears the flag.
+bool settings_setup_done();
+void settings_mark_setup_done();

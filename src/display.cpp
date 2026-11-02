@@ -456,6 +456,14 @@ void display_tick()
             drawMenuScreenL(now);
             return;
         }
+        if (mode == DisplayMode::SETUP && !alarm)
+        {
+            clockWasShown = false; // same as the menu: the clock page below is drawn again when the setup is over
+            menuScreenLeft();
+            drawSetupScreenL(now);
+            return;
+        }
+        setupScreenLeft();
         menuScreenLeft();
 
         // Date / Weather: the side pages of the knob cycle Face -> Clock -> Date -> Weather -> Face (touch.cpp).

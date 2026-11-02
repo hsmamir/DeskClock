@@ -25,6 +25,9 @@ namespace disp
     // the crossed-out WiFi icon at (cx, cy) with outer radius r, and nothing while online.
     bool wifiLost();
     void drawWifiLostMini(TFT_eSPI &g, int16_t cx, int16_t cy, int16_t r);
+    // The first-boot setup (display_setup.cpp, model: setup_wizard.h): one full-screen page per step.
+    void drawSetupScreenL(uint32_t now);
+    void setupScreenLeft(); // not shown: the next time it is drawn from scratch
 
     // Quick menu, diagnostics and reminder pages (full screen).
     void drawMenuScreenL(uint32_t now);
