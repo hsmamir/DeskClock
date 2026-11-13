@@ -72,6 +72,7 @@ Pins are defined in `include/pins.h`.
 | KY-040 SW         | 26        | rotary encoder, push button (active LOW)       |
 | Servo signal      | 13        |                                                |
 | JQ6500 RX / TX    | 16 / 17   | ESP32 RX2 <- JQ6500 TX, ESP32 TX2 -> JQ6500 RX |
+| RGB LED R / G / B | 19 / 21 / 22 | common anode: long leg to 3V3, a 100-220 ohm resistor on each colour leg |
 
 Power both modules from **3V3** (TTP223 `VCC`, KY-040 `+`) and connect their `GND` to GND. The TTP223 drives its
 `OUT` pin itself (HIGH while touched, default jumper setting). The KY-040 already has pull-ups on `CLK`, `DT` and

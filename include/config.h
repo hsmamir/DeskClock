@@ -117,6 +117,26 @@ static_assert(EGG_CREDITS_TAPS >= 2, "EGG_CREDITS_TAPS must be at least 2");
 #define CALENDAR_WEEK_START 6
 static_assert(CALENDAR_WEEK_START >= 0 && CALENDAR_WEEK_START <= 6, "CALENDAR_WEEK_START must be 0-6");
 
+// ---- RGB LED (rgb_led.cpp; pins in pins.h) ----
+//   RGB_LED_ENABLED       0 = no LED code at all
+//   RGB_LED_COMMON_ANODE  1 = long leg to 3V3 (the pin sinks current, LOW = lit); 0 = common cathode (long leg to GND)
+//   RGB_LED_MAX_PCT       overall brightness cap in % (1-100). A 3 mm / 5 mm LED is very bright indoors: 30-40 is plenty
+//   RGB_LED_BOOT_TEST     1 = red, green, blue for 0.25 s each at power-on (wiring check: wrong order = swapped wires)
+//   RGB_LED_IDLE_MODE     0 = off while nothing is going on, 1 = a faint steady colour (RGB_LED_IDLE_R/G/B, 0-255).
+//                         Always off at night. Alarm, update and WiFi portal still use the LED at night.
+#define RGB_LED_ENABLED 1
+#define RGB_LED_COMMON_ANODE 1
+#define RGB_LED_MAX_PCT 40
+#define RGB_LED_BOOT_TEST 1
+#define RGB_LED_IDLE_MODE 0
+#define RGB_LED_IDLE_R 0
+#define RGB_LED_IDLE_G 20
+#define RGB_LED_IDLE_B 40
+#define RGB_LED_DEBUG 1 // 1 = Serial log lines "RGB LED: ..." (task started, alarm on / off)
+#define RGB_LED_PWM_FREQ 5000
+#define RGB_LED_PWM_CHANNEL0 9 // only used on arduino-esp32 2.x: channels 9, 10, 11 (the backlight uses 8)
+static_assert(RGB_LED_MAX_PCT >= 1 && RGB_LED_MAX_PCT <= 100, "RGB_LED_MAX_PCT must be 1-100");
+
 // ---- Servo angles ----
 #define SERVO_REST_ANGLE 90
 #define SERVO_PET_ANGLE 130

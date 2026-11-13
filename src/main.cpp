@@ -21,6 +21,7 @@
 #include "ota.h"
 #include "update_check.h"
 #include "display_perf.h"
+#include "rgb_led.h"
 
 AppState g_state;
 SemaphoreHandle_t g_stateMutex;
@@ -84,7 +85,7 @@ struct TaskEntry
     const char *name;
     TaskHandle_t handle;
 };
-static TaskEntry s_tasks[8];
+static TaskEntry s_tasks[9];
 static uint8_t s_taskCount = 0;
 
 static void startTask(TaskFunction_t fn, const char *name, uint32_t stackBytes, UBaseType_t priority, BaseType_t core)
@@ -213,6 +214,16 @@ static void alarmTask(void *pvParameters)
     }
 }
 
+static void ledTask(void *pvParameters)
+{
+    const TickType_t tickDelay = pdMS_TO_TICKS(20);
+    for (;;)
+    {
+        rgb_led_tick();
+        vTaskDelay(tickDelay);
+    }
+}
+
 static void otaTask(void *pvParameters)
 {
     // Own task: ota_tick() blocks for the whole transfer while an update runs.
@@ -241,6 +252,7 @@ void setup()
     // Before Serial.begin(): the UART baud divider is computed from the clock that is running then.
     setCpuFrequencyMhz(CPU_FREQ_MHZ); // lower peak current (see "Power / brownout" in config.h)
     Serial.begin(115200);
+    rgb_led_init(); // first thing: pins to "LED off" (then the boot colour test)
     boot_log_init(); // counts the boot + keeps the reset reason in flash (and prints it)
 
     g_stateMutex = xSemaphoreCreateMutex();
@@ -264,6 +276,7 @@ void setup()
     startTask(weatherTask, "weather", 10240, 1, 0);
     startTask(webTask, "web", 8192, 1, 0);
     startTask(otaTask, "ota", 6144, 1, 0);
+    startTask(ledTask, "led", 4096, 4, 1); // above display / touch: the tick takes microseconds, but at priority 1 a busy display starved it
 }
 
 void loop()

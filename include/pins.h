@@ -28,5 +28,11 @@
 #define JQ6500_RX_PIN 16 // ESP32 RX2 <- JQ6500 TX
 #define JQ6500_TX_PIN 17 // ESP32 TX2 -> JQ6500 RX
 
-// ---- Status LED (optional) ----
-// Not wired in this skeleton. If you add one, avoid 0/2/5/12/15 (strapping/TFT pins).
+// ---- RGB LED (4 pins, common anode) ----
+// The longest leg is the shared "+": connect it to 3V3. Every colour leg goes through its own resistor to a GPIO
+// (the GPIO sinks the current: LOW = lit). Typical values at 3.3 V: red 150 ohm, green 100 ohm, blue 100 ohm
+// (green / blue need a low value: their forward voltage is ~3 V). Free pins on the same side of the board as 18 / 5.
+// Common cathode LED instead? Set RGB_LED_COMMON_ANODE to 0 in config.h and connect the long leg to GND.
+#define RGB_LED_R_PIN 19
+#define RGB_LED_G_PIN 21
+#define RGB_LED_B_PIN 22
