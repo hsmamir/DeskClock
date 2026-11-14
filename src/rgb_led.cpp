@@ -24,6 +24,7 @@ namespace
 
     const uint8_t PINS[3] = {RGB_LED_R_PIN, RGB_LED_G_PIN, RGB_LED_B_PIN};
     const Rgb OFF = {0, 0, 0};
+    const Rgb WARM_WHITE = {255, 165, 80};
 
     // ---- runtime settings (the web page changes them; saved in flash). config.h only holds the defaults. ----
     RgbLedSettings s_cfg = {RGB_LED_DEFAULT_ENABLED, RGB_LED_MAX_PCT, RGB_LED_IDLE_MODE, RGB_LED_IDLE_PCT,
@@ -236,6 +237,13 @@ namespace
         const float pct = night ? s_c.idleNightPct : s_c.idlePct;
         if (pct <= 0.f || s_c.idleMode == 0)
             return OFF;
+        if (s_c.idleMode == 3)
+        {
+            // the robot's own colour: warm white that breathes slowly (slower and shallower at night)
+            const float depth = night ? 0.7f : 0.55f;
+            const float k = (1.0f - depth) + depth * breathe(now, night ? 8000 : 5200);
+            return scaled(WARM_WHITE, k, pct);
+        }
         if (s_c.idleMode == 2)
         {
             const bool fresh = st.weatherValid && (uint32_t)(now - st.weatherUpdatedMs) < WEATHER_STALE_MS;
@@ -279,7 +287,7 @@ static void loadSettings()
     c.showWifi = p.getBool("wifi", c.showWifi);
     c.showUpdate = p.getBool("upd", c.showUpdate);
     p.end();
-    if (c.maxPct < 1 || c.maxPct > 100 || c.idleMode > 2 || c.idlePct > 100 || c.idleNightPct > 100 || c.sunriseMin > 60)
+    if (c.maxPct < 1 || c.maxPct > 100 || c.idleMode > 3 || c.idlePct > 100 || c.idleNightPct > 100 || c.sunriseMin > 60)
         return; // damaged values: keep the defaults
     portENTER_CRITICAL(&s_cfgMux);
     s_cfg = c;
@@ -303,10 +311,10 @@ bool rgb_led_settings_set(const RgbLedSettings &c, const char **err)
             *err = "led brightness must be 1-100";
         return false;
     }
-    if (c.idleMode > 2)
+    if (c.idleMode > 3)
     {
         if (err)
-            *err = "led idle mode must be 0-2";
+            *err = "led idle mode must be 0-3";
         return false;
     }
     if (c.idlePct > 100 || c.idleNightPct > 100)
@@ -369,8 +377,42 @@ void rgb_led_init()
     }
     show(OFF);
 
-#if RGB_LED_BOOT_TEST
-    // Red, green, blue one after the other: if the colours come in another order the wires are swapped.
+#if RGB_LED_BOOT_TEST == 2
+    // "Opening the eyes": warm white fades up from the dark, one quick blink, then it settles to the idle level
+    // (or to off when the idle colour is off). About 1.7 s; the screen is not up yet.
+    if (s_c.enabled)
+    {
+        const uint32_t t0 = millis();
+        for (;;)
+        {
+            const uint32_t t = millis() - t0;
+            float k;
+            if (t < 900)
+            {
+                const float x = t / 900.0f;
+                k = x * x * (3.0f - 2.0f * x); // smooth fade in
+            }
+            else if (t < 1050)
+                k = 1.0f; // eyes open
+            else if (t < 1140)
+                k = 1.0f - 0.85f * ((t - 1050) / 90.0f); // blink: lids close...
+            else if (t < 1280)
+                k = 0.15f + 0.85f * ((t - 1140) / 140.0f); // ...and open
+            else if (t < 1700)
+            {
+                const float idleK = (s_c.idleMode == 0) ? 0.0f : (float)s_c.idlePct / (float)s_c.maxPct;
+                const float x = (t - 1280) / 420.0f;
+                k = 1.0f + ((idleK > 1.0f ? 1.0f : idleK) - 1.0f) * x; // settle
+            }
+            else
+                break;
+            show(scaled(WARM_WHITE, k));
+            delay(10);
+        }
+    }
+    show(OFF);
+#elif RGB_LED_BOOT_TEST == 1
+    // Wiring check: red, green, blue one after the other. If the colours come in another order, wires are swapped.
     const Rgb seq[3] = {{255, 0, 0}, {0, 255, 0}, {0, 0, 255}};
     for (uint8_t i = 0; i < 3; i++)
     {

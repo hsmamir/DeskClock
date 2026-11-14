@@ -121,10 +121,12 @@ static_assert(CALENDAR_WEEK_START >= 0 && CALENDAR_WEEK_START <= 6, "CALENDAR_WE
 //   RGB_LED_ENABLED       0 = no LED code at all
 //   RGB_LED_COMMON_ANODE  1 = long leg to 3V3 (the pin sinks current, LOW = lit); 0 = common cathode (long leg to GND)
 //   RGB_LED_MAX_PCT       overall brightness cap in % (1-100). A 3 mm / 5 mm LED is very bright indoors: 30-40 is plenty
-//   RGB_LED_BOOT_TEST     1 = red, green, blue for 0.25 s each at power-on (wiring check: wrong order = swapped wires)
+//   RGB_LED_BOOT_TEST     power-on animation: 2 = the robot "opens its eyes" (warm white fades up, one blink, settles);
+//                         1 = red, green, blue for 0.25 s each (wiring check: wrong order = swapped wires); 0 = none
 //   RGB_LED_IDLE_MODE     (first value; later set on the settings page) what the LED does while nothing else is going on:
 //                           0 = off
 //                           1 = a steady colour (RGB_LED_IDLE_R/G/B, 0-255)
+//                           3 = THE ROBOT'S OWN COLOUR: warm white that breathes slowly (slower and softer at night)
 //                           2 = WEATHER AMBIENT: colour of the temperature outside (violet < -10, blue 0, cyan 10, green 18,
 //                               yellow 24, orange 30, red 38+), breathing slowly in rain / snow, quicker in a thunderstorm.
 //                               Without a fresh weather reading it shows the steady colour of mode 1.
@@ -140,8 +142,8 @@ static_assert(CALENDAR_WEEK_START >= 0 && CALENDAR_WEEK_START <= 6, "CALENDAR_WE
 #define RGB_LED_DEFAULT_ENABLED true // first value of the web page's on / off switch
 #define RGB_LED_COMMON_ANODE 1
 #define RGB_LED_MAX_PCT 40
-#define RGB_LED_BOOT_TEST 1
-#define RGB_LED_IDLE_MODE 2
+#define RGB_LED_BOOT_TEST 2
+#define RGB_LED_IDLE_MODE 3
 #define RGB_LED_IDLE_R 0
 #define RGB_LED_IDLE_G 20
 #define RGB_LED_IDLE_B 40

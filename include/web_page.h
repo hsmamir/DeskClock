@@ -291,7 +291,7 @@ dialog .foot{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding-top:12px
 <label class="row"><span class="lb">LED روشن<small>خاموش = هیچ نوری، حتی هنگام آلارم</small></span><span class="sw"><input type="checkbox" id="ledOn"><i></i></span></label>
 <div class="slider"><div class="sh"><span>حداکثر روشنایی</span><output id="ledMaxO"></output></div>
 <div class="sb"><input type="range" id="ledMax" min="5" max="100"></div></div>
-<div class="row"><span class="lb">حالت عادی<small>وقتی اتفاق خاصی نیست</small></span><select id="ledMode"><option value="0">خاموش</option><option value="1">رنگ ثابت</option><option value="2">رنگ دما و آب‌وهوا</option></select></div>
+<div class="row"><span class="lb">حالت عادی<small>وقتی اتفاق خاصی نیست</small></span><select id="ledMode"><option value="3">سفید گرم (تنفس)</option><option value="2">رنگ دما و آب‌وهوا</option><option value="1">رنگ ثابت</option><option value="0">خاموش</option></select></div>
 <div class="slider"><div class="sh"><span>روشنایی حالت عادی (روز)</span><output id="ledIdleO"></output></div>
 <div class="sb"><input type="range" id="ledIdle" min="0" max="100"></div></div>
 <div class="slider"><div class="sh"><span>روشنایی حالت عادی (شب)</span><output id="ledNightO"></output></div>
@@ -301,7 +301,7 @@ dialog .foot{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding-top:12px
 <label class="row"><span class="lb">نشان قطع WiFi<small>چشمک نارنجی بعد از ۳۰ ثانیه</small></span><span class="sw"><input type="checkbox" id="ledWifi"><i></i></span></label>
 <label class="row"><span class="lb">نشان آپدیت موجود<small>تپش سبز هر چند ثانیه</small></span><span class="sw"><input type="checkbox" id="ledUpd"><i></i></span></label>
 <details><summary>چطور کار می‌کند؟</summary>
-<p class="hint">تغییرات همین‌جا ذخیره و اعمال می‌شوند، دکمه ذخیره لازم نیست. آلارم قرمز چشمک‌زن، آپدیت بنفش، پورتال WiFi آبی، یادآور فیروزه‌ای و نوازش صورتی است. رنگ دما: بنفش (خیلی سرد)، آبی، فیروزه‌ای، سبز، زرد، نارنجی و قرمز (خیلی گرم)؛ در باران و برف آرام تپش می‌کند. در شب روشنایی عادی پیش‌فرض صفر است (خاموش).</p></details>
+<p class="hint">تغییرات همین‌جا ذخیره و اعمال می‌شوند، دکمه ذخیره لازم نیست. آلارم قرمز چشمک‌زن، آپدیت بنفش، پورتال WiFi آبی، یادآور فیروزه‌ای و نوازش صورتی است. سفید گرم رنگ خود ربات است و آرام نفس می‌کشد. رنگ دما: بنفش (خیلی سرد)، آبی، فیروزه‌ای، سبز، زرد، نارنجی و قرمز (خیلی گرم)؛ در باران و برف آرام تپش می‌کند. در شب روشنایی عادی پیش‌فرض صفر است (خاموش).</p></details>
 <p class="hint" id="ledNA" hidden>LED در این نسخه‌ی فریمور غیرفعال شده است.</p>
 </div>
 
