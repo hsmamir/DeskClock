@@ -122,19 +122,40 @@ static_assert(CALENDAR_WEEK_START >= 0 && CALENDAR_WEEK_START <= 6, "CALENDAR_WE
 //   RGB_LED_COMMON_ANODE  1 = long leg to 3V3 (the pin sinks current, LOW = lit); 0 = common cathode (long leg to GND)
 //   RGB_LED_MAX_PCT       overall brightness cap in % (1-100). A 3 mm / 5 mm LED is very bright indoors: 30-40 is plenty
 //   RGB_LED_BOOT_TEST     1 = red, green, blue for 0.25 s each at power-on (wiring check: wrong order = swapped wires)
-//   RGB_LED_IDLE_MODE     0 = off while nothing is going on, 1 = a faint steady colour (RGB_LED_IDLE_R/G/B, 0-255).
-//                         Always off at night. Alarm, update and WiFi portal still use the LED at night.
-#define RGB_LED_ENABLED 1
+//   RGB_LED_IDLE_MODE     (first value; later set on the settings page) what the LED does while nothing else is going on:
+//                           0 = off
+//                           1 = a steady colour (RGB_LED_IDLE_R/G/B, 0-255)
+//                           2 = WEATHER AMBIENT: colour of the temperature outside (violet < -10, blue 0, cyan 10, green 18,
+//                               yellow 24, orange 30, red 38+), breathing slowly in rain / snow, quicker in a thunderstorm.
+//                               Without a fresh weather reading it shows the steady colour of mode 1.
+//   RGB_LED_IDLE_PCT      brightness of the idle colour by day, % (0 = off)
+//   RGB_LED_IDLE_NIGHT_PCT same at night (from sunset to sunrise); 3 = a faint glow, 0 = off at night
+//   RGB_LED_SUNRISE_MIN   minutes before the alarm during which the LED slowly brightens (red -> orange -> warm white),
+//                         on the alarm's days, also at night; 0 = off. At the alarm time the red flashing takes over.
+//   RGB_LED_SUNRISE_PCT   its maximum brightness, %
+//   RGB_LED_SHOW_WIFI     1 = amber double blink every 3 s while the WiFi has been gone for RGB_LED_WIFI_LOST_S seconds
+//   RGB_LED_SHOW_UPDATE   1 = one green pulse every 8 s while a firmware update is waiting for you on the settings page
+//   (blinks for WiFi / update are not shown at night)
+#define RGB_LED_ENABLED 1            // 0 = no LED code at all (the web page can then not switch it on)
+#define RGB_LED_DEFAULT_ENABLED true // first value of the web page's on / off switch
 #define RGB_LED_COMMON_ANODE 1
 #define RGB_LED_MAX_PCT 40
 #define RGB_LED_BOOT_TEST 1
-#define RGB_LED_IDLE_MODE 0
+#define RGB_LED_IDLE_MODE 2
 #define RGB_LED_IDLE_R 0
 #define RGB_LED_IDLE_G 20
 #define RGB_LED_IDLE_B 40
-#define RGB_LED_DEBUG 1 // 1 = Serial log lines "RGB LED: ..." (task started, alarm on / off)
+#define RGB_LED_IDLE_PCT 25
+#define RGB_LED_IDLE_NIGHT_PCT 3
+#define RGB_LED_SUNRISE_MIN 10
+#define RGB_LED_SUNRISE_PCT 100
+#define RGB_LED_SHOW_WIFI 1
+#define RGB_LED_WIFI_LOST_S 30
+#define RGB_LED_SHOW_UPDATE 1
+#define RGB_LED_DEBUG 0 // 1 = Serial log lines "RGB LED: ..." (task started, alarm on / off)
 #define RGB_LED_PWM_FREQ 5000
-#define RGB_LED_PWM_CHANNEL0 9 // only used on arduino-esp32 2.x: channels 9, 10, 11 (the backlight uses 8)
+#define RGB_LED_PWM_CHANNEL0 12 // LEDC channels 12, 13, 14. Keep them away from the servo (it takes the first free channel, 0 upward)
+                                // and from the backlight PWM (8); channel pairs share a timer, so 12 / 13 / 14 never share one with them
 static_assert(RGB_LED_MAX_PCT >= 1 && RGB_LED_MAX_PCT <= 100, "RGB_LED_MAX_PCT must be 1-100");
 
 // ---- Servo angles ----

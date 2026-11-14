@@ -31,8 +31,8 @@
 // ---- RGB LED (4 pins, common anode) ----
 // The longest leg is the shared "+": connect it to 3V3. Every colour leg goes through its own resistor to a GPIO
 // (the GPIO sinks the current: LOW = lit). Typical values at 3.3 V: red 150 ohm, green 100 ohm, blue 100 ohm
-// (green / blue need a low value: their forward voltage is ~3 V). Free pins on the same side of the board as 18 / 5.
+// (green / blue need a low value: their forward voltage is ~3 V). All three are free GPIOs (not strapping, not used elsewhere).
 // Common cathode LED instead? Set RGB_LED_COMMON_ANODE to 0 in config.h and connect the long leg to GND.
-#define RGB_LED_R_PIN 19
+#define RGB_LED_R_PIN 25 // not 19: GPIO19 is the SPI MISO pin and goes dead for output once the display / SPI starts (red worked at boot only)
 #define RGB_LED_G_PIN 21
 #define RGB_LED_B_PIN 22

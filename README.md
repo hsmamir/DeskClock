@@ -61,18 +61,18 @@ No extra parts are needed for anything described here.
 
 Pins are defined in `include/pins.h`.
 
-| Function          | GPIO      | Notes                                          |
-| ----------------- | --------- | ---------------------------------------------- |
-| TFT CS / DC / RST | 5 / 2 / 4 |                                                |
-| TFT MOSI / SCLK   | 23 / 18   | default VSPI pins                              |
-| TFT backlight     | 15        | dimmed at night                                |
-| TTP223 OUT        | 32        | touch pad: Pet + snooze / alarm off            |
-| KY-040 CLK        | 33        | rotary encoder, turn                           |
-| KY-040 DT         | 27        | rotary encoder, turn                           |
-| KY-040 SW         | 26        | rotary encoder, push button (active LOW)       |
-| Servo signal      | 13        |                                                |
-| JQ6500 RX / TX    | 16 / 17   | ESP32 RX2 <- JQ6500 TX, ESP32 TX2 -> JQ6500 RX |
-| RGB LED R / G / B | 19 / 21 / 22 | common anode: long leg to 3V3, a 100-220 ohm resistor on each colour leg |
+| Function          | GPIO         | Notes                                                                    |
+| ----------------- | ------------ | ------------------------------------------------------------------------ |
+| TFT CS / DC / RST | 5 / 2 / 4    |                                                                          |
+| TFT MOSI / SCLK   | 23 / 18      | default VSPI pins                                                        |
+| TFT backlight     | 15           | dimmed at night                                                          |
+| TTP223 OUT        | 32           | touch pad: Pet + snooze / alarm off                                      |
+| KY-040 CLK        | 33           | rotary encoder, turn                                                     |
+| KY-040 DT         | 27           | rotary encoder, turn                                                     |
+| KY-040 SW         | 26           | rotary encoder, push button (active LOW)                                 |
+| Servo signal      | 13           |                                                                          |
+| JQ6500 RX / TX    | 16 / 17      | ESP32 RX2 <- JQ6500 TX, ESP32 TX2 -> JQ6500 RX                           |
+| RGB LED R / G / B | 25 / 21 / 22 | common anode: long leg to 3V3, a 100-220 ohm resistor on each colour leg |
 
 Power both modules from **3V3** (TTP223 `VCC`, KY-040 `+`) and connect their `GND` to GND. The TTP223 drives its
 `OUT` pin itself (HIGH while touched, default jumper setting). The KY-040 already has pull-ups on `CLK`, `DT` and
@@ -168,12 +168,12 @@ still works after a power cut without WiFi.
 
 ### Touch pad and knob
 
-| Input          | Action                                                                                                                            |
-| -------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| **Touch pad**  | Touch: a pet reaction. While the alarm rings: snooze (5 min); after 3 snoozes the next touch ends the alarm                       |
-|                | Hold 1 s: purring (stops when released, or after 8 s). While the alarm rings or is snoozed: switch the alarm off                  |
+| Input          | Action                                                                                                                                                                              |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Touch pad**  | Touch: a pet reaction. While the alarm rings: snooze (5 min); after 3 snoozes the next touch ends the alarm                                                                         |
+|                | Hold 1 s: purring (stops when released, or after 8 s). While the alarm rings or is snoozed: switch the alarm off                                                                    |
 | **Knob, turn** | Clockwise: Face -> Clock -> Date -> Weather -> Face. Counter-clockwise: the other way round. On the Weather page a turn steps through its views first (Now, Next days, Air quality) |
-| **Knob, push** | Tap: on the Face and Clock pages open the quick menu, on any other page back home. Hold 1 s: open / close the diagnostics page (a ring fills while holding, on every page) |
+| **Knob, push** | Tap: on the Face and Clock pages open the quick menu, on any other page back home. Hold 1 s: open / close the diagnostics page (a ring fills while holding, on every page)          |
 
 A visible reminder is closed by the first touch, turn or push (that input is then used up).
 While the alarm is snoozed a touch is still a normal pet; only a 1 s hold switches the alarm off

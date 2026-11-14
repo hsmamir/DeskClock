@@ -286,6 +286,25 @@ dialog .foot{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding-top:12px
 <p class="hint">دلبستگی: هر چه منظم‌تر نوازشش کنی (یا نگه داشتن دکمه تا خرخر) بیشتر بهت وابسته می‌شه: صبورتر می‌شه، گاهی خودش لبخند می‌زنه و رنگ چشم‌هاش کمی صورتی می‌شه. اگه چند روز نبینیش دلتنگ می‌شه، گاهی آه می‌کشه و دیرتر قهرش تموم می‌شه. افزایش روزانه محدوده، پس نوازش پشت‌سرهم زیاد فایده‌ای نداره.</p></details>
 </div>
 
+<div class="card" id="cLed">
+<h2><svg class="ic"><use href="#i-star"/></svg>LED رنگی</h2>
+<label class="row"><span class="lb">LED روشن<small>خاموش = هیچ نوری، حتی هنگام آلارم</small></span><span class="sw"><input type="checkbox" id="ledOn"><i></i></span></label>
+<div class="slider"><div class="sh"><span>حداکثر روشنایی</span><output id="ledMaxO"></output></div>
+<div class="sb"><input type="range" id="ledMax" min="5" max="100"></div></div>
+<div class="row"><span class="lb">حالت عادی<small>وقتی اتفاق خاصی نیست</small></span><select id="ledMode"><option value="0">خاموش</option><option value="1">رنگ ثابت</option><option value="2">رنگ دما و آب‌وهوا</option></select></div>
+<div class="slider"><div class="sh"><span>روشنایی حالت عادی (روز)</span><output id="ledIdleO"></output></div>
+<div class="sb"><input type="range" id="ledIdle" min="0" max="100"></div></div>
+<div class="slider"><div class="sh"><span>روشنایی حالت عادی (شب)</span><output id="ledNightO"></output></div>
+<div class="sb"><input type="range" id="ledNight" min="0" max="30"></div></div>
+<div class="slider"><div class="sh"><span>طلوع مصنوعی قبل از آلارم (دقیقه)</span><output id="ledSunO"></output></div>
+<div class="sb"><input type="range" id="ledSun" min="0" max="30"></div></div>
+<label class="row"><span class="lb">نشان قطع WiFi<small>چشمک نارنجی بعد از ۳۰ ثانیه</small></span><span class="sw"><input type="checkbox" id="ledWifi"><i></i></span></label>
+<label class="row"><span class="lb">نشان آپدیت موجود<small>تپش سبز هر چند ثانیه</small></span><span class="sw"><input type="checkbox" id="ledUpd"><i></i></span></label>
+<details><summary>چطور کار می‌کند؟</summary>
+<p class="hint">تغییرات همین‌جا ذخیره و اعمال می‌شوند، دکمه ذخیره لازم نیست. آلارم قرمز چشمک‌زن، آپدیت بنفش، پورتال WiFi آبی، یادآور فیروزه‌ای و نوازش صورتی است. رنگ دما: بنفش (خیلی سرد)، آبی، فیروزه‌ای، سبز، زرد، نارنجی و قرمز (خیلی گرم)؛ در باران و برف آرام تپش می‌کند. در شب روشنایی عادی پیش‌فرض صفر است (خاموش).</p></details>
+<p class="hint" id="ledNA" hidden>LED در این نسخه‌ی فریمور غیرفعال شده است.</p>
+</div>
+
 <div class="card" id="cOcc">
 <h2><svg class="ic"><use href="#i-star"/></svg>مناسبت‌های سالانه</h2>
 <label class="row"><span>انیمیشن مناسبت‌ها</span><span class="sw"><input type="checkbox" id="occOn" data-s><i></i></span></label>
@@ -484,6 +503,23 @@ const runners=[];
 function poll(fn,ms,when){let busy=false;const run=async()=>{if(document.hidden||busy||(when&&!when()))return;busy=true;try{await fn();}catch(e){}busy=false;};setInterval(run,ms);runners.push(run);return run;}
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)runners.forEach(r=>r());});
 
+/* ---------- RGB LED (each change is sent at once) ---------- */
+function ledFill(id,out){const e=$(id);e.style.setProperty('--p',((e.value-e.min)/(e.max-e.min)*100)+'%');$(out).textContent=e.value+(id==='ledSun'?'':'٪');}
+function ledApply(s){
+ $('ledOn').checked=s.enabled;$('ledMode').value=s.idleMode;$('ledWifi').checked=s.showWifi;$('ledUpd').checked=s.showUpdate;
+ $('ledMax').value=s.maxPct;$('ledIdle').value=s.idlePct;$('ledNight').value=s.idleNightPct;$('ledSun').value=s.sunriseMin;
+ [['ledMax','ledMaxO'],['ledIdle','ledIdleO'],['ledNight','ledNightO'],['ledSun','ledSunO']].forEach(x=>ledFill(x[0],x[1]));
+ $('ledNA').hidden=s.available!==false;
+}
+async function ledLoad(){ledApply(await api('/api/led'));}
+function ledCollect(){return{enabled:$('ledOn').checked,maxPct:+$('ledMax').value,idleMode:+$('ledMode').value,idlePct:+$('ledIdle').value,idleNightPct:+$('ledNight').value,sunriseMin:+$('ledSun').value,showWifi:$('ledWifi').checked,showUpdate:$('ledUpd').checked};}
+let ledTm=0;
+function ledSend(){
+ [['ledMax','ledMaxO'],['ledIdle','ledIdleO'],['ledNight','ledNightO'],['ledSun','ledSunO']].forEach(x=>ledFill(x[0],x[1]));
+ clearTimeout(ledTm);
+ ledTm=setTimeout(async()=>{try{ledApply(await api('/api/led',ledCollect()));}catch(e){toast(eMsg(e),'err');ledLoad().catch(()=>{});}},350);
+}
+
 /* ---------- navigation ---------- */
 function go(t){
  if(!TABS.includes(t))t='home';tab=t;
@@ -493,6 +529,7 @@ function go(t){
  scrollTo(0,0);
  if(t==='home')petStats().catch(()=>{});
  else if(t==='rem')rLoad().catch(()=>{});
+ else if(t==='set')ledLoad().catch(()=>{});
  else if(t==='sys'){updateState();bootLog();}
 }
 addEventListener('hashchange',()=>go(location.hash.slice(1)));
@@ -761,6 +798,7 @@ async function bootLog(){
  };
  $('uInstall').onclick=()=>{const v=$('uInstall').dataset.v;if(confirm('نسخه‌ی '+v+' نصب شود؟\n\nدانلود و نصب حدود یک دقیقه طول می‌کشد. در این مدت آلارم زنگ نمی‌زند و ساعت دوباره راه‌اندازی می‌شود. ساعت را از برق نکشید.'))uPost('/api/update/install',{version:v});};
 
+qa('#cLed input,#cLed select').forEach(e=>{e.addEventListener('input',ledSend);e.addEventListener('change',ledSend);});
  poll(refreshStatus,20000);
  poll(petStats,10000,()=>tab==='home');
  poll(rLoad,15000,()=>tab==='rem'&&!$('sheet').open);

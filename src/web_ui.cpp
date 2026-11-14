@@ -15,6 +15,7 @@
 #include "pet.h"
 #include "weather.h"
 #include "reminders.h"
+#include "rgb_led.h"
 #include "persian_text.h"
 #include "update_check.h"
 #include "version.h"
@@ -588,6 +589,54 @@ static void handleFactoryReset()
     s_resetAtMs = millis() + 1500;
 }
 
+// ---- RGB LED (applies at once, no "save" button; kept in flash by rgb_led.cpp) ----
+static void sendLed(int code)
+{
+    const RgbLedSettings c = rgb_led_settings_get();
+    JsonDocument d;
+    d["available"] = (bool)RGB_LED_ENABLED;
+    d["enabled"] = c.enabled;
+    d["maxPct"] = c.maxPct;
+    d["idleMode"] = c.idleMode;
+    d["idlePct"] = c.idlePct;
+    d["idleNightPct"] = c.idleNightPct;
+    d["sunriseMin"] = c.sunriseMin;
+    d["showWifi"] = c.showWifi;
+    d["showUpdate"] = c.showUpdate;
+    sendJson(code, d);
+}
+
+static void handleGetLed()
+{
+    if (!authorized())
+        return;
+    sendLed(200);
+}
+
+static void handlePostLed()
+{
+    JsonDocument doc;
+    if (!readJsonBody(doc))
+        return;
+    const RgbLedSettings old = rgb_led_settings_get();
+    RgbLedSettings c = old;
+    c.enabled = doc["enabled"] | old.enabled;
+    c.maxPct = doc["maxPct"] | old.maxPct;
+    c.idleMode = doc["idleMode"] | old.idleMode;
+    c.idlePct = doc["idlePct"] | old.idlePct;
+    c.idleNightPct = doc["idleNightPct"] | old.idleNightPct;
+    c.sunriseMin = doc["sunriseMin"] | old.sunriseMin;
+    c.showWifi = doc["showWifi"] | old.showWifi;
+    c.showUpdate = doc["showUpdate"] | old.showUpdate;
+    const char *err = "invalid LED settings";
+    if (!rgb_led_settings_set(c, &err))
+    {
+        sendError(400, err);
+        return;
+    }
+    sendLed(200);
+}
+
 // The page only changes with the firmware, so the browser may keep its copy: on a repeat visit
 // it asks "still this version?" (If-None-Match) and gets an empty 304 instead of the whole page.
 // __DATE__/__TIME__ are those of this file's last build, which also reruns when web_page.h changes.
@@ -633,6 +682,8 @@ static void startServer()
     server.on("/api/update", HTTP_GET, handleGetUpdate);
     server.on("/api/update/check", HTTP_POST, handleUpdateCheck);
     server.on("/api/update/install", HTTP_POST, handleUpdateInstall);
+    server.on("/api/led", HTTP_GET, handleGetLed);
+    server.on("/api/led", HTTP_POST, handlePostLed);
     server.on("/api/factory-reset", HTTP_POST, handleFactoryReset);
     server.onNotFound([]()
                       { server.send(404, "text/plain", "not found"); });
