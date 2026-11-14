@@ -11,7 +11,8 @@
 //                          hot = warm orange, cold = ice blue)  (not at night)
 //   otherwise ............ the robot's own colour: warm white breathing slowly (RGB_LED_IDLE_MODE; also weather colour,
 //                          a steady colour or off; faint at night)
-//   power-on ............. the robot "opens its eyes": warm white fades up, one blink (RGB_LED_BOOT_TEST)
+//   power-on ............. start-up progress: blue = looking for WiFi, cyan = waiting for the time, green flash = ready
+//                          (or the "eyes opening" animation / a colour test, see RGB_LED_BOOT_TEST)
 
 // Sets the three pins to "LED off" and attaches PWM. Call at the very start of setup().
 void rgb_led_init();

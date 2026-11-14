@@ -265,6 +265,12 @@ namespace
         return scaled({RGB_LED_IDLE_R, RGB_LED_IDLE_G, RGB_LED_IDLE_B}, 1.0f, pct);
     }
 
+    // ---- start-up progress (RGB_LED_BOOT_TEST == 3) ----
+    // 0 = following the boot (blue = looking for WiFi, cyan = waiting for the real time), 1 = green "ready" flash,
+    // 2 = done (normal life). Gives up quietly after RGB_LED_BOOT_GIVEUP_S seconds.
+    uint8_t s_boot = (RGB_LED_BOOT_TEST == 3) ? 0 : 2;
+    uint32_t s_bootFlashMs = 0;
+
     uint32_t s_lastPetSeq = 0;
     bool s_petSeqKnown = false;
     uint32_t s_petStartMs = 0;
@@ -411,6 +417,9 @@ void rgb_led_init()
         }
     }
     show(OFF);
+#elif RGB_LED_BOOT_TEST == 3
+    // Start-up progress: a dim blue stays on while the rest of setup() runs; rgb_led_tick() takes over from there.
+    show(scaled({0, 80, 255}, 0.35f));
 #elif RGB_LED_BOOT_TEST == 1
     // Wiring check: red, green, blue one after the other. If the colours come in another order, wires are swapped.
     const Rgb seq[3] = {{255, 0, 0}, {0, 255, 0}, {0, 0, 255}};
@@ -440,6 +449,7 @@ void rgb_led_tick()
     const bool portal = g_state.wifiPortalActive;
     const Mood mood = g_state.mood;
     const bool synced = g_state.timeSynced;
+    const bool approx = g_state.timeApprox;
     AppState weatherSnap; // only the weather part is used (idle colour)
     weatherSnap.weatherValid = g_state.weatherValid;
     weatherSnap.weatherTempC = g_state.weatherTempC;
@@ -551,6 +561,35 @@ void rgb_led_tick()
     {
         show(scaled({0, 60, 255}, 0.15f + 0.85f * breathe(now, 1800)));
         return;
+    }
+
+    // 3b. start-up progress
+    if (s_boot == 0 && now > (uint32_t)RGB_LED_BOOT_GIVEUP_S * 1000UL)
+        s_boot = 2;
+    if (s_boot == 0)
+    {
+        if (WiFi.status() != WL_CONNECTED)
+        {
+            show(scaled({0, 80, 255}, 0.2f + 0.8f * breathe(now, 900))); // blue: looking for the WiFi
+            return;
+        }
+        if (!synced || approx)
+        {
+            show(scaled({0, 220, 255}, 0.2f + 0.8f * breathe(now, 1400))); // cyan: connected, waiting for the real time
+            return;
+        }
+        s_boot = 1; // everything is up
+        s_bootFlashMs = now;
+    }
+    if (s_boot == 1)
+    {
+        const uint32_t dt = now - s_bootFlashMs;
+        if (dt < 800)
+        {
+            show(scaled({0, 255, 70}, sinf(3.1415927f * (float)dt / 800.0f))); // green: ready
+            return;
+        }
+        s_boot = 2;
     }
 
     // 4. sunrise: the last minutes before the alarm, the LED slowly brightens (also at night: that is when it is for)
