@@ -48,6 +48,9 @@ void update_tick();
 // Thread-safe copy of the current status (web task).
 UpdateStatus update_status();
 
+// True while a newer version is waiting (state AVAILABLE). Light: no String is copied (the LED task asks this often).
+bool update_is_available();
+
 // Starts a check. False if a check or an install is already running.
 bool update_request_check();
 

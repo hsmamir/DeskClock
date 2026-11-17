@@ -332,7 +332,7 @@ void quickmenu_press()
                 m.field = 0;
                 break;
             case MenuItem::CLOCK_STYLE:
-                ui_next_clock_style(); // saved right away
+                ui_next_clock_style();   // saved right away
                 ui_set_home_clock(true); // and the clock (not the eyes) is what you see when the menu closes
                 break;
             case MenuItem::VOLUME:
@@ -419,6 +419,9 @@ void quickmenu_tick(uint32_t now)
 
     if (open && (ringing || dm != DisplayMode::MENU || (uint32_t)(now - last) >= QUICK_MENU_TIMEOUT_MS))
     {
+#if KNOB_DEBUG
+        Serial.printf("Menu: closes (%s)\n", ringing ? "the alarm rings" : (dm != DisplayMode::MENU ? "the page was changed by something else" : "no input (time-out)"));
+#endif
         quickmenu_close(); // an edit that was not saved is dropped
         return;
     }
@@ -470,7 +473,7 @@ void quickmenu_confirm_progress(uint8_t pct)
     if (!m.open || !m.confirm || m.resetting)
         return;
     pct = (uint8_t)((pct > 100 ? 100 : pct) / 5 * 5); // steps of 5: the display redraws only when it changes
-    m.lastInputMs = millis();                          // holding is input: the page must not time out
+    m.lastInputMs = millis();                         // holding is input: the page must not time out
     if (pct != m.confirmPct)
     {
         m.confirmPct = pct;

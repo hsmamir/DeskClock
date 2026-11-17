@@ -252,7 +252,7 @@ void setup()
     // Before Serial.begin(): the UART baud divider is computed from the clock that is running then.
     setCpuFrequencyMhz(CPU_FREQ_MHZ); // lower peak current (see "Power / brownout" in config.h)
     Serial.begin(115200);
-    rgb_led_init(); // first thing: pins to "LED off" (then the boot colour test)
+    rgb_led_init();  // first thing: pins to "LED off" (then the boot colour test)
     boot_log_init(); // counts the boot + keeps the reset reason in flash (and prints it)
 
     g_stateMutex = xSemaphoreCreateMutex();
@@ -276,7 +276,7 @@ void setup()
     startTask(weatherTask, "weather", 10240, 1, 0);
     startTask(webTask, "web", 8192, 1, 0);
     startTask(otaTask, "ota", 6144, 1, 0);
-    startTask(ledTask, "led", 4096, 4, 1); // above display / touch: the tick takes microseconds, but at priority 1 a busy display starved it
+    startTask(ledTask, "led", 3072, 4, 1); // above display / touch: the tick takes microseconds, but at priority 1 a busy display starved it
 }
 
 void loop()

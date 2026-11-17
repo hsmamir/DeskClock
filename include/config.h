@@ -63,6 +63,11 @@
 // Push: back to the clock. HOLD the push button for MODE_LONG_PRESS_MS: diagnostics page.
 // ROTARY_REVERSE 1 swaps the two turn directions (if your module / wiring turns out mirrored).
 #define ROTARY_REVERSE 0
+// KNOB_DEBUG 1 = Serial log of the knob push (pushed / held / released) and of why the quick menu closes.
+#define KNOB_DEBUG 1
+// KNOB_PUSH_AFTER_TURN_MS: a knob push that starts less than this long after a turn is ignored (fast turning makes the
+// shaft wobble and the push contact closes by itself; it used to leave the quick menu). 0 = off.
+#define KNOB_PUSH_AFTER_TURN_MS 250
 // A turn that closes a visible reminder is used up; the rest of that turn is ignored for this long
 // so it doesn't also flip the page.
 #define ROTARY_REMINDER_IGNORE_MS 300

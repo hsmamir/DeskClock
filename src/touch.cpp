@@ -468,6 +468,7 @@ static void toggleDiagPage()
 }
 
 // After a turn closed a reminder, the rest of that turn must not also flip pages.
+static uint32_t lastRotMs = 0; // when the knob was last turned (0 = never): a push right after a turn is the shaft wobbling
 static bool rotIgnoring = false;
 static uint32_t rotIgnoreUntilMs = 0;
 
@@ -476,6 +477,7 @@ static bool handleRotation(uint32_t now)
     int steps = rotaryTakeSteps();
     if (steps == 0)
         return false;
+    lastRotMs = now ? now : 1;
 
     // While the alarm rings the knob does not flip pages or edit anything behind the red face (a push snoozes).
     xSemaphoreTake(g_stateMutex, portMAX_DELAY);
@@ -508,10 +510,16 @@ static bool handleRotation(uint32_t now)
     }
     if (quickmenu_is_open())
     {
+#if KNOB_DEBUG
+        Serial.printf("Knob: turn %d -> menu\n", steps);
+#endif
         quickmenu_turn(steps); // moves the cursor / changes the value being edited
         return true;
     }
 
+#if KNOB_DEBUG
+    Serial.printf("Knob: turn %d -> pages\n", steps);
+#endif
     turnPages(steps, now); // scrolls the Weather page, else one page per tick, however fast it was turned
     return true;
 }
@@ -558,6 +566,9 @@ static bool handleKnobButton()
 
     if (ev == BtnEvent::PRESSED)
     {
+#if KNOB_DEBUG
+        Serial.printf("Knob: pushed (menu %s)\n", quickmenu_is_open() ? "open" : "closed");
+#endif
         knobPressedAtMs = now;
         knobLongHandled = false;
         knobSwallow = false;
@@ -576,6 +587,15 @@ static bool handleKnobButton()
         else if (reminder_consume_press())
         {
             knobSwallow = true; // closes a visible reminder, nothing else
+        }
+        else if (KNOB_PUSH_AFTER_TURN_MS > 0 && lastRotMs != 0 && (uint32_t)(now - lastRotMs) < KNOB_PUSH_AFTER_TURN_MS)
+        {
+            // Turning a KY-040 fast makes its shaft wobble and the push contact closes by itself for a moment. A real push
+            // does not come within a fraction of a second after a turn, so this one is ignored until it is released.
+#if KNOB_DEBUG
+            Serial.printf("Knob: push %u ms after a turn ignored (shaft wobble)\n", (unsigned)(now - lastRotMs));
+#endif
+            knobSwallow = true;
         }
     }
 
@@ -647,13 +667,21 @@ static bool handleKnobButton()
         if (setup_is_active())
             setup_back(); // one page back (on the first page: skip the setup)
         else if (quickmenu_is_open())
+        {
+#if KNOB_DEBUG
+            Serial.printf("Knob: held %u ms -> leaving the menu\n", (unsigned)(now - knobPressedAtMs));
+#endif
             quickmenu_close(); // leaves the menu; an unsaved edit is dropped
+        }
         else
             toggleDiagPage();
         return true;
     }
     if (ev == BtnEvent::RELEASED)
     {
+#if KNOB_DEBUG
+        Serial.printf("Knob: released after %u ms (%s)\n", (unsigned)(now - knobPressedAtMs), knobLongHandled ? "was a hold" : "a tap");
+#endif
         if (!knobLongHandled)
             onKnobTap();
         return true;

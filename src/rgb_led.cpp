@@ -205,7 +205,7 @@ namespace
         if (s_updateCheckMs == 0 || (uint32_t)(now - s_updateCheckMs) >= 10000UL)
         {
             s_updateCheckMs = now ? now : 1;
-            s_updateAvail = update_status().state == UpdateState::AVAILABLE;
+            s_updateAvail = update_is_available(); // no String copies: the heap is tight while the update runs
         }
         return s_updateAvail;
 #else

@@ -8,6 +8,7 @@
 // The simulator (or a build with UPDATE_ENABLED 0) has no update feature.
 void update_tick() {}
 UpdateStatus update_status() { return UpdateStatus(); }
+bool update_is_available() { return false; }
 bool update_request_check() { return false; }
 bool update_request_install(const String &, String &err)
 {
@@ -742,6 +743,12 @@ UpdateStatus update_status()
 {
     Lock l;
     return s_st;
+}
+
+bool update_is_available()
+{
+    Lock l;
+    return s_st.state == UpdateState::AVAILABLE;
 }
 
 bool update_request_check()
